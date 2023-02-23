@@ -31,18 +31,19 @@ smri_data <- get_box_file("abcd_smrip10201.txt") %>%
   group_by(subjectkey)
 summary_var_index <- str_detect(colnames(smri_data), "mean|total")
 smri_data <- smri_data[,!summary_var_index]
+# remove sulcal depth
+smri_data <- smri_data %>%
+  select(-contains("_sulc_"))
 
 ## -- Demographic Data
-# TODO: Andrea: we have been including each race/ethnicity as a separate variable where individuals are allowed to be coded as 1 across more than one variable. 
-# We have been interpreting these in models as the effect for Black versus non-Black youth, as an example. It is important that you make sure everyone in your model has race/ethnicity coding otherwise they will all be compared to some subset with missing data (e.g., like dummy coding). 
+# Each race/ethnicity included as a separate variable where individuals are allowed to be coded as 1 across more than one variable. 
+# We have been interpreting these in models as the effect for Black versus non-Black youth, as an example. 
 demo_data <- get_box_file("pdem02.txt") %>%
   select(c(usual_vars, demo_comb_income_v2,
            demo_race_a_p___10:demo_race_a_p___25,demo_ethn_v2,
            demo_prnt_marital_v2,demo_prnt_ed_v2,demo_prtnr_ed_v2)) %>%
   usual_mutate() %>%
   mutate_at(vars(starts_with("demo_race")), as.numeric) %>%
-  mutate_at(vars(ends_with("v2")), as.numeric) %>%
-  mutate_at(vars(ends_with("v2")), as.factor) %>%
   mutate(white = if_else(demo_race_a_p___10 == 1,1,0),
          black = if_else(demo_race_a_p___11 == 1,1,0),
          native = if_else(demo_race_a_p___12 == 1 | demo_race_a_p___13 == 1, 1, 0),
@@ -53,10 +54,40 @@ demo_data <- get_box_file("pdem02.txt") %>%
                                 demo_race_a_p___22 == 1 | demo_race_a_p___23 == 1 |
                                 demo_race_a_p___24 == 1, 1, 0),
          other = if_else(demo_race_a_p___25 == 1, 1, 0)) %>%
-  gather(key = "race", value = "value", white:other) %>%
-  filter(value == 1) %>%
-  mutate(race = as.factor(race)) %>%
-  select(-c(starts_with("demo_race"), value))
+  select(-starts_with("demo_race")) 
+
+race_index <- which(colnames(demo_data)=="white"):ncol(demo_data)
+race_names <- colnames(demo_data)[race_index]
+colnames(demo_data)[race_index] <- paste("race", race_names, sep = "_")
+
+# It is important that you make sure everyone in your model has race/ethnicity coding otherwise they will all be compared to some subset with missing data (e.g., like dummy coding). 
+demo_data$race_response_present <- rowSums(demo_data[,race_index], na.rm=TRUE)
+demo_data$race_response_present %>% table # 171 non-responses
+demo_data <- demo_data %>% 
+  filter(race_response_present>0) %>%
+  select(-race_response_present)
+
+# It's also important to remove non-answers to other questions
+demo_filter_indicator <- demo_data %>%
+  select(starts_with("demo_")) %>%
+  mutate_all(as.numeric) %>%
+  apply(1, function(r) any(r %in% c(777, 999)))
+demo_data <- demo_data[!demo_filter_indicator,] %>%
+  mutate_at(vars(starts_with("demo_")), as.numeric) 
+
+# We need to take the highest level of parental education
+# and format demo vars as factors
+demo_prnt_highest_ed <- demo_data %>%
+  select(contains("_ed_")) %>%
+  mutate(demo_prnt_highest_ed = if_else(is.na(demo_prtnr_ed_v2), demo_prnt_ed_v2, 
+                                   if_else(demo_prnt_ed_v2 >= demo_prtnr_ed_v2,
+                                           demo_prnt_ed_v2, demo_prtnr_ed_v2))) %>%
+  pull(demo_prnt_highest_ed)
+
+demo_data <- demo_data %>%
+  mutate(demo_prnt_highest_ed = demo_prnt_highest_ed) %>%
+  select(-contains("_ed_")) %>%
+  mutate_at(vars(starts_with("demo_")), as.factor) 
 
 ## -- Clinical Outcomes
 ## Suicidal Ideation Outcome (Binary)
@@ -76,7 +107,7 @@ internalizing_data <- get_box_file("abcd_cbcls01.txt") %>%
   rename(outcome_internalizing_score = cbcl_scr_syn_internal_r) %>%
   mutate(outcome_internalizing_score = as.numeric(outcome_internalizing_score))
 
-## Understand Demo Data
+## -- Understand Views
 data <- list(view_demo = demo_data,
              view_smri = smri_data,
              outcome_si = si_data,
@@ -86,22 +117,6 @@ lapply(data, dim)
 
 lapply(data, function(x){table(x$eventname)})
 
-demo_duplicate_keys = which(table(data$view_demo$subjectkey) > 1) %>% names
-demo_duplicates = data$view_demo %>%
-  filter(subjectkey %in% demo_duplicate_keys) %>%
-  arrange(subjectkey)
-head(demo_duplicates)
-tail(demo_duplicates)
-
-# TODO: fix bug in the merging. There's more than one demo observation per subjectkey
-demo_data <- demo_data %>% group_by(subjectkey) %>% filter(row_number(race) == 1)
-data$view_demo <- demo_data
-
-lapply(data, dim)
-
-lapply(data, function(x){table(x$eventname)})
-
-# TODO: fix bug in the merging. There's very few 2 year follow-ups after merge.
 tidy_data <- data$view_smri %>%
   left_join(select(data$view_demo, -c("sex", "interview_age", "eventname")), by = "subjectkey") %>% 
   left_join(data$outcome_si) %>%
@@ -109,6 +124,11 @@ tidy_data <- data$view_smri %>%
   group_by(subjectkey, eventname)
 
 table(tidy_data$eventname)
+
+summary(tidy_data) # TODO: Resolve NAs/ Others in income, ethn, highest_ed
+
+weird_vars <- c("demo_comb_income_v2", "demo_ethn_v2", "demo_prnt_highest_ed")
+tidy_data %>% select(all_of(weird_vars)) %>% summary
 
 ## -- Save Tidy Data
 saveRDS(tidy_data, file = paste0("data/", Sys.Date(), "-tidy_data.RDS"))
