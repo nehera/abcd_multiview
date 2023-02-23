@@ -29,15 +29,14 @@ The .RDS file loaded below was generated using the script "code/0_get_data.R".
 
 ```{r,echo=FALSE}
 library(tidyverse)
-library(ggseg) # https://drmowinckels.io/blog/2021-03-14-new-ggseg-with-geom/
-tidy_data <- readRDS("data/2023-02-16-tidy_data.RDS")
+tidy_data <- readRDS("data/2023-02-23-tidy_data.RDS")
 ```
 
 ### About the Variables
 
 * subjectkey is the subject's unique identifier.
 * eventname is the data collection point for an observation (row of data). Note, interview_age is also available in months.
-* Brain structure metrics cortical thickness (thick), sulcus depth (sulc), and surface area (area) are included. For more on the meaning of these metrics, see https://doi-org.ezp2.lib.umn.edu/10.1007%2Fs00429-015-1177-6
+* Brain structure metrics cortical thickness (thick) and surface area (area) are included. For more on the meaning of these metrics, see https://doi-org.ezp2.lib.umn.edu/10.1007%2Fs00429-015-1177-6
 
 ### Explore the data
 
@@ -63,15 +62,15 @@ library(factoextra)
 colSums(is.na(baseline_smri)) %>% sum
 baseline_smri_normalized = scale(baseline_smri)
 corr_matrix = cor(baseline_smri_normalized)
-ggcorrplot(corr_matrix)
-data_pca = princomp(corr_matrix)
-# summary(data_pca)
-data_pca$loadings[, 1:2]
-fviz_eig(data_pca, addlabels = TRUE)
-fviz_pca_var(data_pca, col.var = "black")
+# ggcorrplot(corr_matrix)
+pca_1 = princomp(corr_matrix)
+# summary(pca_1)
+pca_1$loadings[, 1:2]
+fviz_eig(pca_1, addlabels = TRUE)
+fviz_pca_var(pca_1, col.var = "black")
 # contribution to first 2 components
-fviz_cos2(data_pca, choice = "var", axes = 1:2) 
-fviz_pca_var(data_pca, col.var = "cos2",
+fviz_cos2(pca_1, choice = "var", axes = 1:2) 
+fviz_pca_var(pca_1, col.var = "cos2",
             gradient.cols = c("black", "orange", "green"),
             repel = TRUE)
 # regression
@@ -85,8 +84,27 @@ fviz_pca_var(pca_2, col.var = "cos2",
             gradient.cols = c("black", "orange", "green"),
             repel = TRUE)
 
-# plot loadings
+# principal components regression
+# TODO: use lmer to account for fixed/ random effects, control for site effect and family within site
+# see Mark's .RMD for method of fitting lmer.
+model_data <- baseline_data %>%
+  select(-starts_with("smri")) %>%
+  cbind(pca_2$x[,1:10])
+classification_data <- model_data %>%
+  select(-c("subjectkey","eventname","outcome_internalizing_score"))
+classification_fit <- glm(outcome_si ~ ., data = classification_data, family = binomial) 
+summary(classification_fit)
+regression_data <- model_data %>%
+  select(-c("subjectkey","eventname","outcome_si"))
+regression_fit <- lm(outcome_internalizing_score ~ ., data = regression_data)
+summary(regression_fit)
+```
 
+Now, let's make plots of the first four principal components.
+
+```{r}
+# TODO: Plot loadings: Is it certain regions or is it globally thickness/ area? 
+library(ggseg) # https://drmowinckels.io/blog/2021-03-14-new-ggseg-with-geom/
 ```
 
 ## Questions
