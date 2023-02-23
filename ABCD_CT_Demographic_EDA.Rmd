@@ -1,0 +1,96 @@
+---
+title: "ABCD Study CT and Demographic Data Exploratory Data Analysis"
+author: "Aidan Neher"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## What is Exploratory Data Analysis?
+
+Exploratory Data Analysis (EDA) is a structured approach for understanding your data that can be used for research question and hypothesis development. EDA's overall objective is to get insights to make better decisions. Sub-objectives include:
+
+- Identify correlated variables.
+- Identify and deal with outliers.
+- Identify trends across time.
+- Identify trends across space. 
+- Uncover patterns related to the response variable of interest.
+- Create research questions to explore or hypotheses to test.
+- Identify possible new data sources.
+
+### Set-Up Environment
+
+The .RDS file loaded below was generated using the script "code/0_get_data.R". 
+
+```{r,echo=FALSE}
+library(tidyverse)
+library(ggseg) # https://drmowinckels.io/blog/2021-03-14-new-ggseg-with-geom/
+tidy_data <- readRDS("data/2023-02-16-tidy_data.RDS")
+```
+
+### About the Variables
+
+* subjectkey is the subject's unique identifier.
+* eventname is the data collection point for an observation (row of data). Note, interview_age is also available in months.
+* Brain structure metrics cortical thickness (thick), sulcus depth (sulc), and surface area (area) are included. For more on the meaning of these metrics, see https://doi-org.ezp2.lib.umn.edu/10.1007%2Fs00429-015-1177-6
+
+### Explore the data
+
+From http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/118-principal-component-analysis-in-r-prcomp-vs-princomp/#prcomp-and-princomp-functions: 
+
+"There are two general methods to perform PCA in R :
+
+* Spectral decomposition which examines the covariances / correlations between variables
+* Singular value decomposition which examines the covariances / correlations between individuals
+
+The function princomp() uses the spectral decomposition approach. The functions prcomp() and PCA()[FactoMineR] use the singular value decomposition (SVD)."
+
+```{r,echo=FALSE}
+table(tidy_data$eventname)
+split_data = split(tidy_data, f = tidy_data$eventname)
+baseline_data = split_data$baseline_year_1_arm_1 %>% ungroup
+baseline_smri = select(baseline_data, starts_with("smri"))
+# https://www.datacamp.com/tutorial/pca-analysis-r
+library(ggcorrplot)
+library(FactoMineR)
+library(factoextra)
+# check for NAs
+colSums(is.na(baseline_smri)) %>% sum
+baseline_smri_normalized = scale(baseline_smri)
+corr_matrix = cor(baseline_smri_normalized)
+ggcorrplot(corr_matrix)
+data_pca = princomp(corr_matrix)
+# summary(data_pca)
+data_pca$loadings[, 1:2]
+fviz_eig(data_pca, addlabels = TRUE)
+fviz_pca_var(data_pca, col.var = "black")
+# contribution to first 2 components
+fviz_cos2(data_pca, choice = "var", axes = 1:2) 
+fviz_pca_var(data_pca, col.var = "cos2",
+            gradient.cols = c("black", "orange", "green"),
+            repel = TRUE)
+# regression
+pca_2 = prcomp(baseline_smri_normalized)
+pca_2$loadings[, 1:2]
+fviz_eig(pca_2, addlabels = TRUE)
+fviz_pca_var(pca_2, col.var = "black")
+# contribution to first 2 components
+fviz_cos2(pca_2, choice = "var", axes = 1:2) 
+fviz_pca_var(pca_2, col.var = "cos2",
+            gradient.cols = c("black", "orange", "green"),
+            repel = TRUE)
+
+# plot loadings
+
+```
+
+## Questions
+
+* There's more than one demo_data observation per subjectkey, why?
+* What other covariates are required?
+* Regarding time point determination for DSEM, do we want to use interview age or eventname?
