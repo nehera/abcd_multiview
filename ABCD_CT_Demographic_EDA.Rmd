@@ -23,92 +23,165 @@ Exploratory Data Analysis (EDA) is a structured approach for understanding your 
 - Create research questions to explore or hypotheses to test.
 - Identify possible new data sources.
 
-### Set-Up Environment
+## Set-Up Environment
 
 The .RDS file loaded below was generated using the script "code/0_get_data.R". 
 
 ```{r,echo=FALSE}
 library(tidyverse)
-tidy_data <- readRDS("data/2023-02-23-tidy_data.RDS")
+tidy_data <- readRDS("data/2023-02-24-tidy_data.RDS")
 ```
 
-### About the Variables
+## About the Variables
 
 * subjectkey is the subject's unique identifier.
 * eventname is the data collection point for an observation (row of data). Note, interview_age is also available in months.
 * Brain structure metrics cortical thickness (thick) and surface area (area) are included. For more on the meaning of these metrics, see https://doi-org.ezp2.lib.umn.edu/10.1007%2Fs00429-015-1177-6
 
-### Explore the data
+First, we will split our data by eventname to study it cross-sectionally for now.
 
-From http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/118-principal-component-analysis-in-r-prcomp-vs-princomp/#prcomp-and-princomp-functions: 
-
-"There are two general methods to perform PCA in R :
-
-* Spectral decomposition which examines the covariances / correlations between variables
-* Singular value decomposition which examines the covariances / correlations between individuals
-
-The function princomp() uses the spectral decomposition approach. The functions prcomp() and PCA()[FactoMineR] use the singular value decomposition (SVD)."
-
-```{r,echo=FALSE}
+```{r}
 table(tidy_data$eventname)
 split_data = split(tidy_data, f = tidy_data$eventname)
 baseline_data = split_data$baseline_year_1_arm_1 %>% ungroup
 baseline_smri = select(baseline_data, starts_with("smri"))
+```
+
+## Principal Components Analysis (PCA)
+
+For Principal Components Analysis (PCA), [the R function `prcomp()` is preferred](https://stats.stackexchange.com/questions/20101/what-is-the-difference-between-r-functions-prcomp-and-princomp). Note, the loadings are accessible in the resulting object's rotation feature.
+
+```{r,echo=FALSE}
 # https://www.datacamp.com/tutorial/pca-analysis-r
 library(ggcorrplot)
 library(FactoMineR)
 library(factoextra)
 # check for NAs
 colSums(is.na(baseline_smri)) %>% sum
+# normalize and consider correlations
 baseline_smri_normalized = scale(baseline_smri)
 corr_matrix = cor(baseline_smri_normalized)
-# ggcorrplot(corr_matrix)
-pca_1 = princomp(corr_matrix)
-# summary(pca_1)
-pca_1$loadings[, 1:2]
-fviz_eig(pca_1, addlabels = TRUE)
-fviz_pca_var(pca_1, col.var = "black")
+ggcorrplot(corr_matrix)
+# PCA
+pca <- prcomp(baseline_smri_normalized) 
+fviz_eig(pca, addlabels = TRUE)
+fviz_pca_var(pca, col.var = "black")
 # contribution to first 2 components
-fviz_cos2(pca_1, choice = "var", axes = 1:2) 
-fviz_pca_var(pca_1, col.var = "cos2",
+fviz_cos2(pca, choice = "var", axes = 1:2) 
+fviz_pca_var(pca, col.var = "cos2",
             gradient.cols = c("black", "orange", "green"),
             repel = TRUE)
-# regression
-pca_2 = prcomp(baseline_smri_normalized)
-pca_2$loadings[, 1:2]
-fviz_eig(pca_2, addlabels = TRUE)
-fviz_pca_var(pca_2, col.var = "black")
-# contribution to first 2 components
-fviz_cos2(pca_2, choice = "var", axes = 1:2) 
-fviz_pca_var(pca_2, col.var = "cos2",
-            gradient.cols = c("black", "orange", "green"),
-            repel = TRUE)
-
-# principal components regression
-# TODO: use lmer to account for fixed/ random effects, control for site effect and family within site
-# see Mark's .RMD for method of fitting lmer.
-model_data <- baseline_data %>%
-  select(-starts_with("smri")) %>%
-  cbind(pca_2$x[,1:10])
-classification_data <- model_data %>%
-  select(-c("subjectkey","eventname","outcome_internalizing_score"))
-classification_fit <- glm(outcome_si ~ ., data = classification_data, family = binomial) 
-summary(classification_fit)
-regression_data <- model_data %>%
-  select(-c("subjectkey","eventname","outcome_si"))
-regression_fit <- lm(outcome_internalizing_score ~ ., data = regression_data)
-summary(regression_fit)
 ```
 
-Now, let's make plots of the first four principal components.
+### Principal Components Regression (PCR)
+
+Next we perform regression and classification against a clinical severity score and a binary clinical outcome respectively using principal components identified in the PCA above and covariates. 
 
 ```{r}
-# TODO: Plot loadings: Is it certain regions or is it globally thickness/ area? 
+# TODO: use lmer to account for fixed/ random effects, control for site effect and family within site
+library(lme4)
+
+outcome_of_interest <- "outcome_internalizing_score"
+outcome_names <- c("outcome_si", "outcome_internalizing_score")
+outcome_to_remove <- subset(outcome_names, outcome_names!=outcome_of_interest)
+
+base_model_data <- baseline_data %>%
+  select(-starts_with("smri")) %>%
+  # choose and rename outcome of interest
+  select(-c("subjectkey", "eventname", all_of(outcome_to_remove))) %>%
+  rename(outcome = starts_with("outcome"))
+
+var_names <- colnames(base_model_data)
+
+random_effect_index <- which(var_names  %in% c("abcd_site", "rel_family_id"))
+outcome_index <- which(var_names == "outcome")
+
+base_fixed_effects <- var_names[-c(random_effect_index, outcome_index)] %>% paste(collapse = "+")
+base_formula <- paste0("outcome~", base_fixed_effects, "+(1|abcd_site/rel_family_id)")
+
+
+# TODO: https://stats.stackexchange.com/questions/22988/how-to-obtain-the-p-value-check-significance-of-an-effect-in-a-lme4-mixed-mode
+
+# compute a model where the effect of PC is not estimated
+restricted_fit = lmer( 
+  data = base_model_data,
+  formula = base_formula, 
+  REML = F #because we want to compare models on likelihood
+)
+
+fits <- list(restricted_fit)
+
+for (i in 1:10) {
+  pc_index <- seq(1, i)
+  if (i==1) {
+    model_data <- base_model_data %>%
+      cbind(PC1=pca$x[,pc_index]) # TODO: Find a substitute for this if else
+  } else {
+    model_data <- base_model_data %>%
+      cbind(pca$x[,pc_index])
+  }
+  pc_names <- paste0("PC", pc_index, collapse = "+")
+  model_formula <- paste(base_formula, pc_names, sep = "+")
+  # compute a model where the effect of an additional PC is estimated
+  fits[[i+1]] = lmer( 
+    data = model_data,
+    formula = model_formula, 
+    REML = F #because we want to compare models on likelihood
+  )
+}
+
+likelihood_ratios <- list()
+for (i in 1:10) {
+  unrestricted_fit <- fits[[i]]
+  restricted_fit <- fits[[i+1]]
+  # compute the AIC-corrected log-base-2 likelihood ratio (a.k.a. "bits" of evidence)
+  likelihood_ratios[[i]] <- (AIC(restricted_fit)-AIC(unrestricted_fit))*log2(exp(1))
+}
+
+likelihood_ratios
+
+# classification_data <- model_data %>%
+#   select(-c("subjectkey","eventname","outcome_internalizing_score")) %>%
+#   rename(outcome = outcome_si)
+# classification_fit <- glmer(model_formula, data = classification_data, family = binomial)
+# summary(classification_fit)
+```
+
+### Principal Component Loading Plots
+
+Now, let's make plots of the first ten principal components' thickness loading minus surface area loading. Thus, 
+
+* a region with a more positive value is more represented by cortical thickness, 
+* a region with a near zero value is represented by both cortical thickness and surface area, and 
+* a region with a more negative value is more represented by surface area. 
+
+Consider, Is a given PC representing variance in certain regions? Is a given PC more dominated by thickness or surface area?
+
+```{r}
 library(ggseg) # https://drmowinckels.io/blog/2021-03-14-new-ggseg-with-geom/
+
+plot_pc_relative_loadings <- function(pc) {
+  pc_thick_index <- which(names(pc) %>% str_detect("thick"))
+  pc_thick <- pc[pc_thick_index]
+  pc_area <- pc[-pc_thick_index]
+  regions <- dk$data %>% 
+    filter(region != "corpus callosum") %>% 
+    pull(region) %>% na.omit %>% unique %>% sort
+  df <- data.frame(hemi=c(rep("left", length(regions)), 
+                          rep("right", length(regions))),
+                   region=rep(regions, 2), 
+                   loading=pc_thick-pc_area, 
+                   row.names = NULL)
+  ggplot(df) + geom_brain(atlas = dk, 
+               position = position_brain(hemi ~ side),
+               aes(fill = loading)) + theme_brain2()
+}
+
+pc_plots <- apply(pca$rotation[,1:10], 2, plot_pc_relative_loadings)
+pc_plots
 ```
 
 ## Questions
 
-* There's more than one demo_data observation per subjectkey, why?
 * What other covariates are required?
-* Regarding time point determination for DSEM, do we want to use interview age or eventname?
+* Do we want to use eventname or interview age for temporal effect?

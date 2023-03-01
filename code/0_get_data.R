@@ -24,7 +24,7 @@ atlas_data <- ggseg::read_atlas_files(subjects_dir = "/Applications/freesurfer/7
 
 ## -- Structural MRI Data
 smri_data <- get_box_file("abcd_smrip10201.txt") %>%
-  select(c(usual_vars, starts_with("smri"))) %>%
+  select(c(all_of(usual_vars), starts_with("smri"))) %>%
   select(-c(smri_visitid, starts_with("smri_vol_"), contains("_cf"))) %>% 
   usual_mutate() %>% 
   mutate_at(vars(starts_with("smri_")), as.numeric) %>%
@@ -89,6 +89,17 @@ demo_data <- demo_data %>%
   select(-contains("_ed_")) %>%
   mutate_at(vars(starts_with("demo_")), as.factor) 
 
+# Lastly, we need to get the abcd_site and the family_id to include as random effects
+deap_covars <- read.csv('data/DEAP_covariates_release4.csv', header=T, sep=',') %>%
+  rename(subjectkey = src_subject_id) %>%
+  select(subjectkey, abcd_site, rel_family_id) %>%
+  mutate_at(vars(c(abcd_site, rel_family_id)), as.factor) %>%
+  group_by(subjectkey) %>%
+  distinct() %>%
+  filter(row_number(subjectkey) == 1) # TODO: Determine what to do with subs with multiple sites/ families.
+
+demo_data <- left_join(demo_data, deap_covars)
+
 ## -- Clinical Outcomes
 ## Suicidal Ideation Outcome (Binary)
 outcome_vars = c("ksads_23_946_t","ksads_23_947_t","ksads_23_948_t","ksads_23_949_t","ksads_23_950_t",
@@ -125,10 +136,7 @@ tidy_data <- data$view_smri %>%
 
 table(tidy_data$eventname)
 
-summary(tidy_data) # TODO: Resolve NAs/ Others in income, ethn, highest_ed
-
-weird_vars <- c("demo_comb_income_v2", "demo_ethn_v2", "demo_prnt_highest_ed")
-tidy_data %>% select(all_of(weird_vars)) %>% summary
+summary(tidy_data) 
 
 ## -- Save Tidy Data
 saveRDS(tidy_data, file = paste0("data/", Sys.Date(), "-tidy_data.RDS"))
