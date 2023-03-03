@@ -90,6 +90,7 @@ demo_data <- demo_data %>%
   mutate_at(vars(starts_with("demo_")), as.factor) 
 
 # Lastly, we need to get the abcd_site and the family_id to include as random effects
+# TODO: Subject may have switched sites... Look at the date of the visit. Take the first()?
 deap_covars <- read.csv('data/DEAP_covariates_release4.csv', header=T, sep=',') %>%
   rename(subjectkey = src_subject_id) %>%
   select(subjectkey, abcd_site, rel_family_id) %>%

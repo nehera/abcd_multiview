@@ -77,6 +77,8 @@ fviz_pca_var(pca, col.var = "cos2",
 
 Next we perform regression and classification against a clinical severity score and a binary clinical outcome respectively using principal components identified in the PCA above and covariates. 
 
+Note, in fits, I'm receiving "Warning: Model failed to converge with max|grad| = 0.00427516 (tol = 0.002, component 1)".
+
 ```{r}
 # TODO: use lmer to account for fixed/ random effects, control for site effect and family within site
 library(lme4)
@@ -112,6 +114,7 @@ restricted_fit = lmer(
 fits <- list(restricted_fit)
 
 for (i in 1:10) {
+  print(paste("Model",i-1,"fitting"))
   pc_index <- seq(1, i)
   if (i==1) {
     model_data <- base_model_data %>%
@@ -129,6 +132,8 @@ for (i in 1:10) {
     REML = F #because we want to compare models on likelihood
   )
 }
+
+lapply(fits, summary)
 
 likelihood_ratios <- list()
 for (i in 1:10) {
