@@ -2,7 +2,9 @@
 title: "BIPnet_EDA"
 author: "Aidan Neher"
 date: "2023-03-03"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -13,8 +15,149 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This file uses Thierry's [R Package BIPnet](https://github.com/chekouo/BIPnet). [Here's BIPnet's documentation](https://github.com/chekouo/BIPnet/blob/master/BIPnet-manual.pdf).
 
+For successful installation, I needed gsl (gnu-scientific-library) installed on my machine. For Mac OS, I did so manually in the terminal with [homebrew's command `brew install gsl`](https://formulae.brew.sh/formula/gsl).
+
+Then, I ran the code commented out below to install BIPnet from GitHub.
+
 ```{r}
 # install.packages("devtools")
-library(devtools)
-install_github('chekouo/BIPnet')
+# library(devtools)
+# install_github('chekouo/BIPnet')
+```
+
+## Explore BIPnet's inputs and outputs with simulated data
+
+```{r}
+library(BIPnet)
+library(tidyverse)
+simulation_results <- Simulate(setting=1)
+simList <- list(simulation_results$X1,
+              simulation_results$X2,
+              simulation_results$Y)
+bip_results <- BIP(dataList=simList,
+    IndicVar=c(0,0,1), # omics view 1, omics view 2, clinical outcome
+    Method="BIP") # no network information at first
+
+# TODO: Layer a tidy function for getting variable selection criteria results
+TrueVar1 <- simulation_results$TrueVar1
+IndicVar = bip_results$IndicVar
+Np = length(IndicVar)
+for (m in 1:Np) {
+  if (IndicVar[m]==0){
+    print(ComputeVarCriteria(bip_results$VarSelMeanGlobal[[m]], TrueVar1))
+  }
+}
+
+# Prediction Results
+datTest=Simulate(scenario=1,setting=1,overlap="yes",seed=2)
+X_new=list(datTest$X1,datTest$X2);
+Pred=BIPpredict(dataListNew=X_new,Result=bip_results,meth="BMA")
+### Compute mse
+y_new=datTest$Y;
+mse=mean((Pred$ypredict-as.vector(y_new))^2);
+mse
+```
+
+## Load ABCD data and look into the missingness of the covariates
+
+Of those with complete imaging data, what are the percentages for a given covariate? 
+
+```{r}
+tidy_data <- readRDS("data/2023-02-24-tidy_data.RDS")
+cross_data <- tidy_data %>%
+  split(f = tidy_data$eventname)
+# check for NAs
+get_na_props <- function(data_t) {
+  n_obs <- nrow(data_t)
+  na_counts <- is.na(data_t) %>% colSums
+  na_counts <- na_counts[which(na_counts > 0)]
+  na_percents <- 100 * na_counts / n_obs
+  output <- list(n_obs, na_percents)
+  names(output) <- c("n_observations", "percent_missingness")
+  return(output)
+}
+lapply(cross_data, get_na_props)
+```
+
+## Benchmark running Thierry's code with baseline subset
+
+Key questions: 
+
+* What's the run time using BIP out of the box? 
+* What results might we yield cross-sectionally? 
+
+```{r}
+data <- cross_data$baseline_year_1_arm_1 %>% ungroup
+data <- data[complete.cases(data),] # TODO: deal with missingness
+data <- data[1:1000,] # TODO: Scale to entire dataset
+outcome <- data$outcome_internalizing_score # start with regression
+cortical_thickness <- data %>%
+  select(starts_with("smri_thick"))
+cortical_area <- data %>%
+  select(starts_with("smri_area"))
+covariates <- data %>%
+  select(-c("subjectkey", "eventname", 
+            starts_with("smri"), starts_with("outcome"),
+            "abcd_site", "rel_family_id")) %>% # TODO: Account for fixed effects in model
+  sapply(as.numeric) # convert to numeric for BIPnet
+
+dataList <- list(outcome, 
+                 cortical_thickness,
+                 cortical_area,
+                 covariates) %>% lapply(as.matrix)
+
+dataList %>% lapply(class)
+dataList %>% lapply(dim)
+
+# get training sample
+n_subs <- nrow(data)
+n_train <- floor(0.8*n_subs)
+train_index <- sample(1:n_subs, n_train)
+
+get_matrix_subset <- function(matrix, index, train = TRUE) { 
+  if (train == TRUE) {
+    matrix[index,] %>% as.matrix 
+  } else {
+    matrix[-index,] %>% as.matrix
+  }
+}
+trainList <- dataList %>%
+  lapply(get_matrix_subset, index = train_index)
+testList <- dataList %>%
+  lapply(get_matrix_subset, index = train_index, train = FALSE)
+
+trainList %>% lapply(dim)
+testList %>% lapply(dim)
+
+start_time <- Sys.time()
+
+bip_results <- BIP(dataList=trainList[1:3], 
+    IndicVar=c(1,0,0), # clinical outcome, omics view 1, omics view 2
+    Method="BIP") # no covariates/ network information for now
+
+end_time <- Sys.time()
+
+end_time-start_time
+
+IndicVar <- bip_results$IndicVar
+# check percentage of variables selected at least once in 95% of models
+VarSelMeanGlobalOmics_95Prop <- bip_results$VarSelMeanGlobal[which(IndicVar==0)] %>%
+  lapply(function(x) {
+    n_selected <- (x >= 0.95) %>% sum
+    n_vars <- length(x)
+    n_selected / n_vars
+    })
+names(VarSelMeanGlobalOmics_95Prop) <- c("thickness", "surface_area")
+print(VarSelMeanGlobalOmics_95Prop)
+
+# TODO: Inclusion of covariates caused the following error: 
+# Error in BIP(dataList = trainList, IndicVar = c(1, 0, 0, 2), Method = "BIP") : 
+  # NA/NaN/Inf in foreign function call (arg 6)
+
+# Prediction Results
+Pred = BIPpredict(dataListNew = testList[2:3], Result=bip_results, meth="BMA")
+### Compute mse
+y_new = trainList[[1]]
+mse = mean((Pred$ypredict-as.vector(y_new))^2);
+mse
 ```
