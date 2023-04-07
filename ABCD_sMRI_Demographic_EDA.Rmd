@@ -47,6 +47,14 @@ baseline_data = split_data$baseline_year_1_arm_1 %>% ungroup
 baseline_smri = select(baseline_data, starts_with("smri"))
 ```
 
+Now, I'll look into the age distributions of those with imaging data at baseline and year 2.
+
+```{r}
+tidy_data %>% 
+  select(subjectkey, interview_age, eventname) %>%
+  group_by(subjectkey)
+```
+
 ## Principal Components Analysis (PCA)
 
 For Principal Components Analysis (PCA), [the R function `prcomp()` is preferred](https://stats.stackexchange.com/questions/20101/what-is-the-difference-between-r-functions-prcomp-and-princomp). Note, the loadings are accessible in the resulting object's rotation feature.

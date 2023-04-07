@@ -1,7 +1,7 @@
 ---
 title: "BIPnet_EDA"
 author: "Aidan Neher"
-date: "2023-03-03"
+date: "`r Sys.Date()`"
 output:
   pdf_document: default
   html_document: default
@@ -13,16 +13,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Download R Package
 
-This file uses Thierry's [R Package BIPnet](https://github.com/chekouo/BIPnet). [Here's BIPnet's documentation](https://github.com/chekouo/BIPnet/blob/master/BIPnet-manual.pdf).
-
-For successful installation, I needed gsl (gnu-scientific-library) installed on my machine. For Mac OS, I did so manually in the terminal with [homebrew's command `brew install gsl`](https://formulae.brew.sh/formula/gsl).
-
-Then, I ran the code commented out below to install BIPnet from GitHub.
+This file uses Thierry's [R Package BIPnet](https://github.com/chekouo/BIPnet). [Here's BIPnet's documentation](https://github.com/chekouo/BIPnet/blob/master/BIPnet-manual.pdf). For successful installation, I needed gsl (gnu-scientific-library) installed on my machine. For Mac OS, I did so manually in the terminal with [homebrew's command `brew install gsl`](https://formulae.brew.sh/formula/gsl). Then, I ran the code commented out below to install BIPnet from GitHub.
 
 ```{r}
-# install.packages("devtools")
-# library(devtools)
-# install_github('chekouo/BIPnet')
+# devtools::install_github('chekouo/BIPnet')
 ```
 
 ## Explore BIPnet's inputs and outputs with simulated data
@@ -89,7 +83,7 @@ Key questions:
 ```{r}
 data <- cross_data$baseline_year_1_arm_1 %>% ungroup
 data <- data[complete.cases(data),] # TODO: deal with missingness
-data <- data[1:1000,] # TODO: Scale to entire dataset
+data <- data[1:100,] # TODO: Scale to entire dataset
 outcome <- data$outcome_internalizing_score # start with regression
 cortical_thickness <- data %>%
   select(starts_with("smri_thick"))
@@ -155,9 +149,10 @@ print(VarSelMeanGlobalOmics_95Prop)
   # NA/NaN/Inf in foreign function call (arg 6)
 
 # Prediction Results
-Pred = BIPpredict(dataListNew = testList[2:3], Result=bip_results, meth="BMA")
-### Compute mse
-y_new = trainList[[1]]
-mse = mean((Pred$ypredict-as.vector(y_new))^2);
-mse
+# Pred = BIPpredict(dataListNew = testList[2:3], 
+#                   Result=bip_results, meth="BMA")
+# ### Compute mse
+# y_new = trainList[[1]]
+# mse = mean((Pred$ypredict-as.vector(y_new))^2);
+# mse
 ```
