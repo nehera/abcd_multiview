@@ -10,6 +10,16 @@ output: powerpoint_presentation
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
+## Where are we going?
+
+* Research Introduction
+* Motivation
+* ABCD Study
+* Model Formulation
+* Ponderings/ Next Steps
+
+## NSF GRFP? 
+
 ## Intro: Bayesian Integrative Analysis and Prediction with Application to Atherosclerosis Cardiovascular Disease (Chekouo and Safo 2020)
 
 * Authors integrate clinical, demographic, and multi-omics data to ID genetic factors involved in artherosclerosis cardiovascular disease (ASCVD).
@@ -48,7 +58,7 @@ We are considering inclusion of a random intercept.
 
 ## Model Formulation: Integrating Multiple Data Types
 
-* Indices: $i$ subject, $j$ feature, $t$ time 1,2, $l$ component, $c$ site, $d$ family.
+* Indices: $j$ feature, $t$ time 1,2, $l$ component, $i$ subject in $c$ family in $d$ site (highest level)
 * Omics: $X^{(k)}_{ijt}=\Sigma_{l=1}^rU_{ilt}a_{ljt}^{(k)}+\epsilon_{ijt}^{(k)}$ where $U$ latent factor, $a$ *invariant* factor loading, $r$ number of components.
 * Assumptions: 
   + $U$ is $MVN(0,I_r)$ and $corr(U_{il1}, U_{il2})=\rho_l$
@@ -56,14 +66,17 @@ We are considering inclusion of a random intercept.
   
 ## Model Formulation: Incorporating Longitudinal and Mixed Effects
 
-* Indices: $i$ subject, $j$ feature, $t$ time 1,2, $l$ component, $c$ site, $d$ family.
-* Response: $Y_{it}=\Sigma_{l=1}^rU_{ilt}\beta_{lj}+\alpha t+Z_i\gamma_i+\beta_{0cd}+R_{icd}+\epsilon_{it}$ where $\alpha$ fixed temporal effect, $Z\gamma$ covariates, $\epsilon_{it}\overset{\mathrm{iid}}{\sim} N(0,\sigma_{it}^2)$ 
+* Indices: $j$ feature, $t$ time 1,2, $l$ component, $i$ subject in $c$ family in $d$ site (highest level)
+* Response: $Y_{it}=\Sigma_{l=1}^rU_{ilt}\beta_{lt}+\alpha t+Z_i \gamma_i+\beta_{0cd}+R_{icd}+\epsilon_{it}$ where $\alpha$ fixed temporal effect, $Z\gamma$ covariates, $\epsilon_{it}\overset{\mathrm{iid}}{\sim} N(0,\sigma_{it}^2)$ 
 * Level 2 Intercept: $\beta_{0cd}=\delta_{00c}+L_{0cd}$
-* Level 3 Intercept: $\delta_{00c}=\lambda_{000}+G_{00d}$
+* Level 3 Intercept: $\delta_{00d}=\lambda_{000}+G_{00d}$
 * $R\sim N(0,\sigma^2)$, $L\sim N(0,\tau^2)$, $G\sim N(0,\nu^2)$
 
-## Next Steps
+## Ponderings/ Next Steps
 
+* How many time points is required for longitudinal data analysis? Is two time points enough? 
+  + Potentially use a different data set?
+* Are we asking a biomedically relevant question? Is the priority more so about understanding adolescent brain changes specifically? Is the inclusion of a clinical outcome ahead of ourselves?
 * Implement cross-sectional model in R
 * Translate slow modules to C++
 * Impute missing covariates
@@ -75,4 +88,5 @@ We are considering inclusion of a random intercept.
 ## Acknowledgements
 
 * Mark Fiecas, Thierry Chekouo, and Sandra Safo for their mentorship and expertise. 
+* Saonli Basu, Tianzhong Yang, other faculty, fellow students, and family.
 * Interdisciplinary Biostatistics Training in Genetics and Genomics program, which is funded by NIH T32 Training Grant: T32 GM132063, 2020--2025
