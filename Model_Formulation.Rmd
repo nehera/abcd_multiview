@@ -1,0 +1,28 @@
+---
+title: Bayesian Longitudinal Integrative Analysis and Prediction with Application
+  to the ABCD Study
+author: "Aidan Neher"
+date: "2023-04-05"
+output: powerpoint_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Model Formulation: Integrating Multiple Data Types
+
+* Indices: $j$ feature, $t$ time 1,2, $l$ component, $i$ subject in $c$ family in $d$ site (highest level)
+* Omics: $X^{(k)}_{ijt}=\Sigma_{l=1}^rU_{ilt}a_{ljt}^{(k)}+\epsilon_{ijt}^{(k)}$ where $U$ latent factor, $a$ *invariant* factor loading, $r$ number of components.
+* Assumptions: 
+  + $U$ is $MVN(0,I_r)$ and $corr(U_{il1}, U_{il2})=\rho_l$
+  + $\epsilon_{ijt}^{(k)} \overset{\mathrm{iid}}{\sim} N(0,\sigma_{jtk}^2)$ and $cov(\epsilon_{ij1},\epsilon_{ij2})=\rho_{jk}$
+  
+## Model Formulation: Incorporating Longitudinal and Mixed Effects
+
+* Indices: $j$ feature, $t$ time 1,2, $l$ component, $i$ subject in $c$ family in $d$ site (highest level)
+* $Z_i:=$ clinical covariates that are fixed across time
+* Response: $Y_{it}=\Sigma_{l=1}^rU_{ilt}\beta_{lt}+\alpha t+Z_i \gamma+\beta_{0cd}+R_{icd}+\epsilon_{it}$ where $\alpha$ fixed temporal effect, $\gamma$ fixed covariate effect, $\epsilon_{it}\overset{\mathrm{iid}}{\sim} N(0,\sigma_{it}^2)$ 
+* Level 2 Intercept: $\beta_{0cd}=\delta_{00c}+L_{0cd}$
+* Level 3 Intercept: $\delta_{00d}=\lambda_{000}+G_{00d}$
+* $R\sim N(0,\sigma^2)$, $L\sim N(0,\tau^2)$, $G\sim N(0,\nu^2)$

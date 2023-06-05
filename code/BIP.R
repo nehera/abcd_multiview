@@ -109,8 +109,6 @@ library(MASS) # for MVN
   Paths <- unlist(groupList)
   
   # TODO: Translate mainfunction this into CPP
-  source("code/wrappers.R")
-  HelloWorld()
   dyn.load("code/BIP.so")
   result <- .C("mainfunction",
                Method1 = as.integer(meth),
@@ -141,3 +139,50 @@ library(MASS) # for MVN
                priorcompsel = priorcompselv, priorcompselo = priorcompselo,
                priorb0 = priorb0, priorb = as.double(priorb), priorgrpsel = priorgrpsel,
                probvarsel = as.double(probvarsel))
+  
+  ## Translate result into form for return
+  # TODO: Tidy translation :-) 
+  reseffect=result$EstLoadMod
+  nbrmodel=result$nbrmodel1
+  EstLoadModel=rep( list(list()), nbrmodel ) 
+  for (mo in 1:nbrmodel){
+    for (m in 1:Np){
+      x=sum(P[1:(m-1)])
+      y=sum(P[1:m])
+      if (m==1) {x=0}
+      init=1+x*nbrcomp+(mo-1)*nbrcomp*sum(P)
+      final=y*nbrcomp+(mo-1)*nbrcomp*sum(P)
+      EstLoadModel[[mo]][[m]]=matrix(reseffect[init:final],nbrcomp,byrow=T)
+    }
+  }
+  
+  resvarsel1=result$VarSelMeanGlobal
+  resvarsel2=result$VarSelMean
+  resvarsel3=result$GrpSelMean
+  resvarsel4=result$GrpEffectMean
+  resvarsel5=result$EstLoad
+  EstimateU=matrix(result$EstU,n,byrow=T)
+  CompoSelMean=matrix(result$CompoSelMean,Np,byrow=T)
+  IntGrpMean=matrix(result$IntGrpMean,Np,byrow=T)
+  VarSelMeanGlobal=list()
+  VarSelMean=list()
+  GrpSelMean=list()
+  GrpEffectMean=list()
+  EstLoad=list()
+  EstSig2=list()
+  m1=m2=m3=1
+  for (m in 1:Np){
+    VarSelMeanGlobal[[m]]=resvarsel1[m1:(m1-1+P[m])]
+    VarSelMean[[m]]=matrix(resvarsel2[m2:(m2-1+P[m]*nbrcomp)],P[m],byrow=T)
+    GrpSelMean[[m]]=matrix(resvarsel3[m3:(m3-1+K[m]*nbrcomp)],nbrcomp,byrow=T)
+    GrpEffectMean[[m]]=matrix(resvarsel4[m3:(m3-1+K[m]*nbrcomp)],nbrcomp,byrow=T)
+    EstLoad[[m]]=matrix(resvarsel5[m2:(m2-1+P[m]*nbrcomp)],nbrcomp,byrow=T)
+    EstSig2[[m]]=result$EstSig2[m1:(m1-1+P[m])]
+    m1=m1+P[m]
+    m2=m2+P[m]*nbrcomp
+    m3=m3+K[m]*nbrcomp
+    
+  }
+  
+  # return (list(EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,CompoSelMean=CompoSelMean,GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,IntGrpMean=IntGrpMean,EstLoad=EstLoad,EstLoadModel=EstLoadModel,nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD))
+  # }

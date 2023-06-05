@@ -1,5 +1,8 @@
-// compile with gcc -Wall -I/usr/local/Cellar -c BIP.c
-// R CMD SHLIB BIP.c
+//// Development ////
+// In terminal: cd Documents/GitHub/abcd_multiview/code
+// In terminal, compile: gcc -Wall -I/usr/local/Cellar -c BIP.c
+// In terminal, make available to R: R CMD SHLIB BIP.c
+// In RStudio, make .C("mainfunction", ...) available: dyn.load("code/BIP.so")
 
 #include <stdio.h>
 #include <string.h>
@@ -18,8 +21,8 @@
 #include <gsl/gsl_math.h>
 #include <time.h>
 #include "header.h"
-//R CMD SHLIB MainAlGo.c  utils.c myfunction.c -lgsl -lgslcblas -o BayesianFA.so
-//void mainfunction(const char *Method,int * n1,int *P,int *r1,double *dataset1, double *dataset2, double *outcome,int *K,int *path0, int *path1,int *nbrsample1,int *burninsample1,double *CompoSelMean,double *VarSelMean,double * VarSelMeanGlobal,double * GrpSelMean,double *GrpEffectMean,double * IntGrpMean){
+
+//// Define utility functions ////
 
 void SampleIntercept(gsl_rng * rr,int n, int r, double * intercept, double* sigma2, double sigma20,double ** U, double ** A, double **y){
   int i,l;
@@ -36,6 +39,7 @@ void SampleIntercept(gsl_rng * rr,int n, int r, double * intercept, double* sigm
   *intercept=(n/(invsig2*sigma2[0]))*meany+sqrt(1/invsig2)*gsl_ran_ugaussian(rr);
   
 }
+
 void logPostGam(double *logpo,int * IndVar,int Np,int r, int n,int* P,double *** Tau, double ** U,double *** X,double **s2,_Bool ** rho,_Bool *** Gam,double** qv,double* q){
   double logpost=0;
   int m,j,l;
@@ -85,7 +89,7 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
     gsl_matrix_view m1  = gsl_matrix_view_array (Sigma1, nx1,nx1);
     //printf("Error on Gam\n");
     
-    gsl_linalg_cholesky_decomp (&m1.matrix);
+    gsl_linalg_cholesky_decomp (&m1.matrix); // Shortcut for inverse calculation
     gsl_vector *xi =gsl_vector_alloc (n);
     for (i = 0; i < n; i++)
     {
@@ -113,7 +117,7 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
       quadF+=pow(X[i][j],2);
     }
     quadF=quadF/s2;
-    result=-(n/2.0)*log(s2)- 0.5*n*log(2.0*M_PI)-0.5*quadF;
+    result=-(n/2.0)*log(s2)- 0.5*n*log(2.0*M_PI)-0.5*quadF; // M_PI = pi constant
   }
   
   /*gsl_ran_multivariate_gaussian_log_pdf (xj, mu, &m.matrix, result, work);*/
@@ -181,7 +185,6 @@ double  logpost(int r, int n,int p, _Bool * rho,double ** Tau, double ** U,doubl
   return logpostrho;
 }
 
-
 void rho1(gsl_rng * rr,int r, int n,int p, _Bool * rho,double ** Tau, double ** U,double ** X, double q,double* s2,double* quadForm,_Bool** Gam,double *loggauss){
   int l,j;
   double logpostold=0;
@@ -213,7 +216,7 @@ void rho1(gsl_rng * rr,int r, int n,int p, _Bool * rho,double ** Tau, double ** 
   } 
 }
 
-void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, _Bool * rho,double ** Tau, double ** U,double ** X, double* q1,double q2,double* s2,double* quadForm,_Bool** Gam,double *loggauss){
+void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, _Bool * rho,double ** Tau, double ** U,double ** X, double* q1,double q2,double* s2,double* quadForm,_Bool** Gam,double *loggauss) {
   int l,j;
   _Bool *rhonew=malloc(r*sizeof(_Bool));
   _Bool Gamnew[p][r];
@@ -395,8 +398,7 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, _Bool * rho,doub
   free(rhonew); 
 }
 
-
-void sigma2(gsl_rng * rr, int p,int n,double a0, double b0, double* quadForm,double * s2){
+void sigma2(gsl_rng * rr, int p,int n,double a0, double b0, double* quadForm,double * s2) {
   int j;
   for (j=0;j<p;j++){
     double inv=1/(b0+0.5*s2[j]*quadForm[j]);
@@ -431,17 +433,9 @@ void EffectZero(int l,gsl_rng * rr,int K,int p,_Bool rho, _Bool * R,double* B,do
     } 
   } else {
     *B0=gsl_ran_gamma (rr, alphab0, 1/betab0);
-  } 
-  /*} 
-   else {
-   *B0=gsl_ran_gamma (rr, p*alpha+alphab0, 1/(kl+betab0));
-   *AcceptB0+=1;
-   //printf("Bo=%lf",kl+betab0);
-   }
-   */
+  }
   
 }
-
 
 void TauLambda(int l,gsl_rng * rr,int K,int p,double *A,double* B,double B0,double * Tau,_Bool ** Path,double alpha, double * lambda2,double *s2,_Bool ** Gam){
   /* K is the number of pathways
@@ -476,7 +470,6 @@ void TauLambda(int l,gsl_rng * rr,int K,int p,double *A,double* B,double B0,doub
     }
   }
 }
-
 
 void GroupEffect(int l,gsl_rng * rr,_Bool rho,int K,int p, _Bool * R,double *A,double* B,double B0,double * Tau,_Bool ** Path,double alphab, double betab,double w,double alpha, double * lambda2,double *s2,double * AcceptR,_Bool **Gam){
   /* K is the number of pathways
@@ -570,8 +563,6 @@ void GroupEffect(int l,gsl_rng * rr,_Bool rho,int K,int p, _Bool * R,double *A,d
   } // End for else if (rho==0)
 }//close for the function
 
-
-
 void LoadAOther(gsl_rng * rr,int r, int n,int p, _Bool * rho,double ** Tau,double ** A, double ** U,double ** X,double* s2,_Bool ** Gam){
   int s,s1,j,i;
   for (j=0;j<p;j++){
@@ -613,8 +604,6 @@ void LoadAOther(gsl_rng * rr,int r, int n,int p, _Bool * rho,double ** Tau,doubl
     }
   }
 }
-
-
 
 
 void EstimateLoad(gsl_rng * rr,int r, int n,int p, _Bool * rho,double ** Tau,double ** A, double ** U,double ** X,double* s2,_Bool ** Gam){
@@ -668,10 +657,7 @@ void EstimateLoad(gsl_rng * rr,int r, int n,int p, _Bool * rho,double ** Tau,dou
   }
 }
 
-
-
-void proposal(int n,_Bool R[n],_Bool R1[n],float phi, gsl_rng * r)
-{
+void proposal(int n,_Bool R[n],_Bool R1[n],float phi, gsl_rng * r) {
   int i;
   for (i=0; i<n;i++) 
     R1[i]=R[i];
@@ -770,7 +756,6 @@ void SampleUU(gsl_rng * rr,int r, int n,int Np,int * P,double *** A, double ** U
   free(SigmaInv);
 }
 
-
 void SampleU(gsl_rng * rr,int r, int n,int p0,int p1,int p2,double *** A, double ** U,double *** X,double** s2){
   int s,s1,j,i;
   double * SigmaInv=malloc(r*r*sizeof(double));
@@ -836,6 +821,7 @@ double mean(int n,double * x){
     me+=x[i];
   return me/n;
 }
+
 _Bool compar(int n,_Bool *u,_Bool *v){
   int i;
   for (i=0;i<n;i++){
@@ -876,9 +862,7 @@ _Bool **  UniqueModel(int nbrsample, int p, _Bool ** rhosample,int * modelidx,in
   return UniqModel;
 }
 
-
-void save1d(char *filename,int n,double *data)
-{
+void save1d(char *filename,int n,double *data) {
   FILE *qfile;
   qfile=fopen(filename,"wb");
   if(qfile==NULL){
@@ -893,9 +877,7 @@ void save1d(char *filename,int n,double *data)
   }
 }
 
-
-void save2d(char *filename,int n,int p,double ** data)
-{
+void save2d(char *filename,int n,int p,double ** data) {
   FILE *qfile;
   qfile=fopen(filename,"wb");
   if(qfile==NULL){
@@ -916,8 +898,7 @@ void save2d(char *filename,int n,int p,double ** data)
 int multivariate_gaussian (const gsl_rng * r,
                            const gsl_vector * mu,
                            const gsl_matrix * L,
-                           gsl_vector * result)
-{
+                           gsl_vector * result) {
   /*
    * L     matrix resulting from the Cholesky decomposition of
    *  *      the inverse of   variance-covariance matrix Sigma^-1 = L L^T (dimension d x d)
@@ -952,14 +933,10 @@ int multivariate_gaussian (const gsl_rng * r,
   }
 }
 
-
-
-
-
 int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
                       const gsl_matrix * L,
                       double * result,double *quadF,
-                      gsl_vector * work){
+                      gsl_vector * work) {
   const size_t M = L->size1;
   const size_t N = x->size;
   size_t i;
@@ -996,14 +973,11 @@ int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
   
 }
 
-
-
-
 int logmultigaussian(const gsl_vector * x,
                      const gsl_vector * mu, 
                      const gsl_matrix * L,
                      double * result,double *quadF,
-                     gsl_vector * work){
+                     gsl_vector * work) {
   const size_t M = L->size1;
   const size_t N = L->size2;
   if (M != N)
@@ -1064,8 +1038,8 @@ double inverseGaussian(gsl_rng * r, double mu, double lambda) {
   else
     return (mu*mu)/x;
 }
-void readBoolVector(char *filename, int nRows,  _Bool * data )
-{
+
+void readBoolVector(char *filename, int nRows,  _Bool * data ) {
   
   FILE *fp = fopen (filename, "r");
   if (fp==NULL)
@@ -1087,9 +1061,7 @@ void readBoolVector(char *filename, int nRows,  _Bool * data )
   }
 }
 
-
-void sort(int n,double *x,int *idx)
-{
+void sort(int n,double *x,int *idx) {
   int i,j;
   double a;
   int id;
@@ -1112,8 +1084,6 @@ void sort(int n,double *x,int *idx)
   }
   
 }
-
-
 
 double auc(int n, double * esti,_Bool class[n]){
   double fpr[n+2],tpr[n+2];
@@ -1149,11 +1119,7 @@ double auc(int n, double * esti,_Bool class[n]){
   return auc1;
 }
 
-
-
-
-void readBoolArray(char *filename, int nRows, int nCols, _Bool ** data )
-{
+void readBoolArray(char *filename, int nRows, int nCols, _Bool ** data ) {
   
   FILE *fp = fopen (filename, "r");
   if (fp==NULL)
@@ -1178,10 +1144,7 @@ void readBoolArray(char *filename, int nRows, int nCols, _Bool ** data )
   }
 }
 
-
-
-void readDoubleArray(char *filename, int nRows, int nCols, double ** data )
-{
+void readDoubleArray(char *filename, int nRows, int nCols, double ** data ) {
   
   FILE *fp = fopen (filename, "r");
   if (fp==NULL)
@@ -1201,8 +1164,8 @@ void readDoubleArray(char *filename, int nRows, int nCols, double ** data )
     fclose(fp);
   }
 }
-double **dmatrix(int nrl, int nrh, int ncl, int nch)
-{
+
+double **dmatrix(int nrl, int nrh, int ncl, int nch) {
   int i;
   double **m;
   
@@ -1219,23 +1182,24 @@ double **dmatrix(int nrl, int nrh, int ncl, int nch)
   return m;
 }
 
-void nrerror(char error_text[])
-{
+void nrerror(char error_text[]) {
   printf("Utils run-time error...\n");
   printf("%s\n",error_text);
   printf("...now exiting to system...\n");
   exit(1);
 }
-void free_dmatrix(double **m, int nrl, int nrh, int ncl, int nch)
-{
+
+// Don't need to free in R. Need to be memory conscious in C++
+void free_dmatrix(double **m, int nrl, int nrh, int ncl, int nch) {
   int i;
   
   for(i=nrh;i>=nrl;i--) free((char*) (m[i]+ncl));
   
   free((char*) (m+nrl));
 }
-void findc(int n,_Bool R[n],int a,int * IDX, int *nx)
-{
+
+// Unclear if analog needed ... 
+void findc(int n,_Bool R[n],int a,int * IDX, int *nx) {
   int ii_data[n];
   int idx = 0;
   int  ii = 0;
@@ -1268,8 +1232,7 @@ void findc(int n,_Bool R[n],int a,int * IDX, int *nx)
   
 }
 
-_Bool **bmatrix(int nrl, int nrh, int ncl, int nch)
-{
+_Bool **bmatrix(int nrl, int nrh, int ncl, int nch) {
   int i;
   _Bool **m;
   
@@ -1285,8 +1248,9 @@ _Bool **bmatrix(int nrl, int nrh, int ncl, int nch)
   }
   return m;
 }
-void free_bmatrix(_Bool **m, int nrl, int nrh, int ncl, int nch)
-{
+
+// Don't need to free in R. Need to be memory conscious in C++
+void free_bmatrix(_Bool **m, int nrl, int nrh, int ncl, int nch) {
   int i;
   
   for(i=nrh;i>=nrl;i--) free((_Bool*) (m[i]+ncl));
@@ -1294,8 +1258,12 @@ void free_bmatrix(_Bool **m, int nrl, int nrh, int ncl, int nch)
   free((_Bool*) (m+nrl));
 }
 
+//// Define mainfunction ////
+
 void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets,int * IndVar,int *K,int * Paths,int* maxmodel1, int *nbrsample1,int *burninsample1,double *CompoSelMean,double *VarSelMean,double * VarSelMeanGlobal,double * GrpSelMean,double *GrpEffectMean,double * IntGrpMean,double * EstU, double * EstSig2,double *InterceptMean,double *EstLoadMod,double *EstLoad,int *nbrmodel1,double *postgam,double* priorcompsel,double * priorcompselo,double* priorb0,double* priorb,double *priorgrpsel,double *probvarsel){
 
+  // Report on Parameters
+  
   setvbuf(stdout, NULL, _IONBF, 0);
   int  Method=Method1[0];
   if (Method==1)
@@ -1319,6 +1287,9 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   }
   int r=r1[0];
   printf("Number of components is %d\n",r);
+  
+  // Reshape data
+  
   //int P[Np];P[0]=p0;P[1]=p1;;P[2]=p2;
   double *** X=malloc(Np*sizeof(double **));
   double *** X1=malloc(Np*sizeof(double **));
@@ -1332,13 +1303,7 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
       }}
   }
   //int K0=K[0];int K1=K[1];int K2=K[2];
-  /*
-   for (m=0;m<Np;m++){
-   if (IndVar[m]!=1)
-   printf("Number of groups for platform %d is %d\n",m,K[m]);
-   else printf("Number of groups for outcome is 1");
-   }
-   */
+
   _Bool *** Path=malloc(Np*sizeof(_Bool **));
   int m1=0;//_Bool pp=0;
   int kk=0;
@@ -1350,8 +1315,6 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
       for (j=0;j<P[m];j++){
         for (k=0;k<K[m];k++){
           Path[m][j][k]=Paths[kk];kk++;
-          //if (m==0) pp=path0[j*K[m]+k]; else if (m==1) pp=path1[j*K[m]+k];
-          //Path[m][j][k]=pp;
         }
       }
       m1+=1;
@@ -1379,39 +1342,27 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     A[m]=dmatrix(0,r-1,0,P[m]-1);
   }
 
-  /* Hyperparameter*/
+  // Hyperparameter
   double * q=malloc(Np*sizeof(double));
   double ** qv=malloc(Np*sizeof(double*));
   double ** wg=malloc(Np*sizeof(double*));
   for (m=0;m<Np;m++){
     q[m]=0.5;
-    qv[m]=malloc(r*sizeof(double));//
-    wg[m]=malloc(r*sizeof(double));//proba. for group selection
+    qv[m]=malloc(r*sizeof(double));
+    wg[m]=malloc(r*sizeof(double)); //proba. for group selection
   }
-  //double q=0.5;
-  //double qv=0.5;
-  //double a0=0.01;double b0=0.01;
   double a0=1;double b0=1;
-  //double alphab=1;double betab=1;
   double alphab=priorb[0];double betab=priorb[1];
-  //double al=1;double bl=1;// Hyper for q
   double al=priorcompsel[0];double bl=priorcompsel[1];// Hyper for q
-  //double al0=1;double bl0=1;// Hyper for q in the outcome
   double al0=priorcompselo[0];double bl0=priorcompselo[1];// Hyper for q in the outcome
-  //double alv=1;double blv=1;// Hyper for qv
-  //double alphab0=2; double betab0=2;
-  //double alv=priorselv[0];double blv=priorselv[1];
   double alphab0=priorb0[0]; double betab0=priorb0[1];//Hyper for b0
-  //double w=0.5;//priors for group selection
-  //double alg=1;double blg=1;
   double alg=priorgrpsel[0];double blg=priorgrpsel[1];
   double alpha=1;
+  
   //Initialization
-
   _Bool ** rhoest=malloc(Np*sizeof(_Bool*));
   double ** rhomean=malloc(Np*sizeof(double*));
   double ** Gamvs=malloc(Np*sizeof(double*));
-  //_Bool ** GamvsK=malloc(Np*sizeof(_Bool*));
   _Bool *** R=malloc(Np*sizeof(_Bool**));
   _Bool *** Gam=malloc(Np*sizeof(_Bool**));
   double *** Gammean=malloc(Np*sizeof(double**));
@@ -1511,17 +1462,10 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     }
   }
   dim+=(Np-1)*r;
+  
+  // Sample posteriors
 
-  /*
-   for (m=0;m<Np;m++){
-   if (IndVar[m]==2){
-   for (j=0;j<P[m];j++) {
-   printf("Gam==%d ",Gam[m][j][0]);
-   }
-   }
-   }
-   */
-  int t;
+  int t; // TODO: Define in the loop, not globally! C/ C++ has scope protection
   int N=nbrsample+burninsample;
   double intercp;
   _Bool ** rhomodel=malloc(nbrsample*sizeof(_Bool*));
@@ -1545,11 +1489,10 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         for (j=0;j<P[m];j++){
           sumeta+=Gam[m][j][l];
         }
-        //qv[m][l]=gsl_ran_beta (rr, alv+rhoest[m][l]*sumeta, blv+rhoest[m][l]*(P[m]-sumeta));
         if (IndVar[m]==2) qv[m][l]=1;
       }
       if (IndVar[m]==1){
-        q[m]=gsl_ran_beta (rr, al0+sumrho, bl0+r-sumrho);
+        q[m]=gsl_ran_beta (rr, al0+sumrho, bl0+r-sumrho); // Beta distribution in paper? 
         for (l=0;l<r;l++){
           qv[m][l]=q[m];
         }
@@ -1559,6 +1502,7 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         q[m]=gsl_ran_beta (rr, al+sumrho, bl+r-sumrho);
       }
 
+// G
       for (j=0;j<P[m];j++){
         logGausQuadForm(j,r, n,P[m], Tau[m], U,X1[m], s2[m][j],&quadForm[m][j],Gam[m][j],&loggauss[m][j]);
         if (t==0){
@@ -1580,16 +1524,15 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         if ((Method==1)&&(IndVar[m]==0)){
           sumrho=0;
           for (k=0;k<K[m];k++) sumrho+=R[m][l][k];
-          //if ((strcmp(Method,"GroupInfo")==0)&&(P[m]!=1))
+
           wg[m][l]=gsl_ran_beta(rr,alg+rhoest[m][l]*sumrho,blg+rhoest[m][l]*(K[m]-sumrho));
           GroupEffect(l,rr,rhoest[m][l],K[m],P[m], R[m][l],A[m][l],B[m][l],B0[m][l],Tau[m][l],Path[m],alphab, betab,wg[m][l],alpha, lambda2[m][l],s2[m],AcceptR[m][l],Gam[m]);}
         EffectZero(l,rr,K[m],P[m],rhoest[m][l], R[m][l],B[m][l],&B0[m][l],Path[m],alphab0, betab0,alpha, lambda2[m][l],&AcceptB0[m][l],Gam[m]);
       }
 
     }
-    //SampleU(rr,r,n,p0,p1,p2,A,U,X1,s2);
-    SampleUU(rr,r,n,Np,P,A,U,X1,s2);
 
+        SampleUU(rr,r,n,Np,P,A,U,X1,s2);
 
     if (t>=burninsample){
       *InterceptMean+=intercp/nbrsample;
@@ -1635,121 +1578,16 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
           }
         }}
 
-      //if (t%(N/20)==1){
       if (t%((N+5)/5)==1){
-        //R_CheckUserInterrupt();
-        //printf("Intercept for outcome is  %.3lf is =\n",intercp);
-        /*
-         for (m=0;m<Np;m++){
-         //printf("q is %lf \n",q[m]);
-         //printf("B0 for platform %d is =\n",m);
-         for (l=0;l<r;l++){
-         printf("%lf ",B0[m][l]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         for (m=0;m<Np;m++){
-         printf("qv for platform %d is =\n",m);
-         for (l=0;l<r;l++){
-         printf("%lf ",qv[m][l]);
-         }
-         printf("\n");
-         }
-         */
-        printf("\n");
-        /*
-         for (m=0;m<Np;m++){
-         if (IndVar[m]==0)//if (P[m]!=1)
-         //printf("Sigma2 for platform %d is=\n",m);
-         //else if  (IndVar[m]==1) printf("Sigma2 for outcome is=\n");
-         //else if  (IndVar[m]==2) printf("Sigma2 for clin. factor is=\n");
-         for (j=0;j<MIN(10,P[m]);j++){
-         printf("%lf ",s2[m][j]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         */
-        /*
-         if (Method==1){
-         //if (strcmp(Method,"GroupInfo")==0){
-         for (m=0;m<Np;m++){
-         if (IndVar[m]==0)//if (P[m]!=1)
-         printf("Group selection for platform %d is=\n",m);
-         else if  (IndVar[m]==1)  printf("Group selection for outcome  is==\n");
-         for (l=0;l<r;l++){
-         for (k=0;k<K[m];k++){
-         printf("%d ",R[m][l][k]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         }
-         }
-         */
-        /*
-         for (m=0;m<Np;m++){
-         if  (IndVar[m]==0)
-         //if (P[m]!=1)
-         printf("Component selection for platform %d is=\n",m);
-         else if  (IndVar[m]==1) printf("Component selection for outcome\n");
-         for (l=0;l<r;l++){
-         printf("%d ",rhoest[m][l]);
-         }
-         printf("\n");
-         }
-         printf("\n");
 
-         for (m=0;m<Np;m++){
-         if  (IndVar[m]==0)
-         //	if (P[m]!=1)
-         printf("Variable selection for platform %d \n",m);
-         else if  (IndVar[m]==1) printf("Variable selection for outcome\n");
-         for (l=0;l<r;l++){
-         for (j=0;j<MIN(10,P[m]);j++){
-         printf("%d ",Gam[m][j][l]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         }
-         printf("\n");
-         */
+        printf("\n");
+
         printf("The number of iterations is  %d\n",t);
       }
     }
   }
   printf("\n");
-  /*
 
-   for (m=0;m<Np;m++){
-   if (P[m]!=1)
-   printf("AcceptR for platform %d is=\n",m);
-   else printf("AcceptR for outcome is=\n");
-   for (l=0;l<r;l++){
-   for (k=0;k<MIN(K[m],10);k++){
-   printf("%.2lf ",AcceptR[m][l][k]/N);
-   }
-   printf("\n");
-   }
-   printf("\n");
-   }
-         }
-   for (m=0;m<Np;m++){
-   if (P[m]!=1)
-   printf("AcceptB0 for platform %d is=\n",m);
-   else printf("AcceptB0 for outcome is=\n");
-   for (l=0;l<r;l++){
-   printf("%.2lf ",AcceptB0[m][l]/N);
-   }
-   printf("\n");
-   }
-   printf("\n");
-
-
-
-   */
   int sumP=0;int sumK=0;
   for (m=0;m<Np;m++){
     for (l=0;l<r;l++){
@@ -1774,8 +1612,7 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     sumP+=P[m];sumK+=K[m];
   }
 
-
-  /* Loading estimate for prediction using multiple models*/
+  // Loading estimate for prediction using multiple models
   int u=0;
   for (i=0;i<n;i++){
     for (l=0;l<r;l++){
@@ -1794,7 +1631,6 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     for (m=0;m<Np;m++){
 
       if (IndVar[m]==1){
-        //		SampleIntercept(rr,n, r, &intercp, s2[m], 100.0,U, A[m], X[m]);
         for (i=0;i<n;i++){
           for (j=0;j<P[m];j++){
             X1[m][i][j]=X[m][i][j]-*InterceptMean;
@@ -1855,7 +1691,7 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         for (l=0;l<r;l++){ rhoest[m][l]=Gam[m][0][l];}
       }
     }
-    //for (l=0;l<r;l++){ rhoest[Np-1][l]=Gam[Np-1][0][l];}
+
     for (m=0;m<Np;m++){
       EstimateLoad(rr,r, n,P[m],rhoest[m],Taumean[m],A[m],meanU,X1[m],s2Mean[m],Gam[m]);
       for (l=0;l<r;l++){
@@ -1866,7 +1702,6 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   }
   free(modelidx);free(logpo);free(highmodelidx);
   free_bmatrix(UniqModel,0,countmodel-1,0,dim-1);
-
 
   double thres=0.5;
   ll=0;int ls=0;
@@ -1928,6 +1763,5 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   double  time_taken = ((double)t1)/CLOCKS_PER_SEC; // in seconds
   printf("\n\nTime taken in seconds is %f\n",time_taken);
   printf("\nTime taken in minutes is %f\n",time_taken/60);
-  // printf("\nTime taken in hours is %f\n",time_taken/3600);
 
 }
