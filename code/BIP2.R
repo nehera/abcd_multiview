@@ -26,9 +26,10 @@ prior_group_selection <- c(1, 1) # Hyperparameters of a beta(a,b) distribution; 
 prior_variable_selection <- 0.05 # Prior probability for variable selection
 
 #### ----- Begin Function ---- ####
+# TODO: Initiate development from here on since .RData includes everything up to this line.
 library(tidyverse)
 library(Rcpp)
-library(emdbook) # for MVN
+library(mvtnorm) # for dmvnorm
 
 # BIP <- function(data_list = data_list, # TODO: This default might cause probs
 #                 indic_var = indic_var, # TODO: This default might cause probs
@@ -131,25 +132,6 @@ sample_beta_posterior <- function(n_samples = 1, prior_alpha, prior_beta, n, sum
   return(rbeta(n_samples, posterior_alpha, posterior_beta))
 }
 
-calculate_logG_j <- function(Gamma_m, X_m_j, U,
-                          q_variable_level_m,
-                          Sigma2_m_j, Tau_m_j,
-                          n_observations) {
-  
-  logProd <- log(q_variable_level_m) %>% sum
-  U_active_index <- which(Gamma_m == 1)
-  U_active <- U[, U_active_index]
-  mvnorm_variance <- Sigma2_m_j *
-    U_active %*% diag(Tau_m_j) %*%
-    t(U_active) + diag(n_observations) # TODO: Consider Woodbury Identity for matrix inversion
-  logMVN <- dmvnorm(x = X_m_j, 
-                    mu = rep(0, n_observations),
-                    Sigma = mvnorm_variance,
-                    log = TRUE)
-  logG_j <- logMVN + logProd # TODO: Is there a way to calculate w/ o reverting to exp scale?
-  return(logG_j)
-}
-
 #### ---- MCMC initialization
 
 # Step 0. Initialize parameters to estimate
@@ -174,6 +156,12 @@ Gamma <- init_vector_list(initial_value = 1, n_views, rep(r, n_views))
 # Variable level 
 
 q_variable_level <- init_vector_list(initial_value = prior_variable_selection, n_views, rep(r, n_views)) # Probability for the mth data type, for the lth active component, a variable is active
+
+# Fix Covariable Component and Variable Selection Probabilities to 1
+if (length(covariate_index) > 0) {
+  q_component_level[covariate_index] <- 1 
+  q_variable_level[[covariate_index]] <- rep(1, r)
+}
 
 Eta <- init_matrix_list(initial_value = 1, n_views, r, n_features) # Thierry's code seemingly refers to eta parameters as "rho"
 
@@ -208,24 +196,20 @@ for (t in 1:n_iterations) {
   Y_prime <- data_list[[response_index]] - intercept
   
   # Step 1. Sample component and variable selection probabilities
-
   Gamma_sums <- sapply(Gamma, sum)
-  for (m in 1:n_views) {
+  for (m in c(omics_index, response_index)) {
     if (m %in% omics_index) {
       q_component_level[m] <- sample_beta_posterior(prior_alpha = prior_component_selection[1],
                                                     prior_beta = prior_component_selection[2],
                                                     n = r, summation = Gamma_sums[m])
       
-      # Probability of variable selection fixed for omics data at prior_variable_selection
+      # Probability of variable selection fixed for omics data by prior_variable_selection
     } else if (m %in% response_index) {
       q_component_level[m] <- sample_beta_posterior(prior_alpha = prior_response_selection[1],
                                                     prior_beta = prior_response_selection[2],
                                                     n = r, summation = Gamma_sums[m])
       q_variable_level[[m]] <- rep(q_component_level[m], r)
-    } else if (m %in% covariate_index) { 
-      q_component_level[m] <- 1 # TODO: Remove redundant assignment
-      q_variable_level[[m]] <- rep(1, r) # TODO: Remove redundant assignment
-    }
+    } 
   }
   
   m <- 1 # TODO: Remove post-dev
@@ -233,10 +217,10 @@ for (t in 1:n_iterations) {
   for (m in omics_index) {
 
     X_m <- data_list[[m]]
+    l <- 1 # TODO: Remove post-dev
   
   # Step 2. Sample component, feature activation parameters (gamma, eta respectively) by Metropolis-Hastings
     
-    l <- 1 # TODO: Remove post-dev
     for (l in 1:r) {
       gamma_old <- Gamma[[m]][l]
       eta_old <- Eta[[m]][l,]
@@ -248,24 +232,49 @@ for (t in 1:n_iterations) {
       } else if (gamma_old == 0) {
         # Propose activation
         gamma_prime <- 1
-        
-        j <- 1 # TODO: Remove post-development
-        
-        # TODO: Parallelize!
-        P_l_dot <- numeric(n_features[m])
-        eta_prime <- numeric(length(eta_old))
+        # Sample eta_prime
+        get_logProd_mlj <- function(l, q_variable_level_m, Eta_mj.) {
+          active_probs <- q_variable_level_m
+          inactive_probs <- 1 - q_variable_level_m
+          probs <- c(active_probs[Eta_mj.], inactive_probs[1 - Eta_mj.])
+          return(sum(log(probs)))
+        }
+        get_U_active_m <- function(m, Gamma, U) {
+          U_active_index <- which(Gamma_m == 1)
+          U[, U_active_index]
+        }
+        calculate_mvnorm_variance_mj <- function(m, j, U_active_m, Sigma2, Tau) {
+          n_observations <- nrow(U_active_m)
+          Sigma2[[m]][j] * U_active_m %*% diag(Tau[[m]][, j]) %*% t(U_active_m) + diag(n_observations)
+        }
+        get_log_dmvnorm_mj <- function(X_mj, mvnorm_variance_mj, n_observations) {
+          mvtnorm::dmvnorm(x = X_mj, mean = rep(0, n_observations), sigma = mvnorm_variance_mj, log = TRUE)
+        }
+        get_P_lj <- function(logG_lj_0, logG_lj_1) {
+          x_0 <- max(logG_lj_0, logG_lj_1)
+          x <- logG_lj_1 - x_0
+          y <- logG_lj_0 - x_0
+          exp(x) / (exp(x) + exp(y))
+        }
+        eta_l_prime <- numeric(length(eta_old))
         for (j in 1:n_features[m]) {
-          logG_j1 <- calculate_logG_j(Gamma[[m]], X_m[, j], U, 
-                        q_variable_level[[m]], 
-                        Sigma2[[m]][j], Tau[[m]][, j], 
-                        n_observations)
-          
-          logG_j0 <- calculate_logG_j(Gamma[[m]], X_m[, j], U, 
-                                 (1 - q_variable_level[[m]]), 
-                                 Sigma2[[m]][j], Tau[[m]][, j], 
-                                 n_observations)
-          P_lj <- exp(logG_j1) / (exp(logG_j1) + exp(logG_j0))
-          eta_prime[j] <- rbinom(1, 1, prob = P_lj)
+          logProd_m <- q_variable_level[[m]] %>% calculate_logProd_m()
+          U_active_m <- get_U_active_m(m, Gamma, U)
+          mvnorm_variance_mj <- calculate_mvnorm_variance_mj(m, j, U_active_m, Sigma2, Tau)
+          logdmvnorm_mj <- get_log_dmvnorm_mj(X_mj = data_list[[m]][, j],
+                             mvnorm_variance_mj,
+                             n_observations)
+          Eta_mj <- Eta[[m]][, j]
+          Eta_mj0 <- Eta_mj 
+          Eta_mj0[l] <- 0
+          Eta_mj1 <- Eta_mj
+          Eta_mj1[l] <- 1
+          logProd_lj_0 <- get_logProd_mlj(l, q_variable_level[[m]], Eta_mj0)
+          logProd_lj_1 <- get_logProd_mlj(l, q_variable_level[[m]], Eta_mj1)
+          logG_lj_0 <- logdmvnorm_mj + logProd_lj_0
+          logG_lj_1 <- logdmvnorm_mj + logProd_lj_1
+          P_lj <- get_P_lj(logG_lj_0, logG_lj_1)
+          eta_l_prime[j] <- rbinom(1, 1, prob = P_lj)
         }
       }
       
