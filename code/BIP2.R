@@ -145,9 +145,13 @@ get_logProd_mlj <- function(q_variable_level_m, Eta_mj.) {
   return(sum(log(probs)))
 }
 
-calculate_mvnorm_variance_mj <- function(j, U_active_m, Sigma2_m, Tau2_m) {
+calculate_Sigma_j <- function(j, U_active_m, Sigma2_m, Tau2_m) {
   n <- nrow(U_active_m)
-  Sigma2_m[j] * U_active_m %*% diag(Tau2_m[, j]) %*% t(U_active_m) + diag(n)
+  U_active_m %*% diag(Tau2_m[, j]) %*% t(U_active_m) + diag(n)
+}
+
+calculate_mvnorm_variance_mj <- function(j, U_active_m, Sigma2_m, Tau2_m) {
+  Sigma2_m[j] * calculate_Sigma_j(j, U_active_m, Sigma2_m, Tau2_m)
 }
 
 get_log_dmvnorm_mj <- function(X_mj, mvnorm_variance_mj) {
@@ -423,58 +427,56 @@ for (t in 1:n_iterations) {
     
     # Step 3. Sample variance parameters sigma, Tau2, lambda
     
-    active_components <- which(Gamma[[m]] == 1)
-    active_features <- which(Eta[[m]] == 1)
+    sample_Sigma2_m <- function(m, prior_residual_variance, data_list, Tau2) {
+      X_m <- data_list[[m]]
+      n <- nrow(X_m); n_j <- ncol(X_m)
+      alpha <- prior_residual_variance[1] + n/ 2
+      betas <- numeric(n_j)
+      for (j in 1:n_j) {
+        Sigma_j_inverse <- calculate_Sigma_j(j, U_active_m, Sigma2_m, Tau2_m) %>% solve() # TODO: Consider Woodbury Identity for Speeding inversion
+        betas[j] <- 1/ 2 * t(X_m[, j]) %*% Sigma_j_inverse %*% X_m[, j] + prior_residual_variance[2]
+      }
+      1/ rgamma(n_j, alpha, betas)
+    }
     
-    Sigma2_m_prime <- Sigma2[[m]]
-    Tau2_m_prime <- Tau2[[m]]
-    Lambda_m_prime <- Lambda2[[m]]
+    Sigma2_prime <- lapply(1:n_views, sample_Sigma2_m, prior_residual_variance, data_list, Tau2)
     
-    for (l in 1:r) {
-    
-      for (j in 1:n_features[m]) {
-        
-        if (j %in% active_features) {
-          
-          ## Sample from conditionals
-          alpha <- prior_residual_variance[1] + n_observations/2
-          sigma_j <- U[, active_components] %*% 
-            diag(Tau2[[m]][,j]) %*% 
-            t(U[, active_components]) + 
-            diag(n_observations)
-          sigma_j_inverse <- sigma_j %>% solve # TODO: implement shortcut for getting sigma_j_inverse
-          beta <- 1/2 * t(X_m[,j]) %*% sigma_j_inverse %*% X_m[,j] + prior_residual_variance[2]
-          Sigma2_m_prime[j] <- 1/ rgamma(n = 1, alpha, beta)
-          
-          mu_prime <- sqrt(2 * Lambda2[[m]][l,j] * Sigma2[[m]][j] / A[[m]][l,j]^2)
-          lambda_prime <- 2 * Lambda2[[m]][l,j]
-          # TODO: Ensure inverse gaussian simulation appropriate
-          set.seed(1)
-          r_inverseGaussian <- function(mu, lambda) {
-            v <- rnorm(1)
-            y <- v^2
-            x <- mu + (mu^2 * y)/(2*lambda) - (mu/(2*lambda)) * sqrt(4*mu*lambda*y + mu^2*y^2)
-            test <- runif(1)
-            if (test <= (mu)/(mu + x))
-              return(x)
-            else
-              return((mu^2)/x)
-          }
-          Tau2_m_prime[l,j] <- 1 / r_inverseGaussian(mu_prime, lambda_prime)
-          
-          # Lambda_m_prime[l,j] <- rgamma(n = 1, 
-          #                               shape = ,
-          #                               rate = )
-          
-        } else {
-          
-          ## Sample from pseudo-priors
-          
-        }
+
+    sample_Tau2_Lambda2_m <- function(m, prior_lambda_alpha, Eta, group_list, 
+                                      Tau2, Lambda2, Sigma2, A, b_0, B) {
       
+      dims <- dim(Eta[[m]])
+      active_index <- which(Eta[[m]] == 1)
+      P_m <- group_list[[m]]
+
+      Tau2_m_prime <- Tau2[[m]]
+      Lambda2_m_prime <- Lambda2[[m]]
+      
+      for (l in 1:dims[1]) {
+        for (j in 1:dims[2]) {
+          if ( (l*j) %in% active_index ) {
+            mu_prime <- sqrt( 2 * Lambda2[[m]][l,j] * Sigma2[[m]][j] / A[[m]][l,j]^2 )
+            lambda2_prime <- 2 * Lambda2[[m]][l,j]
+            Tau2_m_prime[l,j] <- 1/ statmod::rinvgauss(1, mean = mu_prime, shape = lambda2_prime)
+            Lambda2_m_prime[l,j] <- rgamma(1, prior_lambda_alpha + 1, 
+                                 b_0[[m]][l] + t(P_m[j, ]) %*% B[[m]][l, ] + Tau2[[m]][l,j])
+            
+          } else {
+            # Pseudo-priors
+            Tau2_m_prime[l,j] <- rexp(1, rate = Lambda2[[m]][l,j])
+            Lambda2_m_prime[l,j] <- rgamma(prior_lambda_alpha, b_0[[m]][l])
+          }
+        }
       }
       
+      return(list(Tau2_m_prime, Lambda2_m_prime))
     }
+
+    Tau2_Lambda2 <- lapply(1:n_views, sample_Tau2_Lambda2_m, prior_lambda_alpha,
+           Eta, group_list, Tau2, Lambda2, Sigma2, A, b_0, B)
+    # Split Tau2_Lambda2 list
+    Tau2 <- lapply(Tau2_Lambda2, `[[`, 1)
+    Lambda2 <- lapply(Tau2_Lambda2, `[[`, 2)
     
     # Step 4. Sample A
       
