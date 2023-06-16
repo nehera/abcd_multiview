@@ -97,20 +97,6 @@ data_list[omics_index] <- lapply(data_list[omics_index], scale)
 
 #### ---- MCMC functions
 
-## Functions for initialization
-
-init_matrix_list <- function(initial_value, n_views, n_row, n_col_vector) {
-  lapply(1:n_views, function(m, n_row, n_col_vector) {
-    matrix(initial_value, nrow = n_row, ncol = n_col_vector[m])
-  }, n_row, n_col_vector)
-}
-
-init_vector_list <- function(initial_value, n_views, len_vector) {
-  lapply(1:n_views, function(m, initial_value, len_vector) {
-    rep(initial_value, len_vector[m])
-  }, initial_value, len_vector)
-}
-
 ## Functions for sampling posterior
 
 sample_intercept <- function(Y, A_outcome, U, Sigma2_outcome, Sigma2_0 = 100) {
@@ -296,6 +282,12 @@ A <- lapply(1:n_views, init_A_m, r, n_features,
 
 ## Grouping information parameters
 
+init_vector_list <- function(initial_value, n_views, len_vector) {
+  lapply(1:n_views, function(m, initial_value, len_vector) {
+    rep(initial_value, len_vector[m])
+  }, initial_value, len_vector)
+}
+
 b_0 <- init_vector_list(initial_value = 0.1, n_views, rep(r, n_views)) # b_0 fixed
 
 q_r <- rbeta(1, prior_group_selection[1], prior_group_selection[2]) # TODO: Update in MCMC
@@ -479,23 +471,38 @@ for (t in 1:n_iterations) {
     Lambda2 <- lapply(Tau2_Lambda2, `[[`, 2)
     
     # Step 4. Sample A
+    
+    sample_A_m <- function(m, A, U, Sigma2, Gamma, Eta, data_list) {
+      U_active_m <- get_U_active_m(Gamma[[m]], U)
+      n_components_active <- sum(Gamma[[m]])
+      Sigma_a_inverse_part <- t(U_active_m) %*% U_active_m + diag(n_components_active)
+      Sigma_a_list <- lapply(Sigma2[[m]], function(s2_j, S_a_inv_mat = Sigma_a_inverse_part) { 
+        solve(s2_j * S_a_inv_mat) # TODO: Consider Woodbury Identity for Matrix Inversion
+        })
+      p_m <- ncol(data_list[[m]])
+      Mu_a_list <- lapply(1:p_m, function(j, Sigma_a = Sigma_a_list, U_active = U_active_m, X_m = data_list[[m]]) {
+        Sigma_a[[j]] %*% t(U_active) %*% X_m[, j]
+      })
       
-    active_components <- which(Gamma[[m]] == 1)
-    active_features <- which(Eta[[m]] == 1)
-    for (j in 1:n_features[m]) {
-      sigma_a_j <- 1/Sigma2[[m]][j] * 
-        (t(U[,active_components]) %*% U[,active_components] + diag(length(active_components))) %>%
-        solve # Get the inverse
-      mu_a_j <- sigma_a_j %*% 
-        t(U[,active_components]) %*% 
-        data_list[[m]][,j]
-      a_prime <- MASS::mvrnorm(n = n_features[[m]],
-                               mu = mu_a_j,
-                               Sigma = sigma_a_j) %>% t
+
+      A_prime_active <- sapply(1:p_m, function(j, Mu_a = Mu_a_list, Sigma_a = Sigma_a_list) {
+        rmvnorm(1, mean = as.vector(Mu_a[[j]]), sigma = Sigma_a[[j]])
+      } )
       
+      A_prime <- A[[m]]
+      active_component_index <- which(Gamma[[m]]==1)
+      A_prime[active_component_index, ] <- A_prime_active
+      # replace with 0's if Eta[l,j] is 0
+      A_prime[which(Eta[[m]] == 0)] <- 0
+      
+      return(A_prime)
     }
     
+    A <- lapply(1:n_views, sample_A_m, A, U, Sigma2, Gamma, Eta, data_list) 
+    
     # Step 5. Sample U
+    
+    #### YOU ARE HERE
     
     # Step 6. Sample group effect parameters r, b by Metropolis-Hastings
     
