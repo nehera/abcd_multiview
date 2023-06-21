@@ -133,7 +133,11 @@ get_logProd_mlj <- function(q_variable_level_m, Eta_mj.) {
 
 calculate_Sigma_j <- function(j, U_active_m, Sigma2_m, Tau2_m) {
   n <- nrow(U_active_m)
-  U_active_m %*% diag(Tau2_m[, j]) %*% t(U_active_m) + diag(n)
+  if (ncol(U_active_m) == 0) {
+    return(diag(n))
+  } else {
+    return(U_active_m %*% diag(Tau2_m[, j]) %*% t(U_active_m) + diag(n))
+  }
 }
 
 calculate_mvnorm_variance_mj <- function(j, U_active_m, Sigma2_m, Tau2_m) {
@@ -166,6 +170,7 @@ sample_eta_prime_ml <- function(l, q_variable_level_m, Gamma_m, Eta_m,
     exp(x) / (exp(x) + exp(y))
   }
   
+  eta_old <- Eta_m[l, ]
   eta_l_prime <- numeric(length(eta_old))
   
   for (j in 1:p_m) {
@@ -347,6 +352,8 @@ for (t in 1:n_iterations) {
   
   # Adjust Y for subsequent sampling
   Y_prime <- data_list[[response_index]] - intercept
+  X <- data_list
+  X[[response_index]] <- Y_prime
   
   # Step 1. Sample component and variable selection probabilities
   Gamma_sums <- sapply(Gamma, sum)
@@ -387,7 +394,7 @@ for (t in 1:n_iterations) {
         # Propose activation
         Gamma_prime[l] <- 1
         Eta_prime[l, ] <- sample_eta_prime_ml(l, q_variable_level[[m]], Gamma[[m]], Eta[[m]],
-                                            data_list[[m]], U_active_m, Sigma2[[m]], Tau2[[m]])
+                                            X[[m]], U_active_m, Sigma2[[m]], Tau2[[m]])
         
       }
       
@@ -399,7 +406,7 @@ for (t in 1:n_iterations) {
         logG <- numeric(p_m)
         for (j in 1:p_m) {
           logG[j] <- get_logG(j, U_active_m, Sigma2[[m]], Tau2[[m]], 
-                              data_list[[m]][, j], Eta[[m]][, j], 
+                              X[[m]][, j], Eta[[m]][, j], 
                               q_variable_level[[m]])
         }
         return(sum(logG))
@@ -419,8 +426,8 @@ for (t in 1:n_iterations) {
     
     # Step 3. Sample variance parameters sigma, Tau2, lambda
     
-    sample_Sigma2_m <- function(m, prior_residual_variance, data_list, Tau2) {
-      X_m <- data_list[[m]]
+    sample_Sigma2_m <- function(m, prior_residual_variance, X, Tau2) {
+      X_m <- X[[m]]
       n <- nrow(X_m); n_j <- ncol(X_m)
       alpha <- prior_residual_variance[1] + n/ 2
       betas <- numeric(n_j)
@@ -431,7 +438,7 @@ for (t in 1:n_iterations) {
       1/ rgamma(n_j, alpha, betas)
     }
     
-    Sigma2_prime <- lapply(1:n_views, sample_Sigma2_m, prior_residual_variance, data_list, Tau2)
+    Sigma2_prime <- lapply(1:n_views, sample_Sigma2_m, prior_residual_variance, X, Tau2)
     
 
     sample_Tau2_Lambda2_m <- function(m, prior_lambda_alpha, Eta, group_list, 
@@ -472,15 +479,21 @@ for (t in 1:n_iterations) {
     
     # Step 4. Sample A
     
-    sample_A_m <- function(m, A, U, Sigma2, Gamma, Eta, data_list) {
+    sample_A_m <- function(m, A, U, Sigma2, Gamma, Eta, X) {
       U_active_m <- get_U_active_m(Gamma[[m]], U)
       n_components_active <- sum(Gamma[[m]])
+      
+      if (n_components_active==0) {
+        return(matrix(0, nrow = nrow(A[[m]]), ncol = ncol(A[[m]])))
+      }
+      
       Sigma_a_inverse_part <- t(U_active_m) %*% U_active_m + diag(n_components_active)
-      Sigma_a_list <- lapply(Sigma2[[m]], function(s2_j, S_a_inv_mat = Sigma_a_inverse_part) { 
-        solve(s2_j * S_a_inv_mat) # TODO: Consider Woodbury Identity for Matrix Inversion
+      
+      Sigma_a_list <- lapply(Sigma2[[m]], function(s2_j, S_inverse = Sigma_a_inverse_part) { 
+        solve(s2_j * S_inverse) # TODO: Consider Woodbury Identity for Matrix Inversion
         })
-      p_m <- ncol(data_list[[m]])
-      Mu_a_list <- lapply(1:p_m, function(j, Sigma_a = Sigma_a_list, U_active = U_active_m, X_m = data_list[[m]]) {
+      p_m <- ncol(X[[m]])
+      Mu_a_list <- lapply(1:p_m, function(j, Sigma_a = Sigma_a_list, U_active = U_active_m, X_m = X[[m]]) {
         Sigma_a[[j]] %*% t(U_active) %*% X_m[, j]
       })
       
@@ -498,13 +511,88 @@ for (t in 1:n_iterations) {
       return(A_prime)
     }
     
-    A <- lapply(1:n_views, sample_A_m, A, U, Sigma2, Gamma, Eta, data_list) 
+    A <- lapply(1:n_views, sample_A_m, A, U, Sigma2, Gamma, Eta, X) 
     
     # Step 5. Sample U
     
-    #### YOU ARE HERE
+    sample_U <- function(A, X, Sigma2, r, n_observations) {
+      a_matrix <- rlist::list.cbind(A)
+      x_matrix <- rlist::list.cbind(X)
+      sigma2_vector <- unlist(Sigma2)
+      sigma_u_i <- a_matrix %*% diag(sigma2_vector) %*% t(a_matrix) + diag(r)
+      
+      mu_u_list <- lapply(1:n_observations, function(i, Sigma_u_i = sigma_u_i, 
+                                                     A_matrix = a_matrix, 
+                                                     Sigma2_vector = sigma2_vector, 
+                                                     X_matrix = x_matrix) {
+        Sigma_u_i %*% A_matrix %*% diag(Sigma2_vector) %*% X_matrix[i, ]
+      })
+      
+      U_prime <- sapply(1:n_observations, function(i, Mu_u_list = mu_u_list, Sigma_u_i = sigma_u_i) {
+        rmvnorm(1, mean = as.vector(Mu_u_list[[i]]), sigma = sigma_u_i)
+      }) %>% t()
+      return(U_prime) 
+    }
+
+    U_prime <- sample_U(A, X, Sigma2, r, n_observations)
     
     # Step 6. Sample group effect parameters r, b by Metropolis-Hastings
+    
+    # TODO: Implement Step B5
+    k=1
+    R_m <- R[[m]]
+    B_m <- B[[m]]
+    propose_br_m <- function(m, ) {
+      
+      for (l in 1:r) {
+        
+        R_m_l <- R_m[l, ]
+        K <- length(R_m_l)
+        
+        for (k in K) {
+          
+          propose_RB_m_lk <- function(k, R_m_l, prior_b) {
+            if (R_m_l[k] == 1) {
+              R_m_lk_prime <- 0
+              B_m_lk_prime <- 0
+              return(list(r=R_m_lk_prime, b=B_m_lk_prime))
+            } else {
+              R_m_lk_prime <- 1
+              B_m_lk_prime <- rgamma(1, prior_b[1], prior_b[2])
+              return(list(r=R_m_lk_prime, b=B_m_lk_prime))
+            }
+          }
+          
+          # Propose new r_lk, b_lk
+          
+          rb_prime <- propose_RB_m_lk(k, R_m_l, priorb)
+          rb <- list(r=R_m[l,k], b=B_m[l,k])
+          
+          # TODO: Compute the acceptance probability
+        
+          rb_log_target_density <- function(rb) {
+            
+            
+            
+          }
+
+          alpha <- min(1, rb_log_target_density(rb_prime) - rb_log_target_density(rb))
+          
+          # Accept or reject the proposed values
+          
+          if (runif(1) < alpha) {
+            R_m[l,k] <- rb_prime$r
+            B_m[l,k] <- rb_prime$b
+          } 
+          
+        }
+        
+      }
+      
+
+        
+        
+    }
     
     }
     
