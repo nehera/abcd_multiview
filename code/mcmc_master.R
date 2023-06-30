@@ -1,23 +1,27 @@
-#### ----- For Development ---- ####
-library(BIPnet)
-## Set Inputs
-set.seed(1)
-simulation_results <- Simulate(setting=1)
-data_list <- list(simulation_results$X1, 
-                 simulation_results$X2, 
-                 simulation_results$Y)
-indic_var <- c(0, 0, 1) # metadata 
+## Get CLI arguments
+args = commandArgs(trailingOnly=TRUE)
+# test if there is at least one argument: if not, return an error
+if (length(args)==0) {
+  stop("At least one argument must be supplied (input file).n", call.=FALSE)
+} else if (length(args)==1) {
+  # default output file
+  args[2] = "out.txt"
+}
+seed <- as.numeric(args[1])
+set.seed(seed)
+
+## Load Packages
+library(tidyverse)
+library(Rcpp)
+library(mvtnorm)
+library(parallel) 
+RNGkind("L'Ecuyer-CMRG") # for assigning separate, reproducible RNG streams to parallel computations
+
+## Load Scaled Data
+data_list <- readRDS("data/2023-06-30_simulated_data.rds")
+indic_var <- c(0, 0, 1) 
 method <- "BIP" # method without grouping information to start
 group_list <- NULL # default when grouping information not included
-
-## Scale data
-# TODO: Breakout scaling into separate function
-# TODO: Add back mean_data and sd_data for reporting purposes
-# TODO: Choose whether or not to scale by the Frobenius norm to account for differing n_features
-data_list <- lapply(data_list, scale)
-
-## Get Results for Testing
-bip_0 <- BIP(dataList = data_list, IndicVar = indic_var, Method = method)
 
 ## Set MCMC Parameters
 n_sample <- 5000
@@ -53,10 +57,6 @@ prior_variable_selection <- 0.05 # Prior probability for variable selection
 #                 prior_group_selection = c(1,1),
 #                 prior_variable_selection = 0.05) {
 
-library(tidyverse)
-library(Rcpp)
-library(mvtnorm)
-
 #### ---- Initialize MCMC meta-parameters
 
 # Define meta-parameters
@@ -79,19 +79,19 @@ if (method=="BIP") {
 }
 
 n_groups <- sapply(group_list, ncol)
-n_observations <- sapply(data_list, nrow) |> unique
+n_observations <- sapply(data_list, nrow) %>% unique()
 n_iterations <- n_sample + n_burnin
 
 # Ensure parameters passed are appropriate
 if (length(n_observations) > 1) {
   stop("Each view must contain the same n_observations i.e. the same number of rows.")
 }
-if (n_sample <= n_burnin) {
-  stop("Argument n_burnin must be smaller than argument n_sample, the number of MCMC iterations.")
-}
-if (n_sample <= 100) {
-  stop("Please specify a larger number of MCMC iterations.")
-}
+# if (n_sample <= n_burnin) {
+#   stop("Argument n_burnin must be smaller than argument n_sample, the number of MCMC iterations.")
+# }
+# if (n_sample <= 100) {
+#   stop("Please specify a larger number of MCMC iterations.")
+# }
 
 # TODO: Understand how r established when passed as NULL.
 if (is.null(r)) {
@@ -120,8 +120,13 @@ init_Gamma_m <- function(m, q_component_level, covariate_index, n_iterations) {
       matrix(1, nrow = r, ncol = n_iterations) # Covariates activation forced to 1
     }
   } else {
-    matrix(rbinom(n = r, size = 1, q_component_level[m, 1]), 
-           nrow = r, ncol = n_iterations)
+    n_active <- numeric(1)
+    while (n_active == 0) {
+      Gamma_m <- matrix(rbinom(n = r, size = 1, q_component_level[m, 1]), 
+                        nrow = r, ncol = n_iterations)
+      n_active <- sum(Gamma_m[, 1])
+    }
+    return(Gamma_m)
   }
 }
 
@@ -137,8 +142,8 @@ init_Eta_m <- function(m, Gamma, prior_variable_selection,
     }
   } else if (m %in% response_index) {
     # Response variable activation forced to match component activation
-    Gamma[[response_index]][, 1] |>
-      matrix(nrow = r, ncol = n_features[m]) |> 
+    Gamma[[response_index]][, 1] %>%
+      matrix(nrow = r, ncol = n_features[m]) %>% 
       array(dim = c(r, n_features[m], n_iterations)) 
   } else {
     # Omics variable activation initiated from prior distribution
@@ -149,8 +154,8 @@ init_Eta_m <- function(m, Gamma, prior_variable_selection,
         rep(0, n_features[m])
       }
     }
-    sapply(Gamma[[m]][, 1], init_omics_variable_activation_l, prior_variable_selection, n_features[m]) |>
-      t() |> array(dim = c(r, n_features[m], n_iterations))
+    sapply(Gamma[[m]][, 1], init_omics_variable_activation_l, prior_variable_selection, n_features[m]) %>%
+      t() %>% array(dim = c(r, n_features[m], n_iterations))
   }
 }
 
@@ -159,7 +164,7 @@ Eta <- lapply(1:n_views, init_Eta_m,
               n_features, covariate_index, response_index, n_iterations)
 
 init_Sigma2_m <- function(m, prior_residual_variance, n_features, n_iterations) {
-  1/ rgamma(n = n_features[m], shape = prior_residual_variance[1], rate = prior_residual_variance[2]) |>
+  1/ rgamma(n = n_features[m], shape = prior_residual_variance[1], rate = prior_residual_variance[2]) %>%
     matrix(nrow = n_features[m], ncol = n_iterations)
 }
 
@@ -175,7 +180,7 @@ Tau2 <- lapply(1:n_views, init_Tau2_m, r, n_features)
 init_A_m <- function(m, r, n_features, Gamma, Eta, Sigma2, Tau2, n_iterations) {
   A_m_1 <- matrix(0, nrow = r, n_features[m])
   active_index <- which(Eta[[m]][,,1] == 1)
-  sigma2_temp <- Sigma2[[m]][,1] |> 
+  sigma2_temp <- Sigma2[[m]][,1] %>% 
     matrix(nrow = r, ncol = n_features[m], byrow = TRUE)
   active_sigmas <- sigma2_temp[active_index]
   active_taus <- Tau2[[m]][,,1][active_index]
@@ -225,7 +230,7 @@ init_Lambda2_m <- function(m, prior_lambda_alpha, group_list, b_0, B,
       Lambda2_m1[l,j] <- rgamma(1, prior_lambda_alpha, beta)
     }
   }
-  Lambda2_m <- Lambda2_m1 |>
+  Lambda2_m <- Lambda2_m1 %>%
     array(dim = c(r, n_features[m], n_iterations))
 }
 
@@ -233,6 +238,38 @@ Lambda2 <- lapply(1:n_views, init_Lambda2_m, prior_lambda_alpha, group_list, b_0
                   r, n_features, n_iterations)
 
 #### ---- Initialize MCMC sampling functions
+
+reshape_views <- function(Gamma, Eta, X, Sigma2, Tau2) {
+  n_views <- length(Gamma)
+  view_list <- list()
+  for (m in 1:n_views) {
+    view_list[[m]] <- list(Gamma_m = Gamma[[m]], Eta_m = Eta[[m]], X_m = X[[m]],
+                           Sigma2_m = Sigma2[[m]], Tau2_m = Tau2[[m]], m=m)
+  }
+  return(view_list)
+}
+
+extract_view_iter <- function(view_list, iter) {
+  # view_m <- view_list[[1]]
+  extract_view_m_iter <- function(view_m, iter) {
+    list2env(view_m, envir = environment())
+    Gamma_m_iter <- Gamma_m[, iter]
+    Eta_m_iter <- Eta_m[,, iter]
+    Sigma2_m_iter <- Sigma2_m[, iter]
+    Tau2_m_iter <- Tau2_m[,, iter]
+    return(list(Gamma_m = Gamma_m_iter, Eta_m = Eta_m_iter,
+                X_m = X_m, Sigma2_m = Sigma2_m_iter, Tau2_m = Tau2_m_iter, m=m))
+  }
+  return(lapply(view_list, extract_view_m_iter, iter))
+}
+
+store_view_iter <- function(view_list, view_list_iter, iter) {
+  for (m in 1:n_views) {
+    view_list[[m]]$Gamma_m[, iter] <- view_list_iter[[m]]$Gamma_m # Store only gamma for now
+  }    
+  # TODO: Store other vars too
+  return(view_list)
+}
 
 sample_intercept <- function(Y, A_outcome, U, Sigma2_outcome, Sigma2_0 = 100) {
   n <- nrow(Y)
@@ -248,30 +285,166 @@ sample_intercept <- function(Y, A_outcome, U, Sigma2_outcome, Sigma2_0 = 100) {
   return(intercept)
 }
 
-sample_beta_posterior <- function(n_samples = 1, prior_alpha, prior_beta, n, summation) {
-  posterior_alpha <- prior_alpha + summation
-  posterior_beta <- prior_beta + n - summation
-  return(rbeta(n_samples, posterior_alpha, posterior_beta))
+
+get_Sigma_j <- function(j, Gamma_m, U_iter, Sigma2_m, Tau2_m) {
+  active_index <- which(Gamma_m == 1)
+  U_active <- U_iter[, active_index] %>%
+    matrix(ncol = length(active_index))
+  n <- nrow(U_active)
+  if (ncol(U_active) == 0) {
+    return(diag(n))
+  } else {
+    return(U_active %*% diag(Tau2_m[active_index, j]) %*% t(U_active) + diag(n))
+  }
+}
+
+get_logG <- function(j, Gamma_m, Eta_mj, U_iter, Sigma2_m, Tau2_m, 
+                     X_m, prior_variable_selection) {
+  n <- nrow(X_m)
+  mvnorm_variance_mj <- Sigma2_m[j] * get_Sigma_j(j, Gamma_m, U_iter, Sigma2_m, Tau2_m)
+  logdmvnorm_mj <- mvtnorm::dmvnorm(x = X_m[,j], mean = rep(0, n), sigma = mvnorm_variance_mj, log = TRUE)
+  n_active <- sum(unlist(Eta_mj))
+  logprod_lj <- n_active*log(prior_variable_selection) + 
+    (r-n_active)*log(1-prior_variable_selection)
+  return(logdmvnorm_mj + logprod_lj)
+}
+
+get_P_lj <- function(logG_lj_0, logG_lj_1) {
+  x_0 <- max(logG_lj_0, logG_lj_1)
+  x <- logG_lj_1 - x_0
+  y <- logG_lj_0 - x_0
+  exp(x) / (exp(x) + exp(y))
+}
+
+propose_eta_prime_m_l <- function(l, prior_variable_selection, 
+                                  Gamma_m, Eta_m, X_m, U_iter,
+                                  Sigma2_m, Tau2_m) {
+  n <- nrow(X_m)
+  p_m <- ncol(X_m)
+  eta_m_l <- Eta_m[l, ]
+  eta_m_l_prime <- numeric(length(eta_m_l))
+  
+  for (j in 1:p_m) {
+    
+    Eta_mj <- Eta_m[, j]
+    Eta_mj0 <- Eta_mj 
+    Eta_mj0[l] <- 0
+    Eta_mj1 <- Eta_mj
+    Eta_mj1[l] <- 1
+    
+    logG_lj_1 <- get_logG(j, Gamma_m, Eta_mj1, U_iter, Sigma2_m, Tau2_m, 
+                          X_m, prior_variable_selection)
+    
+    logG_lj_0 <- get_logG(j, Gamma_m, Eta_mj0, U_iter, Sigma2_m, Tau2_m, 
+                          X_m, prior_variable_selection)
+    
+    P_lj <- get_P_lj(logG_lj_0, logG_lj_1)
+    
+    eta_m_l_prime[j] <- rbinom(1, 1, prob = P_lj)
+    
+  }
+  return(eta_m_l_prime)
+}
+
+
+propose_GammaEta_prime_m_l <- function(l, Gamma_m, Eta_m,
+                                       X_m, U_iter, 
+                                       Sigma2_m, Tau2_m,
+                                       prior_variable_selection,
+                                       m, covariate_index) {
+  # Propose new values
+  if (Gamma_m[l] == 1) {
+    
+    # If component active, propose deactivation
+    return(list(gamma_prime_m_l = 0, eta_prime_m_l = rep(0, n_features[m])))
+    
+  } else if (m %in% covariate_index) {
+    
+    # If component inactive, propose activation
+    return(list(gamma_prime_m_l = 1, eta_prime_m_l = rep(1, n_features[m])))
+    
+  } else {
+    eta_prime_m_l <- propose_eta_prime_m_l(l, prior_variable_selection, 
+                                           Gamma_m, Eta_m,
+                                           X_m, U_iter, 
+                                           Sigma2_m, Tau2_m)
+    return(list(gamma_prime_m_l = 1, eta_prime_m_l = eta_prime_m_l))
+  }
+}
+
+log_target_density <- function(Gamma_prime, Eta_prime, U_iter, Sigma2_m, Tau2_m, 
+                               X_m, prior_variable_selection) {
+  r <- nrow(Eta_prime)
+  p_m <- ncol(Eta_prime)
+  logG <- numeric(p_m)
+  for (j in 1:p_m) { # TODO: Remove for loop
+    logG[j] <- get_logG(j, Gamma_prime, Eta_prime[,j], U_iter, 
+                        Sigma2_m, Tau2_m, X_m, prior_variable_selection)
+  }
+  return(sum(logG))
+}
+
+sample_GammaEta <- function(view_m_iter, U_iter, prior_variable_selection, covariate_index) {
+  list2env(view_m_iter, envir = environment())
+  # get meta-parameters
+  r <- length(Gamma_m)
+  #### YOU ARE HERE
+  GammaEta_prime_list <- lapply(1:r, propose_GammaEta_prime_m_l,
+                                Gamma_m, Eta_m, X_m, U_iter,
+                                Sigma2_m, Tau2_m,
+                                prior_variable_selection,
+                                m, covariate_index)
+  
+  Gamma_prime <- sapply(GammaEta_prime_list, `[[`, 1)
+  Eta_prime <- sapply(GammaEta_prime_list, `[[`, 2) %>% t()
+  
+  # Compute the acceptance probability
+  alpha <- min(1, log_target_density(Gamma_prime, Eta_prime, U_iter, Sigma2_m, Tau2_m, 
+                                     X_m, prior_variable_selection) - 
+                 log_target_density(Gamma_m, Eta_m, U_iter, Sigma2_m, Tau2_m, 
+                                    X_m, prior_variable_selection))
+  
+  # Accept or reject the proposed values
+  if (runif(1) < alpha) {
+    view_m_iter$Gamma_m <- Gamma_prime
+    view_m_iter$Eta_m <- Eta_prime
+    return(view_m_iter)
+  } else {
+    return(view_m_iter)
+  }
+  
 }
 
 #### ---- MCMC Posterior Sampling
 
-t <- 2 # TODO: Remove post-development and uncomment for t in 2:n_iterations
+iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iterations
 
-# for (t in 2:n_iterations) {
+# for (iter in 2:n_iterations) {
   
   # Step 0. Sample intercept for response variable
   
-  intercept[t] <- sample_intercept(Y = data_list[[response_index]],
-                   A_outcome = A[[response_index]][,,1], U[,,t-1],
-                   Sigma2_outcome = Sigma2[[response_index]][,t-1])
+  intercept <- sample_intercept(Y = data_list[[response_index]],
+                   A_outcome = A[[response_index]][,, iter-1], U[,, iter-1],
+                   Sigma2_outcome = Sigma2[[response_index]][, iter-1]) %>%
+    rep(n_iterations) # TODO: Sample intercept at each iteration
   
   # Adjust Y for subsequent sampling
   X <- data_list
-  X[[response_index]] <- data_list[[response_index]] - intercept[t]
+  X[[response_index]] <- data_list[[response_index]] - intercept[iter]
+  
+  ## -- Transform data structures for sampling steps 1-5
+  
+  view_list <- reshape_views(Gamma, Eta, X, Sigma2, Tau2)
   
   # Step 0 continued. Sample component and variable selection probabilities
   # TODO: Assess whether or not to update component and variable selection probs
+  
+  # sample_beta_posterior <- function(n_samples = 1, prior_alpha, prior_beta, n, summation) {
+  #   posterior_alpha <- prior_alpha + summation
+  #   posterior_beta <- prior_beta + n - summation
+  #   return(rbeta(n_samples, posterior_alpha, posterior_beta))
+  # }
+  
   # Gamma_sums <- sapply(Gamma, sum)
   # for (m in c(omics_index, response_index)) {
   #   if (m %in% omics_index) {
@@ -287,149 +460,48 @@ t <- 2 # TODO: Remove post-development and uncomment for t in 2:n_iterations
   #     q_variable_level[[m]] <- rep(q_component_level[m], r)
   #   } 
   # }
-  
-  m <- 1 # TODO: Remove post-dev
-  
-  # for (m in omics_index) {
-
-    l <- 1 # TODO: Remove post-dev
-  
-  # Step 2. Sample component, feature activation parameters (gamma, eta respectively) by Metropolis-Hastings
     
-    get_Sigma_j <- function(j, Gamma_m, U_t, Sigma2_m, Tau2_m) {
-      active_index <- which(Gamma_m == 1)
-      U_active <- U_t[, active_index]
-      n <- nrow(U_active)
-      if (ncol(U_active) == 0) {
-        return(diag(n))
+    for (iter in 2:n_iterations) {
+      
+      # Step 0. Extract last iteration's data
+      
+      view_list_iter <- extract_view_iter(view_list, iter-1)
+      
+      # Step 2. Sample component, feature activation parameters (gamma, eta respectively) by Metropolis-Hastings
+      
+      view_list_iter[-response_index] <- mclapply(view_list_iter[-response_index], sample_GammaEta, U_iter = U[,, iter],
+                                                prior_variable_selection, covariate_index, mc.cores = 2)
+      
+      Gamma_response_iter <- view_list_iter[[response_index]]$Gamma_m
+      if (sum(Gamma_response_iter)==r) {
+        n_active <- numeric(1)
+        while (n_active == 0) {
+          Gamma_response_prime <- rbinom(n = r, size = 1, q_component_level[response_index, iter])
+          n_active <- sum(Gamma_prime)
+        }
       } else {
-        return(U_active %*% diag(Tau2_m[active_index, j]) %*% t(U_active) + diag(n))
+        Gamma_response_prime <- ifelse(Gamma_response_iter==1, 0, 1)
       }
-    }
-    
-    get_logG <- function(j, Gamma_m, Eta_mj, U_t, Sigma2_m, Tau2_m, 
-                         X_m, prior_variable_selection) {
-      n <- nrow(X_m)
-      mvnorm_variance_mj <- Sigma2_m[j] * get_Sigma_j(j, Gamma_m, U_t, Sigma2_m, Tau2_m)
-      logdmvnorm_mj <- mvtnorm::dmvnorm(x = X_m[,j], mean = rep(0, n), sigma = mvnorm_variance_mj, log = TRUE)
-      n_active <- sum(Eta_mj)
-      logprod_lj <- n_active*log(prior_variable_selection) + 
-        (r-n_active)*log(1-prior_variable_selection)
-      return(logdmvnorm_mj + logprod_lj)
-    }
-    
-    get_P_lj <- function(logG_lj_0, logG_lj_1) {
-      x_0 <- max(logG_lj_0, logG_lj_1)
-      x <- logG_lj_1 - x_0
-      y <- logG_lj_0 - x_0
-      exp(x) / (exp(x) + exp(y))
-    }
-    
-    propose_eta_prime_m_l <- function(l, prior_variable_selection, 
-                     Gamma_m, Eta_m, X_m, U_t,
-                     Sigma2_m, Tau2_m) {
-    n <- nrow(X_m)
-    p_m <- ncol(X_m)
-    eta_m_l <- Eta_m[l, ]
-    eta_m_l_prime <- numeric(length(eta_m_l))
-    
-    for (j in 1:p_m) {
       
-      Eta_mj <- Eta_m[, j]
-      Eta_mj0 <- Eta_mj 
-      Eta_mj0[l] <- 0
-      Eta_mj1 <- Eta_mj
-      Eta_mj1[l] <- 1
+      view_list_iter[[response_index]]$Gamma_m <- Gamma_response_prime
+      view_list_iter[[response_index]]$Eta_m <- Gamma_response_prime
       
-      logG_lj_1 <- get_logG(j, Gamma_m, Eta_mj1, U_t, Sigma2_m, Tau2_m, 
-                            X_m, prior_variable_selection)
+      # Step Final. Store iteration's data
+      # TODO: Storing only new Gammas for now. Want to store more.
+      view_list <- store_view_iter(view_list, view_list_iter, iter)
       
-      logG_lj_0 <- get_logG(j, Gamma_m, Eta_mj0, U_t, Sigma2_m, Tau2_m, 
-                            X_m, prior_variable_selection)
-      
-      P_lj <- get_P_lj(logG_lj_0, logG_lj_1)
-      
-      eta_m_l_prime[j] <- rbinom(1, 1, prob = P_lj)
-      
-    }
-    return(eta_m_l_prime)
-  }
-      
-      
-    propose_GammaEta_prime_m_l <- function(l, Gamma_m, Eta_m,
-                                      X_m, U_previous, 
-                                      Sigma2_m, Tau2_m,
-                                      prior_variable_selection,
-                                      m, covariate_index) {
-        # Propose new values
-        if (Gamma_m[l] == 1) {
-          
-          # If component active, propose deactivation
-          return(list(gamma_prime_m_l = 0, eta_prime_m_l = rep(0, n_features[m])))
-          
-        } else if (m %in% covariate_index) {
-          
-          # If component inactive, propose activation
-          return(list(gamma_prime_m_l = 1, eta_prime_m_l = rep(1, n_features[m])))
-          
-        } else {
-            eta_prime_m_l <- propose_eta_prime_m_l(l, prior_variable_selection, 
-                                                  Gamma_m, Eta_m,
-                                                  X_m, U_previous, 
-                                                  Sigma2_m, Tau2_m)
-            return(list(gamma_prime_m_l = 1, eta_prime_m_l = eta_prime_m_l))
-          }
-    }
-    
-    log_target_density <- function(Gamma_prime, Eta_prime) {
-      r <- nrow(Eta_prime)
-      p_m <- ncol(Eta_prime)
-      logG <- numeric(p_m)
-      for (j in 1:p_m) {
-        # TODO: Resolve bugs in get_logG
-        logG[j] <- get_logG(j, Gamma_prime, Eta_prime[,j], U_previous, 
-                            Sigma2_m, Tau2_m, X_m, prior_variable_selection)
+      if (iter %% 500 == 0) {
+        # Save progress
+        fileConn <- file(paste0("iter_", seed, ".txt"))
+        writeLines(paste("Seed", seed, "is on iter", iter), fileConn)
+        close(fileConn)
+        # Save output
+        output_name <- paste0("data/", Sys.Date(), "_view_list_seed_", seed, ".rds")
+        saveRDS(view_list, file = output_name)
       }
-      return(sum(logG))
+      
     }
-    
-    sampleGammaEta_m <- function(m, t, r, Gamma, Eta, X, U, Sigma2, Tau2,
-                                 prior_variable_selection, covariate_index) {
-      # TODO: Consider mapply
-      Gamma_m <- Gamma[[m]][,t-1]
-      Eta_m <- Eta[[m]][,,t-1]
-      X_m <- X[[m]]
-      Sigma2_m <- Sigma2[[m]][,t-1]
-      Tau2_m <- Tau2[[m]][,,t-1]
-      U_previous <- U[,,t-1]
-      
-      GammaEta_prime_list <- lapply(1:r, propose_GammaEta_prime_m_l,
-             Gamma_m, Eta_m,
-             X_m, U_previous,
-             Sigma2_m, Tau2_m,
-             prior_variable_selection,
-             m, covariate_index)
-      
-      Gamma_prime <- sapply(GammaEta_prime_list, `[[`, 1)
-      Eta_prime <- sapply(GammaEta_prime_list, `[[`, 2) |> t()
-      
-      # Compute the acceptance probability
-      
-      alpha <- min(1, log_target_density(Gamma_prime, Eta_prime) - 
-                     log_target_density(Gamma_m, Eta_m))
-      
-      # Accept or reject the proposed values
-      
-      if (runif(1) < alpha) {
-        return(list(gamma_t=Gamma_prime, eta_t=Eta_prime))
-      } else {
-        return(list(gamma_t=Gamma_m, eta_t=Eta_m))
-      }
-    }
-    
-    GammaEta_t_list <- lapply(1:n_views, sampleGammaEta_m, t, r, Gamma, Eta, X, U, Sigma2, Tau2, prior_variable_selection, covariate_index)
-    
-    
+  
   #   # Step 3. Sample variance parameters sigma, Tau2, lambda
   #   
   #   sample_Sigma2_m <- function(m, prior_residual_variance, X, Tau2) {
@@ -438,7 +510,7 @@ t <- 2 # TODO: Remove post-development and uncomment for t in 2:n_iterations
   #     alpha <- prior_residual_variance[1] + n/ 2
   #     betas <- numeric(n_j)
   #     for (j in 1:n_j) {
-  #       Sigma_j_inverse <- get_Sigma_j(j, U_active_m, Sigma2_m, Tau2_m) |> solve() # TODO: Consider Woodbury Identity for Speeding inversion
+  #       Sigma_j_inverse <- get_Sigma_j(j, U_active_m, Sigma2_m, Tau2_m) %>% solve() # TODO: Consider Woodbury Identity for Speeding inversion
   #       betas[j] <- 1/ 2 * t(X_m[, j]) %*% Sigma_j_inverse %*% X_m[, j] + prior_residual_variance[2]
   #     }
   #     1/ rgamma(n_j, alpha, betas)
@@ -536,7 +608,7 @@ t <- 2 # TODO: Remove post-development and uncomment for t in 2:n_iterations
   #     
   #     U_prime <- sapply(1:n_observations, function(i, Mu_u_list = mu_u_list, Sigma_u_i = sigma_u_i) {
   #       rmvnorm(1, mean = as.vector(Mu_u_list[[i]]), sigma = sigma_u_i)
-  #     }) |> t()
+  #     }) %>% t()
   #     return(U_prime) 
   #   }
   # 
