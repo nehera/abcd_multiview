@@ -1,0 +1,77 @@
+---
+title: "Step B1. Sampling Component and Variable Activation Report"
+author: "Aidan Neher"
+format: html
+editor: visual
+---
+
+## Methods
+
+### Simulated Data
+
+With `set.seed(1)`, data from BIP manuscript scenario 1 was simulated.
+
+### MCMC
+
+Each "job" was run with its seed set to its "job ID". All parameters were initialized per their prior distributions/ fixed as specified in the BIP manuscript's supplement. Then, the MCMC is run with only the component activation parameter stored and consequently changed from iteration to iteration. Note, 1,000 iterations were collected as burn-in and 5,000 iterations were collected as samples.
+
+## Results
+
+### MPPs
+
+```{r}
+#| echo: false
+
+library(tidyverse)
+view_list_2 <- readRDS("data/2023-06-30_view_list_seed_2.rds")
+n_iterations <- 500
+n_views <- 3
+r <- 4
+
+get_gamma_mpp_m <- function(view_list_m, n_iterations) {
+  gammas <- view_list_m$Gamma_m[, 1:n_iterations]
+  MPPs <- apply(gammas, 1, cumsum) / n_iterations %>%
+    matrix(nrow = n_iterations, ncol = 4) %>% as.data.frame()
+  colnames(MPPs) <- paste("component", 1:4, sep = "_")
+  return(MPPs)
+}
+
+mpps <- lapply(view_list_2, get_gamma_mpp_m, n_iterations)
+lapply(mpps, function(mpp) {
+  apply(mpp, 2, summary)
+})
+
+plot_gamma_mpp_m <- function(view_list_m, n_iterations, r=4) {
+  gammas <- view_list_m$Gamma_m[, 1:n_iterations]
+  MPPs <- apply(gammas, 1, cumsum) / n_iterations %>%
+    matrix(nrow = n_iterations, ncol = 4) %>% as.data.frame()
+  colnames(MPPs) <- paste("component", 1:4, sep = "_")
+  tidy_data <- MPPs %>%
+    mutate(iter = 1:n_iterations) %>%
+    gather(key = "component", value = "MPP", -iter) 
+  ggplot(tidy_data, aes(x = iter, y = MPP, color = component)) + geom_line()
+}
+plots <- lapply(view_list_2, plot_gamma_mpp_m, n_iterations, r=4)
+plots
+
+# which features are associated with selected components? 
+comp_features <- list()
+for (m in 1:n_views) {
+  comp_features[[m]] <- lapply(1:r, function(l) { 
+    which(view_list_2[[1]]$Eta_m[l,,1] == 1) 
+    })
+}
+comp_features
+```
+
+### Run Time
+
+## Discussion
+
+### Learnings
+
+### Questions/ Issues
+
+## Quarto
+
+This document was generated using Quarto, which enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.

@@ -19,7 +19,9 @@ bip_0 <- BIP(dataList = data_list, IndicVar = indic_var, Method = method)
 
 ## Store simulated data and results for development/ testing
 today_date <- Sys.Date()
-fname_data <- paste0("data/", today_date, "_simulated_data.rds")
+fname_results <- paste0("data/", today_date, "_simulation_results.rds")
+saveRDS(simulation_results, fname_results)
+fname_data <- paste0("data/", today_date, "_simulation_data_list.rds")
 saveRDS(data_list, fname_data)
-fname_results <- paste0("data/", today_date, "_simulated_results.rds")
-saveRDS(bip_0, fname_results)
+fname_data <- paste0("data/", today_date, "_simulation_BIP_results.rds")
+saveRDS(bip_0, fname_data)

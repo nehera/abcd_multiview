@@ -18,7 +18,7 @@ library(parallel)
 RNGkind("L'Ecuyer-CMRG") # for assigning separate, reproducible RNG streams to parallel computations
 
 ## Load Scaled Data
-data_list <- readRDS("data/2023-06-30_simulated_data.rds")
+data_list <- readRDS("data/2023-07-03_simulation_data_list.rds")
 indic_var <- c(0, 0, 1) 
 method <- "BIP" # method without grouping information to start
 group_list <- NULL # default when grouping information not included
@@ -265,7 +265,8 @@ extract_view_iter <- function(view_list, iter) {
 
 store_view_iter <- function(view_list, view_list_iter, iter) {
   for (m in 1:n_views) {
-    view_list[[m]]$Gamma_m[, iter] <- view_list_iter[[m]]$Gamma_m # Store only gamma for now
+    view_list[[m]]$Gamma_m[, iter] <- view_list_iter[[m]]$Gamma_m
+    view_list[[m]]$Eta_m[,, iter] <- view_list_iter[[m]]$Eta_m
   }    
   # TODO: Store other vars too
   return(view_list)
@@ -421,20 +422,28 @@ iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iteratio
 
 # for (iter in 2:n_iterations) {
   
+# TODO uncomment intercept sampling post-testing
   # Step 0. Sample intercept for response variable
   
-  intercept <- sample_intercept(Y = data_list[[response_index]],
-                   A_outcome = A[[response_index]][,, iter-1], U[,, iter-1],
-                   Sigma2_outcome = Sigma2[[response_index]][, iter-1]) %>%
-    rep(n_iterations) # TODO: Sample intercept at each iteration
+  # intercept <- sample_intercept(Y = data_list[[response_index]],
+  #                  A_outcome = A[[response_index]][,, iter-1], U[,, iter-1],
+  #                  Sigma2_outcome = Sigma2[[response_index]][, iter-1]) %>%
+  #   rep(n_iterations) # TODO: Sample intercept at each iteration
   
   # Adjust Y for subsequent sampling
   X <- data_list
-  X[[response_index]] <- data_list[[response_index]] - intercept[iter]
+  # X[[response_index]] <- data_list[[response_index]] - intercept[iter] 
   
   ## -- Transform data structures for sampling steps 1-5
   
   view_list <- reshape_views(Gamma, Eta, X, Sigma2, Tau2)
+  
+  ## Update inputs to test to Scenario 1 Truth
+  # simulation_results <- readRDS("data/2023-07-03_simulation_results.rds")
+  ## TODO: Remove update to truth post-testing
+  for (m in 1:n_views) {
+    view_list[[m]]$Sigma2_m <- matrix(1, nrow = n_features[m], ncol = n_iterations)
+  }
   
   # Step 0 continued. Sample component and variable selection probabilities
   # TODO: Assess whether or not to update component and variable selection probs
