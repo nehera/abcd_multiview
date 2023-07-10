@@ -30,36 +30,19 @@ n_max_models <- 50
 
 ## Set Hyper-Parameters
 r <- 4 # number of components
-prior_component_selection <- c(1, 1) # Hyperparameters of a beta(a,b) distribution; prior distribution of the probability of selecting components
-prior_response_selection <- c(1, 1) # Hyperparameters of a beta(a,b) distribution; prior distribution of the probability of selecting the response on a component.
-prior_residual_variance <- c(1, 1) # Hyperparameters of inverseGamma residual variance sigma_j^2(m)
-# TODO: Assess whether prior_b0 helpful
-prior_b0 <- c(2, 2) # Hyperparameters of a gamma distribution; prior distribution of the paramater b_l0 that controls the shrinkage of loadings when there is no grouping information
-prior_b <- c(1, 1) # Hyperparameters of a gamma distribution; prior distribution of group effect coefficients blj, j = 1, ..., K_l.
-prior_lambda_alpha <- 1 # TODO: Understand what this should be in practice
-prior_group_selection <- c(1, 1) # Hyperparameters of a beta(a,b) distribution; prior distribution of the probability of selecting groups.
+prior_component_selection <- 0.5
 prior_variable_selection <- 0.05 # Prior probability for variable selection
-
-#### ----- Begin BIP2 ---- ####
-
-# BIP2 <- function(data_list = data_list, # TODO: This default might cause probs
-#                 indic_var = indic_var, # TODO: This default might cause probs
-#                 group_list = NULL,
-#                 method = method, # TODO: This default might cause probs
-#                 r = 4,
-#                 n_sample = 5000,
-#                 n_burnin = 1000,
-#                 n_max_models = 50,
-#                 prior_component_selection = c(1,1),
-#                 prior_response_selection = c(1,1),
-#                 prior_b0 = c(2,2),
-#                 prior_b = c(1,1),
-#                 prior_group_selection = c(1,1),
-#                 prior_variable_selection = 0.05) {
+prior_response_selection <- c(1, 1) # Hyperparameters of a beta(a,b) distribution; prior distribution of the probability of selecting the response on a component.
+prior_group_selection <- c(1, 1) # Hyperparameters of a beta(a,b) distribution; prior distribution of the probability of selecting groups.
+prior_residual_variance <- c(1, 1) # Hyperparameters of inverseGamma residual variance sigma_j^2(m)
+prior_b <- c(1, 1) # Hyperparameters of a gamma distribution; prior distribution of group effect coefficients blj, j = 1, ..., K_l.
+prior_lambda_alpha <- 1 
+prior_Tau2 <- 1
 
 #### ---- Initialize MCMC meta-parameters
 
 # Define meta-parameters
+dtypes <- factor(indic_var, labels = c("omics", "response", "covariate"), levels = 0:2)
 omics_index <- which(indic_var == 0)
 response_index <- which(indic_var == 1)
 covariate_index <- which(indic_var == 2)
@@ -103,83 +86,90 @@ if (is.null(r)) {
 
 #### ---- Initialize MCMC data structures
 
-intercept <- numeric(n_iterations)
+intercept <- rep(NaN, n_iterations)
+intercept[1] <- 0 # TODO sample initial val
 
-U <- array(data = rnorm(n_observations*r), dim = c(n_observations, r, n_iterations))
+U <- array(NaN, dim = c(n_observations, r, n_iterations))
+U[,,1] <- rnorm(n_observations*r)
 
-# TODO: Unfix q_component_level
-q_component_level <- matrix(0.5, nrow = n_views, ncol = n_iterations) # Probability for mth data type, a component is active
+prob_component_selection <- matrix(NaN, nrow = n_views, ncol = n_iterations) # Probability for mth data type, a component is active
+prob_component_selection[,1] <- prior_component_selection
 
 if (length(covariate_index) > 0) {
-  q_component_level[, covariate_index] <- 1
+  prob_component_selection[,covariate_index] <- 1
 }
 
-init_Gamma_m <- function(m, q_component_level, covariate_index, n_iterations) {
+init_Gamma_m <- function(m, prob_component_selection, covariate_index, n_iterations) {
   if (length(covariate_index) > 0) {
     if (m %in% covariate_index) {
       matrix(1, nrow = r, ncol = n_iterations) # Covariates activation forced to 1
     }
   } else {
-    n_active <- numeric(1)
-    while (n_active == 0) {
-      Gamma_m <- matrix(rbinom(n = r, size = 1, q_component_level[m, 1]), 
-                        nrow = r, ncol = n_iterations)
-      n_active <- sum(Gamma_m[, 1])
-    }
+    Gamma_m <- matrix(NaN, nrow = r, ncol = n_iterations)
+    Gamma_m[,1] <- rbinom(n = r, size = 1, prob_component_selection[m,1])
     return(Gamma_m)
   }
 }
 
 Gamma <- lapply(1:n_views, init_Gamma_m, 
-                q_component_level, covariate_index, n_iterations)
+                prob_component_selection, covariate_index, n_iterations)
 
-init_Eta_m <- function(m, Gamma, prior_variable_selection, 
-                       n_features, covariate_index, response_index, n_iterations) {
-  if (length(covariate_index) > 0) {
-    if (m %in% covariate_index) {
-      # Covariate activation forced to 1
-      array(1, dim = c(r, n_features[m], n_iterations)) 
-    }
-  } else if (m %in% response_index) {
-    # Response variable activation forced to match component activation
-    Gamma[[response_index]][, 1] %>%
-      matrix(nrow = r, ncol = n_features[m]) %>% 
-      array(dim = c(r, n_features[m], n_iterations)) 
+init_omics_variable_activation_l <- function(gamma_l, p_m, prior_variable_selection) {
+  if (gamma_l == 1) {
+    rbinom(n = p_m, size = 1, prior_variable_selection)
   } else {
-    # Omics variable activation initiated from prior distribution
-    init_omics_variable_activation_l <- function(gamma_l, prior_variable_selection, n_features_m) {
-      if (gamma_l == 1) {
-        rbinom(n = n_features[m], size = 1, prior_variable_selection)
-      } else {
-        rep(0, n_features[m])
-      }
-    }
-    sapply(Gamma[[m]][, 1], init_omics_variable_activation_l, prior_variable_selection, n_features[m]) %>%
-      t() %>% array(dim = c(r, n_features[m], n_iterations))
+    rep(0, p_m)
   }
 }
 
-Eta <- lapply(1:n_views, init_Eta_m,
-              Gamma, prior_variable_selection,
-              n_features, covariate_index, response_index, n_iterations)
-
-init_Sigma2_m <- function(m, prior_residual_variance, n_features, n_iterations) {
-  1/ rgamma(n = n_features[m], shape = prior_residual_variance[1], rate = prior_residual_variance[2]) %>%
-    matrix(nrow = n_features[m], ncol = n_iterations)
+# M=1:n_views
+# Gamma_1 <- lapply(Gamma, "[", , j=1) # Rstudio warning fine
+# dtype=dtypes[1]
+# p_m=n_features[1]
+# gamma_1=Gamma_1[1]
+init_Eta_m <- init_Eta_m <- function(dtype, gamma_1, p_m, 
+                                     r, prior_variable_selection, n_iterations) {
+  if (dtype!="covariate") {
+    Eta_m <- array(NaN, dim = c(r, p_m, n_iterations))
+    if (dtype=="omics") {
+      # Omics variable activation initiated from prior distribution
+      Eta_m[,,1] <- unlist(gamma_1) %>%
+        sapply(init_omics_variable_activation_l, p_m, prior_variable_selection) %>% 
+        t()
+      return(Eta_m)
+    } else if (dtype=="response") {
+      # Response variable activation forced to match component activation
+      Eta_m[,,1] <- matrix(gamma_1, nrow = r, ncol = p_m)
+      return(Eta_m)
+    }
+  } else if (dtype=="covariate") {
+    # Covariate activation forced to 1
+    array(1, dim = c(r, p_m, n_iterations)) 
+  } 
 }
 
-Sigma2 <- lapply(1:n_views, init_Sigma2_m,
-                 prior_residual_variance, n_features, n_iterations)
+Eta <- mapply(init_Eta_m, dtypes, Gamma_1, n_features, r, prior_variable_selection, n_iterations) 
+# Eta %>% lapply("[", , , k=1)
 
-init_Tau2_m <- function(m, r, n_features, Tau2_prior_fixed = 1) {
-  array(data = Tau2_prior_fixed, dim = c(r, n_features[m], n_iterations))
+init_Sigma2_m <- function(p_m, prior_residual_variance, n_iterations) {
+  Sigma2_m <- matrix(NaN, nrow = p_m, ncol = n_iterations)
+  Sigma2_m[,1] <- 1/ rgamma(n = p_m, shape = prior_residual_variance[1], rate = prior_residual_variance[2])
+  return(Sigma2_m)
+}
+
+Sigma2 <- mapply(init_Sigma2_m, p_m=n_features, prior_residual_variance=rep(list(prior_residual_variance), 3), n_iterations)
+
+init_Tau2_m <- function(m, r, n_features, prior_Tau2) {
+  Tau2_m <- array(NaN, dim = c(r, n_features[m], n_iterations))
+  Tau2_m[,,1] <- matrix(prior_Tau2, nrow = r, ncol = n_features[m])
+  return(Tau2_m)
 } 
 
-Tau2 <- lapply(1:n_views, init_Tau2_m, r, n_features)
+Tau2 <- lapply(1:n_views, init_Tau2_m, r, n_features, prior_Tau2)
 
 init_A_m <- function(m, r, n_features, Gamma, Eta, Sigma2, Tau2, n_iterations) {
   A_m_1 <- matrix(0, nrow = r, n_features[m])
-  active_index <- which(Eta[[m]][,,1] == 1)
+  active_index <- which(Eta[[m]][,,1] == 1) # TODO fix this!
   sigma2_temp <- Sigma2[[m]][,1] %>% 
     matrix(nrow = r, ncol = n_features[m], byrow = TRUE)
   active_sigmas <- sigma2_temp[active_index]
@@ -189,7 +179,9 @@ init_A_m <- function(m, r, n_features, Gamma, Eta, Sigma2, Tau2, n_iterations) {
   for (i in 1:length(active_index)) {
     A_m_1[active_index[i]] <- rnorm(n = 1, mean = 0, sd = active_sds[i])
   }
-  array(A_m_1, dim = c(r, n_features[m], n_iterations))
+  A_m <- array(NaN, dim = c(r, n_features[m], n_iterations))
+  A_m[,,1] <- A_m_1
+  return(A_m)
 }
 
 A <- lapply(1:n_views, init_A_m, r, n_features, 
@@ -286,7 +278,6 @@ sample_intercept <- function(Y, A_outcome, U, Sigma2_outcome, Sigma2_0 = 100) {
   return(intercept)
 }
 
-
 get_Sigma_j <- function(j, Gamma_m, U_iter, Sigma2_m, Tau2_m) {
   active_index <- which(Gamma_m == 1)
   U_active <- U_iter[, active_index] %>%
@@ -304,7 +295,7 @@ get_logG <- function(j, Gamma_m, Eta_mj, U_iter, Sigma2_m, Tau2_m,
   n <- nrow(X_m)
   mvnorm_variance_mj <- Sigma2_m[j] * get_Sigma_j(j, Gamma_m, U_iter, Sigma2_m, Tau2_m)
   logdmvnorm_mj <- mvtnorm::dmvnorm(x = X_m[,j], mean = rep(0, n), sigma = mvnorm_variance_mj, log = TRUE)
-  n_active <- sum(unlist(Eta_mj))
+  n_active <- sum(unlist(Eta_mj)) # TODO: Only sum where the gamma is on
   logprod_lj <- n_active*log(prior_variable_selection) + 
     (r-n_active)*log(1-prior_variable_selection)
   return(logdmvnorm_mj + logprod_lj)
@@ -436,6 +427,7 @@ iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iteratio
   
   ## -- Transform data structures for sampling steps 1-5
   
+  #### YOU ARE HERE ####
   view_list <- reshape_views(Gamma, Eta, X, Sigma2, Tau2)
   
   ## Update inputs to test to Scenario 1 Truth
@@ -457,16 +449,16 @@ iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iteratio
   # Gamma_sums <- sapply(Gamma, sum)
   # for (m in c(omics_index, response_index)) {
   #   if (m %in% omics_index) {
-  #     q_component_level[m] <- sample_beta_posterior(prior_alpha = prior_component_selection[1],
+  #     prob_component_selection[m] <- sample_beta_posterior(prior_alpha = prior_component_selection[1],
   #                                                   prior_beta = prior_component_selection[2],
   #                                                   n = r, summation = Gamma_sums[m])
   #     
   #     # Probability of variable selection fixed for omics data by prior_variable_selection
   #   } else if (m %in% response_index) {
-  #     q_component_level[m] <- sample_beta_posterior(prior_alpha = prior_response_selection[1],
+  #     prob_component_selection[m] <- sample_beta_posterior(prior_alpha = prior_response_selection[1],
   #                                                   prior_beta = prior_response_selection[2],
   #                                                   n = r, summation = Gamma_sums[m])
-  #     q_variable_level[[m]] <- rep(q_component_level[m], r)
+  #     q_variable_level[[m]] <- rep(prob_component_selection[m], r)
   #   } 
   # }
     
@@ -485,7 +477,7 @@ iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iteratio
       if (sum(Gamma_response_iter)==r) {
         n_active <- numeric(1)
         while (n_active == 0) {
-          Gamma_response_prime <- rbinom(n = r, size = 1, q_component_level[response_index, iter])
+          Gamma_response_prime <- rbinom(n = r, size = 1, prob_component_selection[response_index, iter])
           n_active <- sum(Gamma_prime)
         }
       } else {

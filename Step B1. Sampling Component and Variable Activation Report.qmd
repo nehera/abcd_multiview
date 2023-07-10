@@ -5,72 +5,116 @@ format: html
 editor: visual
 ---
 
-## Methods
-
-### Simulated Data
+## About the simulated data
 
 With `set.seed(1)`, data from BIP manuscript scenario 1 was simulated.
 
-### MCMC
+## Results from original `BIP()` vs. step B1
 
-Each "job" was run with its seed set to its "job ID". All parameters were initialized per their prior distributions/ fixed as specified in the BIP manuscript's supplement. Then, the MCMC is run with only the component activation parameter stored and consequently changed from iteration to iteration. Note, 1,000 iterations were collected as burn-in and 5,000 iterations were collected as samples.
+Defaults used for original `BIP()`: sample = 5000, burn-in = 1000
 
-## Results
-
-### MPPs
+Step B1 results taken from in-progress sampling. Thus, we have sample = 2500, burn-in = 1000. 
 
 ```{r}
 #| echo: false
+bip_0 <- readRDS("data/2023-07-03_simulation_BIP_results.rds")
+simulation_results <- readRDS("data/2023-07-03_simulation_results.rds")
+bip_0$CompoSelMean
+```
 
+```{r}
+#| echo: false
 library(tidyverse)
-view_list_2 <- readRDS("data/2023-06-30_view_list_seed_2.rds")
-n_iterations <- 500
+view_list_2 <- readRDS("data/2023-07-06_view_list_seed_2.rds")
+burnin <- 1000
+sample <- 2500
+n_iterations <- burnin + sample
 n_views <- 3
 r <- 4
 
-get_gamma_mpp_m <- function(view_list_m, n_iterations) {
-  gammas <- view_list_m$Gamma_m[, 1:n_iterations]
-  MPPs <- apply(gammas, 1, cumsum) / n_iterations %>%
-    matrix(nrow = n_iterations, ncol = 4) %>% as.data.frame()
-  colnames(MPPs) <- paste("component", 1:4, sep = "_")
-  return(MPPs)
+# calculate mpp for the lth component in the mth view
+get_gamma_mpp_m <- function(view_list_m, start = burnin+1, end = burnin+sample) {
+  gammas <- view_list_m$Gamma_m[, start:end]
+  mpps <- apply(gammas, 1, sum) / ncol(gammas)
+  return(mpps)
 }
 
-mpps <- lapply(view_list_2, get_gamma_mpp_m, n_iterations)
-lapply(mpps, function(mpp) {
-  apply(mpp, 2, summary)
-})
-
-plot_gamma_mpp_m <- function(view_list_m, n_iterations, r=4) {
-  gammas <- view_list_m$Gamma_m[, 1:n_iterations]
-  MPPs <- apply(gammas, 1, cumsum) / n_iterations %>%
-    matrix(nrow = n_iterations, ncol = 4) %>% as.data.frame()
-  colnames(MPPs) <- paste("component", 1:4, sep = "_")
-  tidy_data <- MPPs %>%
-    mutate(iter = 1:n_iterations) %>%
-    gather(key = "component", value = "MPP", -iter) 
-  ggplot(tidy_data, aes(x = iter, y = MPP, color = component)) + geom_line()
+get_gamma_mpp <- function(view_list, sample, burnin) {
+  sapply(view_list, get_gamma_mpp_m, start = burnin+1, end = burnin+sample) %>% t()
 }
-plots <- lapply(view_list_2, plot_gamma_mpp_m, n_iterations, r=4)
-plots
 
-# which features are associated with selected components? 
-comp_features <- list()
-for (m in 1:n_views) {
-  comp_features[[m]] <- lapply(1:r, function(l) { 
-    which(view_list_2[[1]]$Eta_m[l,,1] == 1) 
-    })
+get_gamma_mpp(view_list_2, sample, burnin)
+
+get_eta_mpp_m_j <- function(j, view_list_m, start = burnin+1, end = burnin+sample) {
+  eta_by_component <- view_list_m$Eta_m[, j, start:end]
+  mpp_m_j <- apply(eta_by_component, 1, sum) / ncol(eta_by_component)
+  return(mpp_m_j)
 }
-comp_features
+
+get_eta_mpp_m <- function(view_list_m, burnin, sample) {
+  p_m <- dim(view_list_m$Eta_m)[2] # TODO remove workaround by adding p_m to each element of view_list
+  sapply(1:p_m, get_eta_mpp_m_j, view_list_m, start = burnin+1, end = burnin + sample) %>% t()
+}
+
+var_sel_mean <- lapply(view_list_2, get_eta_mpp_m, burnin, sample)
+
+get_var_sel_mean_global_j <- function(j, view_list_m, burnin, sample) {
+  eta_global_j <- view_list_m$Eta_m[, j, (burnin+1):(burnin+sample)] %>% colSums() 
+  eta_global_j <- ifelse(eta_global_j>0, 1, 0)
+  var_sel_mean_global_j <- sum(eta_global_j) / length(eta_global_j)
+  return(var_sel_mean_global_j)
+}
+
+get_mpp_global_m <- function(view_list_m, burnin, sample) {
+  p_m <- dim(view_list_m$Eta_m)[2] # TODO remove workaround by adding p_m to each element of view_list
+  sapply(1:p_m, get_var_sel_mean_global_j, view_list_m, burnin, sample)
+}
+
+var_sel_mean_global <- lapply(view_list_2, get_mpp_global_m, burnin, sample)
+
+print("Omics features selected globally by original BIP():")
+which(bip_0$VarSelMeanGlobal[[1]]>0.5)
+which(bip_0$VarSelMeanGlobal[[2]]>0.5)
+
+print("Omics features selected globally by current version:")
+which(var_sel_mean_global[[1]]>0.5)
+which(var_sel_mean_global[[2]]>0.5)
 ```
 
-### Run Time
+Here's a trace plot of the MPP of the first 10 variables in the 1st view.
 
-## Discussion
+```{r}
+#| echo: false 
+m <- 1
+set.seed(1)
+features_to_plot <- 1:10
+j <- features_to_plot[1]
 
-### Learnings
+get_cumulative_eta_mpp_m_j <- function(j, view_list_m, start = burnin+1, end = burnin+sample) {
+  eta_by_component <- view_list_m$Eta_m[, j, start:end]
+  eta_cumulative <- apply(eta_by_component, 1, cumsum) # TODO use ifelse here?
+  results <- numeric(nrow(eta_cumulative))
+  for (j in 1:nrow(eta_cumulative)) {
+    results[j] <- sum(eta_cumulative[j, ]) / j
+  }
+  return(results)
+}
+cumulative_var_sel_mpp_j <- get_cumulative_eta_mpp_m_j(j, view_list_2[[m]], start = burnin+1, end = burnin+sample)
 
-### Questions/ Issues
+results <- sapply(1:10, get_cumulative_eta_mpp_m_j, view_list_2[[m]]) %>% as.data.frame() %>%
+  mutate(iter_id = 1:sample) %>% gather(key = "variable", value = "cum_var_selection", -iter_id)
+ggplot(results, aes(x = iter_id, y = cum_var_selection, color = variable)) + geom_point()
+```
+
+## Run Time
+
+Step B1 alone is slow...
+
+## Questions
+
+* How might I decide if my code is doing what it's meant to do? 
+* How might I approach these tests/ simulation studies in a meaningful way?
+* How might I speed the code? Parallel compuation and conversion to Rcpp...  
 
 ## Quarto
 
