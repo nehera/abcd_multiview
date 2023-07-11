@@ -231,18 +231,20 @@ Lambda2 <- lapply(1:n_views, init_Lambda2_m, prior_lambda_alpha, group_list, b_0
 
 #### ---- Initialize MCMC sampling functions
 
-reshape_views <- function(Gamma, Eta, X, Sigma2, Tau2) {
+reshape_views <- function(Gamma, Eta, X, Sigma2, Tau2, dtypes) {
   n_views <- length(Gamma)
-  view_list <- list()
+  views_this_iter <- list()
   for (m in 1:n_views) {
-    view_list[[m]] <- list(Gamma_m = Gamma[[m]], Eta_m = Eta[[m]], X_m = X[[m]],
-                           Sigma2_m = Sigma2[[m]], Tau2_m = Tau2[[m]], m=m)
+    dtype <- dtypes[m]
+    if (dtype=="response") { eta_m <- matrix(Eta[[m]]) } else { eta_m <- Eta[[m]] }
+    views_this_iter[[m]] <- list(Gamma_m = Gamma[[m]], Eta_m = eta_m, X_m = X[[m]],
+                           Sigma2_m = Sigma2[[m]], Tau2_m = Tau2[[m]], dtype=dtype)
   }
-  return(view_list)
+  return(views_this_iter)
 }
 
-extract_view_iter <- function(view_list, iter) {
-  # view_m <- view_list[[1]]
+extract_view_iter <- function(views_this_iter, iter) {
+  # view_m <- views_this_iter[[1]]
   extract_view_m_iter <- function(view_m, iter) {
     list2env(view_m, envir = environment())
     Gamma_m_iter <- Gamma_m[, iter]
@@ -252,16 +254,16 @@ extract_view_iter <- function(view_list, iter) {
     return(list(Gamma_m = Gamma_m_iter, Eta_m = Eta_m_iter,
                 X_m = X_m, Sigma2_m = Sigma2_m_iter, Tau2_m = Tau2_m_iter, m=m))
   }
-  return(lapply(view_list, extract_view_m_iter, iter))
+  return(lapply(views_this_iter, extract_view_m_iter, iter))
 }
 
-store_view_iter <- function(view_list, view_list_iter, iter) {
+store_view_iter <- function(views_this_iter, views_previous_iter, iter) {
   for (m in 1:n_views) {
-    view_list[[m]]$Gamma_m[, iter] <- view_list_iter[[m]]$Gamma_m
-    view_list[[m]]$Eta_m[,, iter] <- view_list_iter[[m]]$Eta_m
+    views_this_iter[[m]]$Gamma_m[, iter] <- views_previous_iter[[m]]$Gamma_m
+    views_this_iter[[m]]$Eta_m[,, iter] <- views_previous_iter[[m]]$Eta_m
   }    
   # TODO: Store other vars too
-  return(view_list)
+  return(views_this_iter)
 }
 
 sample_intercept <- function(Y, A_outcome, U, Sigma2_outcome, Sigma2_0 = 100) {
@@ -364,53 +366,84 @@ propose_GammaEta_prime_m_l <- function(l, Gamma_m, Eta_m,
   }
 }
 
-log_target_density <- function(Gamma_prime, Eta_prime, U_iter, Sigma2_m, Tau2_m, 
+# This should also be a function of prior_component_selection
+log_target_density <- function(gamma_prime, eta_prime, U_iter, Sigma2_m, Tau2_m, 
                                X_m, prior_variable_selection) {
-  r <- nrow(Eta_prime)
-  p_m <- ncol(Eta_prime)
+  
+  r <- ncol(U_iter)
+  p_m <- length(Sigma2_m)
+
+  log_prod_prior_component_selection <- prior_component_selection %>% 
+    rep(r) %>% log() %>% sum()
+  
+  ### YOU ARE HERE ####
   logG <- numeric(p_m)
   for (j in 1:p_m) { # TODO: Remove for loop
-    logG[j] <- get_logG(j, Gamma_prime, Eta_prime[,j], U_iter, 
+    logG[j] <- get_logG(j, gamma_prime, eta_prime[,j], U_iter, 
                         Sigma2_m, Tau2_m, X_m, prior_variable_selection)
   }
   return(sum(logG))
 }
 
-sample_GammaEta <- function(view_m_iter, U_iter, prior_variable_selection, covariate_index) {
+# sample_GammaEta is a function of views_previous_iter, prior_variable selection, and U_previous_iter
+view_m_iter <- views_previous_iter[[3]]
+U_iter <- U_previous_iter
+sample_GammaEta <- function(view_m_iter, U_iter, prior_variable_selection) {
   list2env(view_m_iter, envir = environment())
-  # get meta-parameters
   r <- length(Gamma_m)
-  #### YOU ARE HERE
-  GammaEta_prime_list <- lapply(1:r, propose_GammaEta_prime_m_l,
-                                Gamma_m, Eta_m, X_m, U_iter,
-                                Sigma2_m, Tau2_m,
-                                prior_variable_selection,
-                                m, covariate_index)
-  
-  Gamma_prime <- sapply(GammaEta_prime_list, `[[`, 1)
-  Eta_prime <- sapply(GammaEta_prime_list, `[[`, 2) %>% t()
-  
-  # Compute the acceptance probability
-  alpha <- min(1, log_target_density(Gamma_prime, Eta_prime, U_iter, Sigma2_m, Tau2_m, 
-                                     X_m, prior_variable_selection) - 
-                 log_target_density(Gamma_m, Eta_m, U_iter, Sigma2_m, Tau2_m, 
-                                    X_m, prior_variable_selection))
-  
-  # Accept or reject the proposed values
-  if (runif(1) < alpha) {
-    view_m_iter$Gamma_m <- Gamma_prime
-    view_m_iter$Eta_m <- Eta_prime
-    return(view_m_iter)
-  } else {
-    return(view_m_iter)
+  gamma_prime <- Gamma_m
+  eta_prime <- Eta_m
+  if (dtype=="response") {
+    for (l in 1:r) {
+      gamma_prime[l] <- ifelse(gamma_prime[l]==0, 1, 0)
+      eta_prime[l] <- gamma_prime[l]
+      # Compute acceptance probability
+      #### YOU ARE HERE ####
+      acceptance_prob <- min(1, log_target_density(Gamma_prime, Eta_prime, U_iter, Sigma2_m, Tau2_m, 
+                                         X_m, prior_variable_selection) - 
+                     log_target_density(Gamma_m, Eta_m, U_iter, Sigma2_m, Tau2_m, 
+                                        X_m, prior_variable_selection))
+      
+      if (runif(1) > acceptance_prob) {
+        # Reject proposed values
+        gamma_prime[l] <- Gamma_m[l]
+        eta_prime[l] <- Eta_m[l]
+      } 
+    }
   }
+  
+  if (dtype!="response") {
+
+    GammaEta_prime_list <- lapply(1:r, propose_GammaEta_prime_m_l,
+                                  Gamma_m, Eta_m, X_m, U_iter,
+                                  Sigma2_m, Tau2_m,
+                                  prior_variable_selection,
+                                  m, covariate_index)
+    
+    Gamma_prime <- sapply(GammaEta_prime_list, `[[`, 1)
+    Eta_prime <- sapply(GammaEta_prime_list, `[[`, 2) %>% t()
+    
+    # Compute the acceptance probability
+    alpha <- min(1, log_target_density(Gamma_prime, Eta_prime, U_iter, Sigma2_m, Tau2_m, 
+                                       X_m, prior_variable_selection) - 
+                   log_target_density(Gamma_m, Eta_m, U_iter, Sigma2_m, Tau2_m, 
+                                      X_m, prior_variable_selection))
+    
+    # Accept or reject the proposed values
+    if (runif(1) < alpha) {
+      view_m_iter$Gamma_m <- Gamma_prime
+      view_m_iter$Eta_m <- Eta_prime
+      return(view_m_iter)
+    } else {
+      return(view_m_iter)
+    }
+  } 
   
 }
 
 #### ---- MCMC Posterior Sampling
 
-iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iterations
-
+iter <- 1 # TODO: Remove post-development and uncomment for iter in 2:n_iterations
 # for (iter in 2:n_iterations) {
   
 # TODO uncomment intercept sampling post-testing
@@ -422,19 +455,24 @@ iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iteratio
   #   rep(n_iterations) # TODO: Sample intercept at each iteration
   
   # Adjust Y for subsequent sampling
-  X <- data_list
-  # X[[response_index]] <- data_list[[response_index]] - intercept[iter] 
+  x_iter <- data_list
+  x_iter[[response_index]] <- data_list[[response_index]] - intercept[iter]
   
   ## -- Transform data structures for sampling steps 1-5
   
-  #### YOU ARE HERE ####
-  view_list <- reshape_views(Gamma, Eta, X, Sigma2, Tau2)
+  gamma_iter <- lapply(Gamma, "[", , j=iter)
+  eta_iter <- lapply(Eta, "[", , , k=iter)
+  sigma2_iter <- lapply(Sigma2, "[", , j=iter)
+  tau2_iter <- lapply(Tau2, "[", , , k=iter)
+  views_this_iter <- reshape_views(gamma_iter, eta_iter, X, 
+                                   sigma2_iter, tau2_iter, dtypes)
+  U_this_iter <- U[,, iter]
   
   ## Update inputs to test to Scenario 1 Truth
   # simulation_results <- readRDS("data/2023-07-03_simulation_results.rds")
   ## TODO: Remove update to truth post-testing
   for (m in 1:n_views) {
-    view_list[[m]]$Sigma2_m <- matrix(1, nrow = n_features[m], ncol = n_iterations)
+    views_this_iter[[m]]$Sigma2_m <- rep(1, n_features[m])
   }
   
   # Step 0 continued. Sample component and variable selection probabilities
@@ -465,15 +503,17 @@ iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iteratio
     for (iter in 2:n_iterations) {
       
       # Step 0. Extract last iteration's data
-      
-      view_list_iter <- extract_view_iter(view_list, iter-1)
+      # TODO switch extraction to come from "truth", the data structures we store results from iteration to iteration e.g. "Gamma"
+      views_previous_iter <- views_this_iter
+      U_previous_iter <- U_this_iter
       
       # Step 2. Sample component, feature activation parameters (gamma, eta respectively) by Metropolis-Hastings
       
-      view_list_iter[-response_index] <- mclapply(view_list_iter[-response_index], sample_GammaEta, U_iter = U[,, iter],
+      views_previous_iter[-response_index] <- mclapply(views_previous_iter[-response_index], sample_GammaEta, U_iter = U[,, iter],
                                                 prior_variable_selection, covariate_index, mc.cores = 2)
+
       
-      Gamma_response_iter <- view_list_iter[[response_index]]$Gamma_m
+      Gamma_response_iter <- views_previous_iter[[response_index]]$Gamma_m
       if (sum(Gamma_response_iter)==r) {
         n_active <- numeric(1)
         while (n_active == 0) {
@@ -484,12 +524,12 @@ iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iteratio
         Gamma_response_prime <- ifelse(Gamma_response_iter==1, 0, 1)
       }
       
-      view_list_iter[[response_index]]$Gamma_m <- Gamma_response_prime
-      view_list_iter[[response_index]]$Eta_m <- Gamma_response_prime
+      views_previous_iter[[response_index]]$Gamma_m <- Gamma_response_prime
+      views_previous_iter[[response_index]]$Eta_m <- Gamma_response_prime
       
       # Step Final. Store iteration's data
       # TODO: Storing only new Gammas for now. Want to store more.
-      view_list <- store_view_iter(view_list, view_list_iter, iter)
+      views_this_iter <- store_view_iter(views_this_iter, views_previous_iter, iter)
       
       if (iter %% 500 == 0) {
         # Save progress
@@ -497,8 +537,8 @@ iter <- 2 # TODO: Remove post-development and uncomment for iter in 2:n_iteratio
         writeLines(paste("Seed", seed, "is on iter", iter), fileConn)
         close(fileConn)
         # Save output
-        output_name <- paste0("data/", Sys.Date(), "_view_list_seed_", seed, ".rds")
-        saveRDS(view_list, file = output_name)
+        output_name <- paste0("data/", Sys.Date(), "_views_this_iter_seed_", seed, ".rds")
+        saveRDS(views_this_iter, file = output_name)
       }
       
     }
