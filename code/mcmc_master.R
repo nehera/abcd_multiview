@@ -123,7 +123,7 @@ init_omics_variable_activation_l <- function(gamma_l, p_m, prior_variable_select
 }
 
 # M=1:n_views
-# Gamma_1 <- lapply(Gamma, "[", , j=1) # Rstudio warning fine
+Gamma_1 <- lapply(Gamma, "[", , j=1) # Rstudio warning fine
 # dtype=dtypes[1]
 # p_m=n_features[1]
 # gamma_1=Gamma_1[1]
@@ -167,6 +167,10 @@ init_Tau2_m <- function(m, r, n_features, prior_Tau2) {
 
 Tau2 <- lapply(1:n_views, init_Tau2_m, r, n_features, prior_Tau2)
 
+# TODO
+# Warning messages:
+# 1: In rnorm(n = 1, mean = 0, sd = active_sds[i]) : NAs produced
+# 2: In rnorm(n = 1, mean = 0, sd = active_sds[i]) : NAs produced
 init_A_m <- function(m, r, n_features, Gamma, Eta, Sigma2, Tau2, n_iterations) {
   A_m_1 <- matrix(0, nrow = r, n_features[m])
   active_index <- which(Eta[[m]][,,1] == 1) # TODO fix this!
@@ -270,7 +274,7 @@ sample_intercept <- function(Y, A_outcome, U, Sigma2_outcome, Sigma2_0 = 100) {
   n <- nrow(Y)
   Y_star <- matrix(nrow = n, ncol = 1)
   # TODO: Remove for loop
-  for (i in 1:n_observations) {
+  for (i in 1:n) {
     U_star_i <- U[i,] %*% A_outcome
     Y_star[i,1] <- Y[i,1] - U_star_i
   }
@@ -303,6 +307,7 @@ get_logG <- function(j, Gamma_m, Eta_mj, U_iter, Sigma2_m, Tau2_m,
   return(logdmvnorm_mj + logprod_lj)
 }
 
+#### YOU ARE HERE
 get_P_lj <- function(logG_lj_0, logG_lj_1) {
   x_0 <- max(logG_lj_0, logG_lj_1)
   x <- logG_lj_1 - x_0
@@ -386,8 +391,22 @@ log_target_density <- function(gamma_prime, eta_prime, U_iter, Sigma2_m, Tau2_m,
 }
 
 # sample_GammaEta is a function of views_previous_iter, prior_variable selection, and U_previous_iter
+iter <- 1
+x_iter <- data_list
+x_iter[[response_index]] <- data_list[[response_index]] - intercept[iter]
+gamma_iter <- lapply(Gamma, "[", , j=iter)
+eta_iter <- lapply(Eta, "[", , , k=iter)
+sigma2_iter <- lapply(Sigma2, "[", , j=iter)
+tau2_iter <- lapply(Tau2, "[", , , k=iter)
+views_this_iter <- reshape_views(gamma_iter, eta_iter, x_iter, 
+                                 sigma2_iter, tau2_iter, dtypes)
+U_this_iter <- U[,, iter]
+views_previous_iter <- views_this_iter
+U_previous_iter <- U_this_iter
 view_m_iter <- views_previous_iter[[3]]
 U_iter <- U_previous_iter
+# TODO add prior_component selection to function args?
+# TODO pass meta-params to function itself e.g. r
 sample_GammaEta <- function(view_m_iter, U_iter, prior_variable_selection) {
   list2env(view_m_iter, envir = environment())
   r <- length(Gamma_m)
@@ -399,7 +418,7 @@ sample_GammaEta <- function(view_m_iter, U_iter, prior_variable_selection) {
       eta_prime[l] <- gamma_prime[l]
       # Compute acceptance probability
       #### YOU ARE HERE ####
-      acceptance_prob <- min(1, log_target_density(Gamma_prime, Eta_prime, U_iter, Sigma2_m, Tau2_m, 
+      acceptance_prob <- min(1, log_target_density(gamma_prime, eta_prime, U_iter, Sigma2_m, Tau2_m, 
                                          X_m, prior_variable_selection) - 
                      log_target_density(Gamma_m, Eta_m, U_iter, Sigma2_m, Tau2_m, 
                                         X_m, prior_variable_selection))
