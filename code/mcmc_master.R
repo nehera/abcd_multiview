@@ -291,7 +291,7 @@ get_Sigma_j <- function(j, Gamma_m, U_iter, Sigma2_m, Tau2_m) {
   active_index <- which(Gamma_m == 1)
   U_active <- U_iter[, active_index] %>%
     matrix(ncol = length(active_index))
-  n <- nrow(U_active)
+  n <- nrow(U_iter)
   if (ncol(U_active) == 0) {
     return(diag(n))
   } else {
@@ -302,7 +302,10 @@ get_Sigma_j <- function(j, Gamma_m, U_iter, Sigma2_m, Tau2_m) {
 get_logG <- function(j, Gamma_m, Eta_mj, U_iter, Sigma2_m, Tau2_m, 
                      X_m, prior_variable_selection) {
   n <- nrow(X_m)
+  # print(n)
   mvnorm_variance_mj <- Sigma2_m[j] * get_Sigma_j(j, Gamma_m, U_iter, Sigma2_m, Tau2_m)
+  # print(X_m[,j])
+  # print(mvnorm_variance_mj)
   logdmvnorm_mj <- mvtnorm::dmvnorm(x = X_m[,j], mean = rep(0, n), sigma = mvnorm_variance_mj, log = TRUE)
   n_active <- sum(unlist(Eta_mj)) # TODO: Only sum where the gamma is on
   logprod_lj <- n_active*log(prior_variable_selection) + 
@@ -359,6 +362,7 @@ log_target_density <- function(gamma_prime, eta_prime, U_iter, Sigma2_m, Tau2_m,
 
   logG <- numeric(p_m)
   for (j in 1:p_m) { # TODO: Remove for loop
+
     logG[j] <- get_logG(j, gamma_prime, eta_prime[,j], U_iter, 
                         Sigma2_m, Tau2_m, X_m, prior_variable_selection)
   }
@@ -380,7 +384,7 @@ log_target_density <- function(gamma_prime, eta_prime, U_iter, Sigma2_m, Tau2_m,
 # U_previous_iter <- U_this_iter
 # 
 # m=1
-view_m_iter <- views_previous_iter[[m]] # TODO remove post-dev
+# view_m_iter <- views_previous_iter[[m]] # TODO remove post-dev
 # U_iter <- U_previous_iter # TODO remove post-dev
 # TODO add prior_component selection to function args?
 # TODO pass meta-params to function itself e.g. r
@@ -390,11 +394,15 @@ sample_GammaEta <- function(view_m_iter, U_iter, prior_component_selection, prio
   gamma_prime <- Gamma_m
   eta_prime <- Eta_m
   for (l in 1:r) {
-    gamma_prime[l] <- ifelse(gamma_prime[l]==0, 1, 0)
+    gamma_prime[l] <- ifelse(Gamma_m[l]==0, 1, 0)
     if (dtype=="response") { 
       eta_prime[l] <- gamma_prime[l]
     } else if (dtype=="omics") {
-      eta_prime[l, ] <- propose_eta_prime_m_l(l, prior_variable_selection, gamma_prime, Eta_m, X_m, U_iter, Sigma2_m, Tau2_m)
+      if (gamma_prime[l]==0) {
+        eta_prime[l, ] <- rep(0, ncol(X_m))
+      } else {
+        eta_prime[l, ] <- propose_eta_prime_m_l(l, prior_variable_selection, gamma_prime, Eta_m, X_m, U_iter, Sigma2_m, Tau2_m)
+      }
     } 
     
     # Compute acceptance probability

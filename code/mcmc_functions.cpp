@@ -31,13 +31,20 @@ double get_P_lj_cpp(double logG_lj_0, double logG_lj_1) {
   return (exp(x) / (exp(x) + exp(y)));
 }
 
-// [[Rcpp::export]]
-NumericVector timesTwo(NumericVector x) {
-  return x * 2;
+/*** R
+sample_intercept_R <- function(Y, A_outcome, U, Sigma2_outcome, Sigma2_0 = 100) {
+  n <- nrow(Y)
+  Y_star <- matrix(nrow = n, ncol = 1)
+  # TODO: Remove for loop
+  for (i in 1:n) {
+    U_star_i <- U[i,] %*% A_outcome
+    Y_star[i,1] <- Y[i,1] - U_star_i
+  }
+  Y_star_mean <- mean(Y_star)
+  invSig2 <- n / Sigma2_outcome + 1 / Sigma2_0
+  intercept <- (n * Y_star_mean) / (invSig2 * Sigma2_outcome) + sqrt(1 / invSig2) * rnorm(1)
+  return(intercept)
 }
 
-/*** R
-timesTwo(42)
-# get_P_lj_cpp(-3, -4)
-# get_P_lj(-3, -4)
+
 */

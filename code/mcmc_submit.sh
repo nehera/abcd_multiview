@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=mcmc_submit
-#SBATCH --array=1-5
+#SBATCH --array=1-3
 #SBATCH --output=mcmc_submit_%A_%a.out
 #SBATCH --error=mcmc_submit_%A_%a.err
 
