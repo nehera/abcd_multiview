@@ -26,7 +26,7 @@ group_list <- NULL # default when grouping information not included
 ## Set MCMC Parameters
 n_sample <- 5000
 n_burnin <- 1000
-n_max_models <- 50
+n_max_models <- 50 # TODO understand implications
 
 ## Set Hyper-Parameters
 r <- 4 # number of components
