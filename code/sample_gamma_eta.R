@@ -94,13 +94,13 @@ for (iter in 2:n_iterations) {
       print(eta_previous)
       }
     
-    mvnorm_var_list <- lapply(j:p_m, get_mvnorm_var, gamma_previous, U, sigma2, n)
+    mvnorm_var_list <- lapply(1:p_m, get_mvnorm_var, gamma_previous, U, sigma2, n)
 
-    if (gamma[l] == 1) {
+    if (gamma_previous[l] == 1) {
       # Propose deactivation
       gamma_prime[l] <- 0
       eta_prime[l, ] <- rep(0, p_m)
-    } else if (gamma[l] == 0) {
+    } else if (gamma_previous[l] == 0) {
       # Propose activation
       gamma_prime[l] <- 1
       for (j in 1:p_m) {
@@ -113,17 +113,17 @@ for (iter in 2:n_iterations) {
         eta_1[l] <- 1
         eta_0 <- eta_prime[, j]
         eta_0[l] <- 0
-        log_G1 <- get_logG(gamma_1, eta_1, x[, j], mvnorm_var_list[[j]], 
-                           prior_variable_selection, n, r)
-        log_G0 <- get_logG(gamma_1, eta_0, x[, j], mvnorm_var_list[[j]], 
-                           prior_variable_selection, n, r)
+        log_G1 <- get_logG(gamma_1, x[, j], mvnorm_var_list[[j]], 
+                           prior_variable_selection, n)
+        log_G0 <- get_logG(gamma_1, x[, j], mvnorm_var_list[[j]], 
+                           prior_variable_selection, n)
         P_lj <- get_P_lj(log_G0, log_G1)
         if (verbose==TRUE) { print(P_lj) }
         eta_prime[l,j] <- rbinom(1, 1, prob = P_lj)
       }
     }
     
-    mvnorm_var_list_prime <- lapply(j:p_m, get_mvnorm_var, gamma_prime, U, sigma2, n)
+    mvnorm_var_list_prime <- lapply(1:p_m, get_mvnorm_var, gamma_prime, U, sigma2, n)
     
     # TODO verify log_target calculations are correct
     log_target_prime <- log_target_density(gamma_prime, x_list, 
