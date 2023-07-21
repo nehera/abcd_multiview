@@ -1,6 +1,6 @@
 library(tidyverse)
-
-set.seed(1)
+seed <- 2
+set.seed(seed)
 verbose <- TRUE
 
 data_list <- readRDS("data/2023-07-03_simulation_data_list.rds")
@@ -37,6 +37,15 @@ eta_chain[,,1] <- eta_previous
 sigma2 <- rep(1, p_m)
 tau2 <- matrix(1, nrow = r, ncol = p_m)
 U <- matrix(rnorm(n*r), nrow = n, ncol = r)
+
+if (verbose==TRUE) {
+  log_target_prime_chain <- numeric(n_iterations)
+  log_target_previous_chain <- numeric(n_iterations)
+  log_acceptance_ratio_chain <- numeric(n_iterations)
+  accept_chain <- numeric(n_iterations)
+  gamma_prime_chain <- matrix(nrow = r, ncol = n_iterations)
+  eta_prime_chain <- array(dim = c(r, p_m, n_iterations))
+}
 
 # Specify functions
 get_mvnorm_var <- function(j, gamma, U, sigma2, n) {
@@ -94,7 +103,7 @@ for (iter in 2:n_iterations) {
       print(eta_previous)
       }
     
-    mvnorm_var_list <- lapply(1:p_m, get_mvnorm_var, gamma_previous, U, sigma2, n)
+    mvnorm_var_list_previous <- lapply(1:p_m, get_mvnorm_var, gamma_previous, U, sigma2, n)
 
     if (gamma_previous[l] == 1) {
       # Propose deactivation
@@ -113,9 +122,9 @@ for (iter in 2:n_iterations) {
         eta_1[l] <- 1
         eta_0 <- eta_prime[, j]
         eta_0[l] <- 0
-        log_G1 <- get_logG(gamma_1, x[, j], mvnorm_var_list[[j]], 
+        log_G1 <- get_logG(gamma_1, x[, j], mvnorm_var_list_previous[[j]], 
                            prior_variable_selection, n)
-        log_G0 <- get_logG(gamma_1, x[, j], mvnorm_var_list[[j]], 
+        log_G0 <- get_logG(gamma_1, x[, j], mvnorm_var_list_previous[[j]], 
                            prior_variable_selection, n)
         P_lj <- get_P_lj(log_G0, log_G1)
         if (verbose==TRUE) { print(P_lj) }
@@ -148,6 +157,11 @@ for (iter in 2:n_iterations) {
       print(log_target_previous)
       print("log_acceptance_ratio:")
       print(log_acceptance_ratio)
+      log_target_prime_chain[iter] <- log_target_prime
+      log_target_previous_chain[iter] <- log_target_previous
+      log_acceptance_ratio_chain[iter] <- log_acceptance_ratio
+      gamma_prime_chain[,iter] <- gamma_prime
+      eta_prime_chain[,,iter] <- eta_prime
     }
     
     if (log(runif(1)) < log_acceptance_ratio) {
@@ -155,6 +169,9 @@ for (iter in 2:n_iterations) {
       gamma_chain[,iter] <- gamma_prime
       eta_chain[,,iter] <- eta_prime
       mvnorm_var_list_previous <- mvnorm_var_list_prime
+      if (verbose == TRUE) {
+        accept_chain[iter] <- 1
+      }
     } else {
       # Reject
       gamma_chain[,iter] <- gamma_chain[,iter-1]
@@ -173,6 +190,15 @@ for (iter in 2:n_iterations) {
     saveRDS(gamma_chain, file = output_name)
     output_name <- paste0("data/", Sys.Date(), "_eta_chain_seed_", seed, ".rds")
     saveRDS(eta_chain, file = output_name)
+    if (verbose==TRUE) {
+      output_name <- paste0("data/", Sys.Date(), "_log_target_list_", seed, ".rds")
+      saveRDS(list(log_target_prime_chain, log_target_previous_chain, log_acceptance_ratio), 
+              file = output_name)
+      saveRDS(accept_chain, file = "data/accept_chain.rds")
+      saveRDS(gamma_prime_chain, file = "data/gamma_prime_chain.rds")
+      saveRDS(eta_prime_chain, file = "data/eta_prime_chain.rds")
+      save.image()
+    }
   }
   
 }
