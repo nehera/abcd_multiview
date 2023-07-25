@@ -1,11 +1,16 @@
 # Set-up environment
 library(tidyverse)
 
-dev <- TRUE # Flag for indicating active development
+dev <- FALSE # Flag for indicating active development
 verbose <- TRUE 
 
 if (dev == TRUE) { 
-  seed <- 1 } else {
+  seed <- 1 
+  iter <- 1
+  l <- 1
+  j <- 1
+  x_j <- x[,j]
+  } else {
     # Get CLI arguments
     args = commandArgs(trailingOnly=TRUE)
     # test if there is at least one argument: if not, return an error
@@ -21,7 +26,7 @@ if (dev == TRUE) {
 set.seed(seed)
 
 # Load simulated data
-simulation_results <- readRDS("data/2023-07-03_simulation_results.RDS")
+simulation_results <- readRDS("data/2023-07-03_simulation_results.rds")
 data_list <- readRDS("data/2023-07-03_simulation_data_list.rds")
 
 # Start with the 1st view
@@ -39,6 +44,9 @@ n_burnin <- 1000
 n_iterations <- n_sample + n_burnin
 
 # Initialize data structures
+gamma_chain <- matrix(nrow = r, ncol = n_iterations)
+eta_chain <- array(dim = c(r, p_m, n_iterations))
+
 gamma <- rbinom(n = r, size = 1, prob = prior_component_selection)
 eta <- matrix(nrow = r, ncol = p_m)
 for (l in 1:r) {
@@ -48,24 +56,12 @@ for (l in 1:r) {
     eta[l, ] <- rep(0, p_m)
   }
 }
-gamma_chain <- matrix(nrow = r, ncol = n_iterations+1)
-gamma_chain[, 1] <- gamma
-eta_chain <- array(dim = c(r, p_m, n_iterations+1))
-eta_chain[,,1] <- eta
 
 sigma2 <- rep(1, p_m)
 tau2 <- matrix(1, nrow = r, ncol = p_m)
 U <- simulation_results$U # U is a fixed set of covariates
 
-if (verbose==TRUE) {
-  # r x n_iteration proposals and accept/ rejects occur, so last two dimensions represent this
-  log_target_prime_chain <- matrix(nrow = r, ncol = n_iterations)
-  log_target_chain <- matrix(nrow = r, ncol = n_iterations)
-  log_acceptance_ratio_chain <- matrix(nrow = r, ncol = n_iterations)
-  acceptance_indicator_chain <- matrix(nrow = r, ncol = n_iterations)
-  gamma_prime_chain <- array(dim = c(r, r, n_iterations))
-  eta_prime_chain <- array(dim = c(r, p_m, r, n_iterations))
-}
+log_target_chain <- numeric(n_iterations)
 
 # Specify functions
 get_mvnorm_var <- function(j, gamma, U, sigma2, n) {
@@ -74,15 +70,43 @@ get_mvnorm_var <- function(j, gamma, U, sigma2, n) {
   return(mvnorm_var)
 }
 
-get_logG <- function(gamma, x_j, mvnorm_var, 
-                     prior_variable_selection, n) {
+get_log_dmvnorm_j <- function(x_j, mvnorm_var_j, n) {
   log_dmvnorm_j <- mvtnorm::dmvnorm(x = x_j, mean = rep(0, n), 
-                                    sigma = mvnorm_var, log = TRUE)
-  n_components_active <- sum(gamma)
-  # TODO implement fix RE probability of features being on
-  log_p <- rep(prior_variable_selection, n_components_active) %>% 
-    log() %>% sum()
-  return(log_dmvnorm_j + log_p)
+                          sigma = mvnorm_var_j, log = TRUE)
+  return(log_dmvnorm_j)
+}
+
+get_log_dmvnorm_vector <- function(gamma, x, U, sigma2, p_m, n) {
+  x_list <- as.list(as.data.frame(x))
+  mvnorm_var_list <- lapply(1:p_m, get_mvnorm_var, gamma, U, sigma2, n) # TODO breakout from function to reduce redundant calculations
+  log_dmvnorm_vector <- mapply(get_log_dmvnorm_j, x_list, mvnorm_var_list, n)
+  return(unname(log_dmvnorm_vector))
+}
+
+get_log_p_eta_j <- function(eta_j, prior_variable_selection, r) {
+  n_features_active <- sum(eta_j)
+  log_p_eta_j <- n_features_active * log(prior_variable_selection) +
+    (r - n_features_active) * log(1 - prior_variable_selection)
+  return(log_p_eta_j) 
+}
+
+get_log_G_j <- function(log_dmvnorm_j, eta_j, prior_variable_selection, r) {
+  log_p_eta_j <- get_log_p_eta_j(eta_j, prior_variable_selection, r)
+  return(log_dmvnorm_j + log_p_eta_j)
+}
+
+get_log_p_eta <- function(gamma, eta, prior_variable_selection, p_m, n) {
+  components_active_index <- which(gamma==1)
+  if (length(components_active_index)==0) { return(0) }
+  n_features_active_vector <- apply(eta, 1, sum)
+  log_p_eta <- 0
+  for (l in components_active_index) {
+    n_features_active <- n_features_active_vector[l]
+    log_p_eta_l <- n_features_active * log(prior_variable_selection) +
+      (p_m - n_features_active) * log(1-prior_variable_selection)
+    log_p_eta <- log_p_eta + log_p_eta_l
+  }
+  return(log_p_eta)
 }
 
 get_P_lj <- function(log_G0, log_G1) {
@@ -92,35 +116,42 @@ get_P_lj <- function(log_G0, log_G1) {
   return(exp(x) / (exp(x) + exp(y)))
 }
 
-log_target_density <- function(gamma, x_list, mvnorm_var_list,
-                               prior_component_selection, prior_variable_selection,
-                               r, n) {
-  log_prod_G <- mapply(get_logG, gamma, 
-                       x_list, mvnorm_var_list, 
-                       prior_variable_selection, n) %>% sum()
-  # TODO update calculation of log_prod_prior_component_selection because gamma is bernoulli! 
-  log_prod_prior_component_selection <- prior_component_selection %>% 
-    rep(r) %>% log() %>% sum()
-  return(log_prod_G + log_prod_prior_component_selection)
+log_target_density <- function(gamma, eta, log_dmvnorm_vector, 
+                               prior_component_selection, prior_variable_selection, r) {
+  log_p_eta_vector <- apply(eta, 2, get_log_p_eta_j, prior_variable_selection, r)
+  log_G_vector <- log_p_eta_vector + log_dmvnorm_vector
+  log_prod_G <- sum(log_G_vector)
+  n_active_components <- sum(gamma)
+  log_prod_p_gamma <- n_active_components * log(prior_component_selection) +
+    (r - n_active_components) * log(1-prior_component_selection)
+  return(log_prod_G + log_prod_p_gamma)
 }
 
-# Reshape input
-x_list <- as.list(as.data.frame(x))
-
 # Begin MCMC
-if (dev == TRUE) {
-  iter <- 1
-  l <- 1
-  j <- 1
+log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
+log_target <- log_target_density(gamma, eta, log_dmvnorm_vector, 
+                                 prior_component_selection, 
+                                 prior_variable_selection, r)
+
+if (verbose==TRUE) {
+  initial_conditions <- list(gamma=gamma, eta=eta, sigma2=sigma2, tau2=tau2, U=U,
+                             log_dmvnorm_vector=log_dmvnorm_vector, log_target=log_target)
+  # r x n_iteration proposals and accept/ rejects occur, so last two dimensions represent this
+  log_target_prime_chain <- matrix(nrow = r, ncol = n_iterations)
+  log_acceptance_ratio_chain <- matrix(nrow = r, ncol = n_iterations)
+  acceptance_indicator_chain <- matrix(nrow = r, ncol = n_iterations)
+  gamma_prime_chain <- array(dim = c(r, r, n_iterations))
+  eta_prime_chain <- array(dim = c(r, p_m, r, n_iterations))
 }
 
 for (iter in 1:n_iterations) {
   
   if (verbose==TRUE) { print(iter) }
   
-  # Initialize candidate values
-  gamma_prime <- gamma
-  eta_prime <- eta
+  # Store previous result
+  gamma_chain[,iter] <- gamma
+  eta_chain[,,iter] <- eta
+  log_target_chain[iter] <- log_target
   
   for (l in 1:r) {
     
@@ -129,76 +160,72 @@ for (iter in 1:n_iterations) {
       print(l) 
       print("gamma:")
       print(gamma)
-      }
+    }
     
-    mvnorm_var_list <- lapply(1:p_m, get_mvnorm_var, gamma, U, sigma2, n)
-
     if (gamma[l] == 1) {
-      # Propose deactivation
-      gamma_prime[l] <- 0
-      eta_prime[l,] <- rep(0, p_m)
-    } else if (gamma[l] == 0) {
-      # Propose activation
-      gamma_prime[l] <- 1
+      # Propose component and feature deactivation
+      gamma[l] <- 0
+      eta[l,] <- rep(0, p_m)
+    } 
+    
+    if (gamma[l] == 0) {
+      # Propose component activation
+      gamma[l] <- 1
+    }
+    
+    log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
+    
+    if (gamma[l] == 0) {
+      # Propose feature activation
       for (j in 1:p_m) {
         if (verbose==TRUE) { print(j) }
-        eta_1 <- eta_prime[, j]
+        eta_1 <- eta[, j]
         eta_1[l] <- 1
-        eta_0 <- eta_prime[, j]
+        eta_0 <- eta[, j]
         eta_0[l] <- 0
-        log_G1 <- get_logG(gamma_prime, x[, j], mvnorm_var_list[[j]], 
-                           prior_variable_selection, n)
-        # TODO understand if logG calculation should be truly independent of eta
-        log_G0 <- get_logG(gamma_prime, x[, j], mvnorm_var_list[[j]], 
-                           prior_variable_selection, n)
+        log_G1 <- get_log_G_j(log_dmvnorm_vector[j], eta_1, 
+                              prior_variable_selection, r)
+        log_G0 <- get_log_G_j(log_dmvnorm_vector[j], eta_0, 
+                              prior_variable_selection, r)
         P_lj <- get_P_lj(log_G0, log_G1)
         if (verbose==TRUE) { print(P_lj) }
-        eta_prime[l,j] <- rbinom(1, 1, prob = P_lj)
+        eta[l,j] <- rbinom(1, 1, prob = P_lj)
       }
     }
     
-    mvnorm_var_list_prime <- lapply(1:p_m, get_mvnorm_var, gamma_prime, U, sigma2, n)
-    
-    # TODO verify log_target calculations are correct
-    log_target_prime <- log_target_density(gamma_prime, x_list, 
-                                           mvnorm_var_list_prime, 
+    log_target <- log_target_density(gamma, eta, 
+                                           log_dmvnorm_vector, 
                                            prior_component_selection, 
-                                           prior_variable_selection, r, n)
-    log_target_previous <- log_target_density(gamma, x_list, 
-                                              mvnorm_var_list, 
-                                              prior_component_selection, 
-                                              prior_variable_selection, r, n)
+                                           prior_variable_selection, r)
     
-    log_acceptance_ratio <- log_target_prime - log_target_previous
+    log_acceptance_ratio <- log_target - log_target_chain[iter]
     
     if (verbose==TRUE) { 
-      print("gamma_prime:")
-      print(gamma_prime)
-      print("log_target_prime:")
-      print(log_target_prime)
-      print("log_target_previous:")
-      print(log_target_previous)
+      print("gamma proposed:")
+      print(gamma)
+      print("log_target proposed:")
+      print(log_target)
       print("log_acceptance_ratio:")
       print(log_acceptance_ratio)
-      log_target_prime_chain[l,iter] <- log_target_prime
-      log_target_chain[l,iter] <- log_target_previous
+      log_target_prime_chain[l,iter] <- log_target
       log_acceptance_ratio_chain[l,iter] <- log_acceptance_ratio
-      gamma_prime_chain[,l,iter] <- gamma_prime
-      eta_prime_chain[,,l,iter] <- eta_prime
+      gamma_prime_chain[,l,iter] <- gamma
+      eta_prime_chain[,,l,iter] <- eta
     }
     
     if (log(runif(1)) < log_acceptance_ratio) {
-      # Accept
-      gamma_chain[,iter] <- gamma_prime
-      eta_chain[,,iter] <- eta_prime
-      mvnorm_var_list <- mvnorm_var_list_prime
+      # Accept by maintaining gamma, eta, log_target
+      gamma_chain[,iter] <- gamma
+      eta_chain[,,iter] <- eta
+      log_target_chain[iter] <- log_target
       if (verbose == TRUE) {
         acceptance_indicator_chain[l,iter] <- 1
       }
     } else {
-      # Reject
-      gamma_chain[,iter] <- gamma_chain[,iter-1]
-      eta_chain[,,iter] <- eta_chain[,,iter-1]
+      # Reject by reverting to the previous result
+      gamma <- gamma_chain[,iter]
+      eta <- eta_chain[,,iter]
+      log_target <- log_target_chain[iter]
       if (verbose == TRUE) {
         acceptance_indicator_chain[l,iter] <- 0
       }
@@ -217,13 +244,7 @@ for (iter in 1:n_iterations) {
     output_name <- paste0("data/", Sys.Date(), "_eta_chain_seed_", seed, ".rds")
     saveRDS(eta_chain, file = output_name)
     if (verbose==TRUE) {
-      output_name <- paste0("data/", Sys.Date(), "_log_target_list_", seed, ".rds")
-      saveRDS(list(log_target_prime_chain, log_target_chain, log_acceptance_ratio), 
-              file = output_name)
-      saveRDS(acceptance_indicator_chain, file = "data/acceptance_indicator_chain.rds")
-      saveRDS(gamma_prime_chain, file = "data/gamma_prime_chain.rds")
-      saveRDS(eta_prime_chain, file = "data/eta_prime_chain.rds")
-      save.image()
+      save.image(file = paste0("data/", Sys.Date(), "_image_", seed, ".RData"))
     }
   }
   
