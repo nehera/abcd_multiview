@@ -1,0 +1,55 @@
+---
+title: "Component and Variable Selection Results"
+author: "Aidan Neher"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+load("data/2023-07-26_image_1.RData")
+```
+
+## Intro to results
+
+The data visualized is from the most recent version of the MCMC for sampling component and variable selection indicators, gamma and eta respectively. To generate this data, the RNG seed was set at 1.
+
+First, let's look at the MCMC's initial conditions:
+
+```{r}
+str(initial_conditions)
+```
+
+## Is the code proposing gamma values stepwise (rather than blockwise) within an iteration?
+
+```{r}
+gamma_prime_chain[,,1:3]
+```
+
+Here we see that the third and fourth components are not getting proposed as off/ the proposals at these points in the MCMC are not getting stored properly.
+
+Because of this, we notice that the gamma chain is getting stuck at the initial condition `r initial_conditions$gamma`.
+
+```{r}
+print("First 10 iterations")
+gamma_chain[,1:10]
+print("Cumulative selections:")
+apply(gamma_chain, 1, sum)
+```
+
+## Is the log_target density calculations behaving correctly?
+
+
+
+```{r}
+print("Log target density of proposals:")
+log_target_prime_chain[,1:3]
+print("Log target density of accepts:")
+log_target_chain[1:3]
+print("Log acceptance ratio:")
+log_acceptance_ratio_chain[1:3]
+```
+
+## Are the marginal posterior probabilities of component/ feature selection converging? 
+
+## Are the truly important components/ features getting selected? 

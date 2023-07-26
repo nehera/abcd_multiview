@@ -1,15 +1,15 @@
 # Set-up environment
 library(tidyverse)
 
-dev <- FALSE # Flag for indicating active development
+dev <- TRUE # Flag for indicating active development
 verbose <- TRUE 
 
 if (dev == TRUE) { 
   seed <- 1 
-  iter <- 1
-  l <- 1
-  j <- 1
-  x_j <- x[,j]
+  # iter <- 1
+  # l <- 1
+  # j <- 1
+  # x_j <- x[,j]
   } else {
     # Get CLI arguments
     args = commandArgs(trailingOnly=TRUE)
@@ -146,7 +146,10 @@ if (verbose==TRUE) {
 
 for (iter in 1:n_iterations) {
   
-  if (verbose==TRUE) { print(iter) }
+  if (verbose==TRUE) {
+    print("iter:")
+    print(iter) 
+    }
   
   # Store previous result
   gamma_chain[,iter] <- gamma
@@ -163,22 +166,21 @@ for (iter in 1:n_iterations) {
     }
     
     if (gamma[l] == 1) {
-      # Propose component and feature deactivation
+      # Propose component deactivation
       gamma[l] <- 0
+      log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
+      # Propose feature deactivation
       eta[l,] <- rep(0, p_m)
-    } 
-    
-    if (gamma[l] == 0) {
+    } else {
       # Propose component activation
       gamma[l] <- 1
-    }
-    
-    log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
-    
-    if (gamma[l] == 0) {
+      log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
       # Propose feature activation
       for (j in 1:p_m) {
-        if (verbose==TRUE) { print(j) }
+        if (verbose==TRUE) { 
+          print("j:")
+          print(j) 
+          }
         eta_1 <- eta[, j]
         eta_1[l] <- 1
         eta_0 <- eta[, j]
@@ -188,7 +190,10 @@ for (iter in 1:n_iterations) {
         log_G0 <- get_log_G_j(log_dmvnorm_vector[j], eta_0, 
                               prior_variable_selection, r)
         P_lj <- get_P_lj(log_G0, log_G1)
-        if (verbose==TRUE) { print(P_lj) }
+        if (verbose==TRUE) {
+          print("P_lj:")
+          print(P_lj) 
+          }
         eta[l,j] <- rbinom(1, 1, prob = P_lj)
       }
     }
