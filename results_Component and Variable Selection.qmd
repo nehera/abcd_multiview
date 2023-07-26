@@ -22,34 +22,56 @@ str(initial_conditions)
 
 ## Is the code proposing gamma values stepwise (rather than blockwise) within an iteration?
 
+Here we see that gamma's are being proposed with the desired stepwise machination.
+
 ```{r}
+print("Gamma accepted in first 3 iterations:")
+gamma_chain[,1:3]
+print("Gamma proposed in first 3 iterations:")
 gamma_prime_chain[,,1:3]
 ```
 
-Here we see that the third and fourth components are not getting proposed as off/ the proposals at these points in the MCMC are not getting stored properly.
+## Which components are getting selected for?
 
-Because of this, we notice that the gamma chain is getting stuck at the initial condition `r initial_conditions$gamma`.
-
-```{r}
-print("First 10 iterations")
-gamma_chain[,1:10]
-print("Cumulative selections:")
-apply(gamma_chain, 1, sum)
-```
-
-## Is the log_target density calculations behaving correctly?
-
-
+Below we observe that the chain is getting stuck with only the fourth component considered as active, even after a burn-in of 1,000 iterations.
 
 ```{r}
-print("Log target density of proposals:")
-log_target_prime_chain[,1:3]
-print("Log target density of accepts:")
-log_target_chain[1:3]
-print("Log acceptance ratio:")
-log_acceptance_ratio_chain[1:3]
+last_iter <- 1500 # TODO remove when full chain available
+print("Cumulative component selections:")
+gamma_chain[, (n_burnin+1):last_iter] %>% rowSums()
 ```
 
-## Are the marginal posterior probabilities of component/ feature selection converging? 
+## How is the log target density calculation behaving?
 
-## Are the truly important components/ features getting selected? 
+Below we examine the log acceptance ratio from first 10 iterations. 
+
+From the initial conditions to the first iteration, we observe a large positive log acceptance ratio, which equates to a high probability of acceptance of the proposed gamma. 
+
+```{r}
+log_target_chain[1] - initial_conditions$log_target
+```
+
+Aftwerwards, the log target density become quite negative and stays there, which is associated with an almost zero probability of acceptance. This is reflected in the chain getting stuck at 0001. 
+
+```{r}
+log_acceptance_ratio_chain[1:10]
+```
+
+This suggests either the chain hasn't run long enough or more likely that there's an issue in the evaluation of the log target densities. 
+
+## How are the variable selection indicators, eta, behaving? 
+
+Since only the fourth component is getting selected, we examine only its variable selection indicators. Note, for now, only 500 iterations are available and correspond to the last dimension. 
+
+```{r}
+eta_chain[4, ,(n_burnin+1):last_iter] %>% rowSums()
+```
+
+Because gamma and eta are selected/ rejected together, we notice that the collection of features selected is static i.e. each feature that has been selected once is selected for all available iterations.
+
+## What are the MPPs (marginal posterior probabilities) of component and feature selection?
+
+### Are the truly important components/ features getting selected?
+
+## Are the MPPs of component and feature selection converging? 
+

@@ -1,15 +1,11 @@
 # Set-up environment
 library(tidyverse)
 
-dev <- TRUE # Flag for indicating active development
+dev <- FALSE # Flag for indicating active development
 verbose <- TRUE 
 
 if (dev == TRUE) { 
   seed <- 1 
-  # iter <- 1
-  # l <- 1
-  # j <- 1
-  # x_j <- x[,j]
   } else {
     # Get CLI arguments
     args = commandArgs(trailingOnly=TRUE)
@@ -142,6 +138,7 @@ if (verbose==TRUE) {
   acceptance_indicator_chain <- matrix(nrow = r, ncol = n_iterations)
   gamma_prime_chain <- array(dim = c(r, r, n_iterations))
   eta_prime_chain <- array(dim = c(r, p_m, r, n_iterations))
+  P_chain <- array(dim = c(r, p_m, n_iterations))
 }
 
 for (iter in 1:n_iterations) {
@@ -177,10 +174,6 @@ for (iter in 1:n_iterations) {
       log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
       # Propose feature activation
       for (j in 1:p_m) {
-        if (verbose==TRUE) { 
-          print("j:")
-          print(j) 
-          }
         eta_1 <- eta[, j]
         eta_1[l] <- 1
         eta_0 <- eta[, j]
@@ -191,8 +184,7 @@ for (iter in 1:n_iterations) {
                               prior_variable_selection, r)
         P_lj <- get_P_lj(log_G0, log_G1)
         if (verbose==TRUE) {
-          print("P_lj:")
-          print(P_lj) 
+          P_chain[l,j,iter] <- P_lj
           }
         eta[l,j] <- rbinom(1, 1, prob = P_lj)
       }
@@ -206,10 +198,6 @@ for (iter in 1:n_iterations) {
     log_acceptance_ratio <- log_target - log_target_chain[iter]
     
     if (verbose==TRUE) { 
-      print("gamma proposed:")
-      print(gamma)
-      print("log_target proposed:")
-      print(log_target)
       print("log_acceptance_ratio:")
       print(log_acceptance_ratio)
       log_target_prime_chain[l,iter] <- log_target

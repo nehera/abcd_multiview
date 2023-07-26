@@ -138,97 +138,133 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="is-the-code-proposing-gamma-values-stepwise-rather-than-blockwise-within-an-iteration" class="level2">
 <h2 class="anchored" data-anchor-id="is-the-code-proposing-gamma-values-stepwise-rather-than-blockwise-within-an-iteration">Is the code proposing gamma values stepwise (rather than blockwise) within an iteration?</h2>
+<p>Here we see that gamma’s are being proposed with the desired stepwise machination.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>gamma_prime_chain[,,<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Gamma accepted in first 3 iterations:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] "Gamma accepted in first 3 iterations:"</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>gamma_chain[,<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>     [,1] [,2] [,3]
+[1,]    0    0    0
+[2,]    0    0    0
+[3,]    0    0    0
+[4,]    1    1    1</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Gamma proposed in first 3 iterations:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] "Gamma proposed in first 3 iterations:"</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>gamma_prime_chain[,,<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>, , 1
 
      [,1] [,2] [,3] [,4]
 [1,]    1    0    0    0
 [2,]    0    1    0    0
-[3,]    1    1    1    1
-[4,]    1    1    1    1
+[3,]    1    1    0    0
+[4,]    1    1    1    0
 
 , , 2
 
      [,1] [,2] [,3] [,4]
 [1,]    1    0    0    0
 [2,]    0    1    0    0
-[3,]    1    1    1    1
-[4,]    1    1    1    1
+[3,]    0    0    1    0
+[4,]    1    1    1    0
 
 , , 3
 
      [,1] [,2] [,3] [,4]
 [1,]    1    0    0    0
 [2,]    0    1    0    0
-[3,]    1    1    1    1
-[4,]    1    1    1    1</code></pre>
+[3,]    0    0    1    0
+[4,]    1    1    1    0</code></pre>
 </div>
 </div>
-<p>Here we see that the third and fourth components are not getting proposed as off/ the proposals at these points in the MCMC are not getting stored properly.</p>
-<p>Because of this, we notice that the gamma chain is getting stuck at the initial condition 0, 0, 1, 1.</p>
+</section>
+<section id="which-components-are-getting-selected-for" class="level2">
+<h2 class="anchored" data-anchor-id="which-components-are-getting-selected-for">Which components are getting selected for?</h2>
+<p>Below we observe that the chain is getting stuck with only the fourth component considered as active, even after a burn-in of 1,000 iterations.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"First 10 iterations"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>last_iter <span class="ot">&lt;-</span> <span class="dv">1500</span> <span class="co"># </span><span class="al">TODO</span><span class="co"> remove when full chain available</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Cumulative component selections:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] "First 10 iterations"</code></pre>
+<pre><code>[1] "Cumulative component selections:"</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>gamma_chain[,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>gamma_chain[, (n_burnin<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span>last_iter] <span class="sc">%&gt;%</span> <span class="fu">rowSums</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>     [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10]
-[1,]    0    0    0    0    0    0    0    0    0     0
-[2,]    0    0    0    0    0    0    0    0    0     0
-[3,]    1    1    1    1    1    1    1    1    1     1
-[4,]    1    1    1    1    1    1    1    1    1     1</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Cumulative selections:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] "Cumulative selections:"</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apply</span>(gamma_chain, <span class="dv">1</span>, sum)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1]    0    0 6000 6000</code></pre>
+<pre><code>[1]   0   0   0 500</code></pre>
 </div>
 </div>
 </section>
-<section id="is-the-log_target-density-calculations-behaving-correctly" class="level2">
-<h2 class="anchored" data-anchor-id="is-the-log_target-density-calculations-behaving-correctly">Is the log_target density calculations behaving correctly?</h2>
+<section id="how-is-the-log-target-density-calculation-behaving" class="level2">
+<h2 class="anchored" data-anchor-id="how-is-the-log-target-density-calculation-behaving">How is the log target density calculation behaving?</h2>
+<p>Below we examine the log acceptance ratio from first 10 iterations.</p>
+<p>From the initial conditions to the first iteration, we observe a large positive log acceptance ratio, which equates to a high probability of acceptance of the proposed gamma.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Log target density of proposals:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>log_target_chain[<span class="dv">1</span>] <span class="sc">-</span> initial_conditions<span class="sc">$</span>log_target</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] "Log target density of proposals:"</code></pre>
+<pre><code>[1] 243.2783</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>log_target_prime_chain[,<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Aftwerwards, the log target density become quite negative and stays there, which is associated with an almost zero probability of acceptance. This is reflected in the chain getting stuck at 0001.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>log_acceptance_ratio_chain[<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>          [,1]      [,2]      [,3]
-[1,] -142065.2 -141906.2 -141906.2
-[2,] -142065.2 -141906.2 -141906.2
-[3,] -141891.4 -141806.1 -141806.1
-[4,] -141806.1 -141806.1 -141806.1</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Log target density of accepts:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] "Log target density of accepts:"</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>log_target_chain[<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] -141806.1 -141806.1 -141806.1</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Log acceptance ratio:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] "Log acceptance ratio:"</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>log_acceptance_ratio_chain[<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] -100.15667 -100.15667   73.61097</code></pre>
+<pre><code> [1] -153.15657 -203.21203  243.27830  -27.43757 -243.27830 -252.11162
+ [7] -249.16718  -27.43757 -249.16718 -258.00050</code></pre>
 </div>
 </div>
+<p>This suggests either the chain hasn’t run long enough or more likely that there’s an issue in the evaluation of the log target densities.</p>
 </section>
-<section id="are-the-marginal-posterior-probabilities-of-component-feature-selection-converging" class="level2">
-<h2 class="anchored" data-anchor-id="are-the-marginal-posterior-probabilities-of-component-feature-selection-converging">Are the marginal posterior probabilities of component/ feature selection converging?</h2>
+<section id="how-are-the-variable-selection-indicators-eta-behaving" class="level2">
+<h2 class="anchored" data-anchor-id="how-are-the-variable-selection-indicators-eta-behaving">How are the variable selection indicators, eta, behaving?</h2>
+<p>Since only the fourth component is getting selected, we examine only its variable selection indicators. Note, for now, only 500 iterations are available and correspond to the last dimension.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>eta_chain[<span class="dv">4</span>, ,(n_burnin<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span>last_iter] <span class="sc">%&gt;%</span> <span class="fu">rowSums</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  [1]   0 500   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+ [19]   0   0   0   0   0   0 500 500   0   0   0   0   0   0   0   0   0   0
+ [37]   0 500   0   0   0   0 500   0   0   0   0   0   0   0   0   0   0   0
+ [55]   0   0   0   0   0   0   0   0   0   0   0 500   0   0   0   0   0   0
+ [73]   0   0   0   0   0   0   0   0   0   0   0   0 500   0   0   0   0   0
+ [91]   0   0   0   0   0   0   0   0   0   0 500 500   0   0 500   0   0   0
+[109]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[127]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[145]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[163]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[181]   0   0   0   0   0   0   0   0   0   0   0   0   0   0 500   0   0   0
+[199]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[217]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[235]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[253]   0   0 500   0   0   0   0   0   0   0   0   0   0   0   0   0   0 500
+[271]   0   0   0   0   0 500   0   0   0   0   0   0   0   0   0   0   0   0
+[289]   0   0   0   0   0   0   0   0   0   0 500   0   0   0   0   0   0   0
+[307]   0   0   0 500   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[325]   0   0   0   0   0   0   0   0   0   0 500   0   0   0   0   0   0   0
+[343]   0   0   0   0   0   0   0 500   0   0   0   0   0   0   0   0   0   0
+[361]   0   0   0   0   0   0   0 500   0   0   0   0   0   0   0 500   0   0
+[379] 500   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[397]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[415]   0   0   0 500 500   0   0   0   0   0   0   0   0   0   0   0   0   0
+[433]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+[451]   0   0   0   0   0   0   0   0   0   0   0   0   0   0 500   0 500   0
+[469]   0 500   0   0   0   0   0   0   0   0 500   0   0   0   0   0 500   0
+[487]   0   0   0   0   0   0   0   0   0   0   0   0   0 500</code></pre>
+</div>
+</div>
+<p>Because gamma and eta are selected/ rejected together, we notice that the collection of features selected is static i.e.&nbsp;each feature that has been selected once is selected for all available iterations.</p>
 </section>
-<section id="are-the-truly-important-components-features-getting-selected" class="level2">
-<h2 class="anchored" data-anchor-id="are-the-truly-important-components-features-getting-selected">Are the truly important components/ features getting selected?</h2>
+<section id="what-are-the-mpps-marginal-posterior-probabilities-of-component-and-feature-selection" class="level2">
+<h2 class="anchored" data-anchor-id="what-are-the-mpps-marginal-posterior-probabilities-of-component-and-feature-selection">What are the MPPs (marginal posterior probabilities) of component and feature selection?</h2>
+<section id="are-the-truly-important-components-features-getting-selected" class="level3">
+<h3 class="anchored" data-anchor-id="are-the-truly-important-components-features-getting-selected">Are the truly important components/ features getting selected?</h3>
+</section>
+</section>
+<section id="are-the-mpps-of-component-and-feature-selection-converging" class="level2">
+<h2 class="anchored" data-anchor-id="are-the-mpps-of-component-and-feature-selection-converging">Are the MPPs of component and feature selection converging?</h2>
 </section>
 
 </main>
