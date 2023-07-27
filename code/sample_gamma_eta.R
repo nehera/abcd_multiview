@@ -1,7 +1,7 @@
 # Set-up environment
 library(tidyverse)
 
-dev <- FALSE # Flag for indicating active development
+dev <- TRUE # Flag for indicating active development
 verbose <- TRUE 
 
 if (dev == TRUE) { 
@@ -79,30 +79,19 @@ get_log_dmvnorm_vector <- function(gamma, x, U, sigma2, p_m, n) {
   return(unname(log_dmvnorm_vector))
 }
 
-get_log_p_eta_j <- function(eta_j, prior_variable_selection, r) {
-  n_features_active <- sum(eta_j)
-  log_p_eta_j <- n_features_active * log(prior_variable_selection) +
-    (r - n_features_active) * log(1 - prior_variable_selection)
-  return(log_p_eta_j) 
-}
-
 get_log_G_j <- function(log_dmvnorm_j, eta_j, prior_variable_selection, r) {
-  log_p_eta_j <- get_log_p_eta_j(eta_j, prior_variable_selection, r)
+  n_components_feature_active_in <- sum(eta_j)
+  log_p_eta_j <- n_components_feature_active_in * log(prior_variable_selection) + 
+    (r - n_components_feature_active_in) * log(1 - prior_variable_selection)
   return(log_dmvnorm_j + log_p_eta_j)
 }
 
-get_log_p_eta <- function(gamma, eta, prior_variable_selection, p_m, n) {
-  components_active_index <- which(gamma==1)
-  if (length(components_active_index)==0) { return(0) }
-  n_features_active_vector <- apply(eta, 1, sum)
-  log_p_eta <- 0
-  for (l in components_active_index) {
-    n_features_active <- n_features_active_vector[l]
-    log_p_eta_l <- n_features_active * log(prior_variable_selection) +
-      (p_m - n_features_active) * log(1-prior_variable_selection)
-    log_p_eta <- log_p_eta + log_p_eta_l
-  }
-  return(log_p_eta)
+get_log_G <- function(eta, log_dmvnorm_vector, prior_variable_selection, r, p_m) {
+  n_active_features <- sum(eta)
+  log_G <- sum(log_dmvnorm_vector) +
+    log(prior_variable_selection) * n_active_features +
+    log(1 - prior_variable_selection) * (r * p_m - n_active_features)
+  return(log_G)
 }
 
 get_P_lj <- function(log_G0, log_G1) {
@@ -112,11 +101,11 @@ get_P_lj <- function(log_G0, log_G1) {
   return(exp(x) / (exp(x) + exp(y)))
 }
 
+# TODO verify understanding of calculation and verify implementation
 log_target_density <- function(gamma, eta, log_dmvnorm_vector, 
-                               prior_component_selection, prior_variable_selection, r) {
-  log_p_eta_vector <- apply(eta, 2, get_log_p_eta_j, prior_variable_selection, r)
-  log_G_vector <- log_p_eta_vector + log_dmvnorm_vector
-  log_prod_G <- sum(log_G_vector)
+                               prior_component_selection, 
+                               prior_variable_selection, r, p_m) {
+  log_G <- get_log_G(eta, log_dmvnorm_vector, prior_variable_selection, r, p_m)
   n_active_components <- sum(gamma)
   log_prod_p_gamma <- n_active_components * log(prior_component_selection) +
     (r - n_active_components) * log(1-prior_component_selection)
@@ -125,9 +114,10 @@ log_target_density <- function(gamma, eta, log_dmvnorm_vector,
 
 # Begin MCMC
 log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
+
 log_target <- log_target_density(gamma, eta, log_dmvnorm_vector, 
                                  prior_component_selection, 
-                                 prior_variable_selection, r)
+                                 prior_variable_selection, r, p_m)
 
 if (verbose==TRUE) {
   initial_conditions <- list(gamma=gamma, eta=eta, sigma2=sigma2, tau2=tau2, U=U,
@@ -190,10 +180,9 @@ for (iter in 1:n_iterations) {
       }
     }
     
-    log_target <- log_target_density(gamma, eta, 
-                                           log_dmvnorm_vector, 
-                                           prior_component_selection, 
-                                           prior_variable_selection, r)
+    log_target <- log_target_density(gamma, eta, log_dmvnorm_vector, 
+                                     prior_component_selection, 
+                                     prior_variable_selection, r, p_m)
     
     log_acceptance_ratio <- log_target - log_target_chain[iter]
     

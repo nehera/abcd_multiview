@@ -11,15 +11,22 @@ editor: visual
 ## Introduction to results
 
 ```{r}
+#| echo: false
+#| output: false
 library(tidyverse)
-load("data/2023-07-27_image_1.RData")
+load_job_seed <- function(seed, date = "today") {
+  if (date == "today") { date <- Sys.Date() }
+  results_file_name <- paste0("data/", date, "_image_", seed, ".RData")
+  load(results_file_name, envir = globalenv())
+}
+load_job_seed(1)
 ```
 
 The data visualized is from the most recent version of the MCMC for sampling component and variable selection indicators, gamma and eta respectively. To generate this data, the RNG seed was set at 1.
 
 First, let's look at the MCMC's initial conditions:
 
-```{r}
+```{r, echo=FALSE}
 str(initial_conditions)
 ```
 
@@ -27,7 +34,7 @@ str(initial_conditions)
 
 Here we see that gamma's are being proposed with the desired stepwise machination.
 
-```{r}
+```{r, echo=FALSE}
 print("Gamma accepted in first 3 iterations:")
 gamma_chain[,1:3]
 print("Gamma proposed in first 3 iterations:")
@@ -38,10 +45,9 @@ gamma_prime_chain[,,1:3]
 
 Below we observe that the chain is getting stuck with only the fourth component considered as active, even after a burn-in of 1,000 iterations.
 
-```{r}
-last_iter <- 1500 # TODO remove when full chain available
+```{r, echo=FALSE}
 print("Cumulative component selections:")
-gamma_chain[, (n_burnin+1):last_iter] %>% rowSums()
+gamma_chain[, (n_burnin+1):n_iterations] %>% rowSums()
 ```
 
 ## How is the log target density calculation behaving?
@@ -67,20 +73,35 @@ This suggests either the chain hasn't run long enough or more likely that there'
 Since only the fourth component is getting selected, we examine only its variable selection indicators. Note, for now, only 500 iterations are available and correspond to the last dimension. 
 
 ```{r}
-eta_chain[4, ,(n_burnin+1):last_iter] %>% rowSums()
+eta_chain[4, ,(n_burnin+1):n_iterations] %>% rowSums()
 ```
 
 Because gamma and eta are selected/ rejected together, we notice that the collection of features selected is static i.e. each feature that has been selected once is selected for all available iterations.
 
-## What are the MPPs (marginal posterior probabilities) of component and feature selection?
+## Does starting point impact the results?
 
-### Are the truly important components/ features getting selected?
+Here we consider results from a different starting point (seed = 2), and notice the chain is still getting stuck with one active component:
 
-## Are the MPPs of component and feature selection converging? 
+```{r, echo=FALSE}
+load_job_seed(2)
+print("Initial conditions:")
+str(initial_conditions)
+print("Gamma accepted in first 3 iterations:")
+gamma_chain[,1:3]
+print("Gamma proposed in first 3 iterations:")
+gamma_prime_chain[,,1:3]
+print("Cumulative component selections:")
+gamma_chain[, (n_burnin+1):n_iterations] %>% rowSums()
+```
+
+## Questions to consider
+
+- What are the MPPs (marginal posterior probabilities) of component and feature selection? Are the truly important components/ features getting selected?
+- Are the MPPs of component and feature selection converging?
 
 ## About Quarto
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+Quarto was used to generate this document, since it enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
 Note, the following error on rendering is fine for the purposes of this document:
 
