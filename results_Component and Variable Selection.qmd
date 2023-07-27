@@ -1,16 +1,19 @@
 ---
 title: "Component and Variable Selection Results"
 author: "Aidan Neher"
+date: "`r Sys.Date()`"
+title-block-banner: "#FFCC33" 
+title-block-banner-color: "#7A0019"
 format: html
 editor: visual
 ---
 
+## Introduction to results
+
 ```{r}
 library(tidyverse)
-load("data/2023-07-26_image_1.RData")
+load("data/2023-07-27_image_1.RData")
 ```
-
-## Intro to results
 
 The data visualized is from the most recent version of the MCMC for sampling component and variable selection indicators, gamma and eta respectively. To generate this data, the RNG seed was set at 1.
 
@@ -75,3 +78,20 @@ Because gamma and eta are selected/ rejected together, we notice that the collec
 
 ## Are the MPPs of component and feature selection converging? 
 
+## About Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+Note, the following error on rendering is fine for the purposes of this document:
+
+ERROR: No output created by quarto render results_Component and Variable Selection.qmd
+
+Error: No output created by quarto render results_Component and Variable Selection.qmd
+    at handleRenderResult (file:///Applications/quarto/bin/quarto.js:102402:15)
+    at renderForPreview (file:///Applications/quarto/bin/quarto.js:102417:25)
+    at async render (file:///Applications/quarto/bin/quarto.js:102303:20)
+    at async preview (file:///Applications/quarto/bin/quarto.js:102309:21)
+    at async Command.fn (file:///Applications/quarto/bin/quarto.js:103760:9)
+    at async Command.execute (file:///Applications/quarto/bin/quarto.js:8437:13)
+    at async quarto (file:///Applications/quarto/bin/quarto.js:127535:5)
+    at async file:///Applications/quarto/bin/quarto.js:127553:9

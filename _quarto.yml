@@ -1,0 +1,3 @@
+project:
+  type: default
+  post-render: rename_quarto_output.R
