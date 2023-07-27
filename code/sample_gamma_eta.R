@@ -1,7 +1,7 @@
 # Set-up environment
 library(tidyverse)
 
-dev <- TRUE # Flag for indicating active development
+dev <- FALSE # Flag for indicating active development
 verbose <- TRUE 
 
 if (dev == TRUE) { 
@@ -109,7 +109,7 @@ log_target_density <- function(gamma, eta, log_dmvnorm_vector,
   n_active_components <- sum(gamma)
   log_prod_p_gamma <- n_active_components * log(prior_component_selection) +
     (r - n_active_components) * log(1-prior_component_selection)
-  return(log_prod_G + log_prod_p_gamma)
+  return(log_G + log_prod_p_gamma)
 }
 
 # Begin MCMC
