@@ -1,7 +1,7 @@
 # Set-up environment
 library(tidyverse)
 
-dev <- FALSE # Flag for indicating active development
+dev <- TRUE # Flag for indicating active development
 verbose <- TRUE 
 
 if (dev == TRUE) { 
@@ -38,6 +38,7 @@ prior_variable_selection <- 0.05
 n_sample <- 5000
 n_burnin <- 1000
 n_iterations <- n_sample + n_burnin
+if (verbose==TRUE) { n_iterations <- 3 }
 
 # Initialize data structures
 gamma_chain <- matrix(nrow = r, ncol = n_iterations)
@@ -74,7 +75,9 @@ get_log_dmvnorm_j <- function(x_j, mvnorm_var_j, n) {
 
 get_log_dmvnorm_vector <- function(gamma, x, U, sigma2, p_m, n) {
   x_list <- as.list(as.data.frame(x))
-  mvnorm_var_list <- lapply(1:p_m, get_mvnorm_var, gamma, U, sigma2, n) # TODO breakout from function to reduce redundant calculations
+  # TODO breakout from function to reduce redundant calculations
+  mvnorm_var_list <- lapply(1:p_m, get_mvnorm_var, gamma, U, sigma2, n) 
+  # TODO why is the resulting log_dmvnorm_vector constant? This happens when gamma=0000 is proposed, and the covariance matrix is an identity matrix.
   log_dmvnorm_vector <- mapply(get_log_dmvnorm_j, x_list, mvnorm_var_list, n)
   return(unname(log_dmvnorm_vector))
 }
@@ -88,9 +91,13 @@ get_log_G_j <- function(log_dmvnorm_j, eta_j, prior_variable_selection, r) {
 
 get_log_G <- function(eta, log_dmvnorm_vector, prior_variable_selection, r, p_m) {
   n_active_features <- sum(eta)
+  # TODO is it fine that log_G is so negative? 
+  # What matters is not the absolute value of log_G but its relation to the proposed values.
+  # Yet, log_G is seemingly driving the negative acceptance ratios. 
+  # TODO understand why log_G is more negative for proposed gammas than the accepted gamma.
   log_G <- sum(log_dmvnorm_vector) +
     log(prior_variable_selection) * n_active_features +
-    log(1 - prior_variable_selection) * (r * p_m - n_active_features)
+    log(1 - prior_variable_selection) * (r * p_m - n_active_features) # TODO verify whether this line is appropriate
   return(log_G)
 }
 
@@ -106,9 +113,17 @@ log_target_density <- function(gamma, eta, log_dmvnorm_vector,
                                prior_component_selection, 
                                prior_variable_selection, r, p_m) {
   log_G <- get_log_G(eta, log_dmvnorm_vector, prior_variable_selection, r, p_m)
+  if (verbose == TRUE) {
+    print("log_G:")
+    print(log_G) 
+    }
   n_active_components <- sum(gamma)
   log_prod_p_gamma <- n_active_components * log(prior_component_selection) +
     (r - n_active_components) * log(1-prior_component_selection)
+  if (verbose == TRUE) {
+    print("log_prod_p_gamma:")
+    print(log_prod_p_gamma) 
+    }
   return(log_G + log_prod_p_gamma)
 }
 
@@ -173,9 +188,9 @@ for (iter in 1:n_iterations) {
         log_G0 <- get_log_G_j(log_dmvnorm_vector[j], eta_0, 
                               prior_variable_selection, r)
         P_lj <- get_P_lj(log_G0, log_G1)
-        if (verbose==TRUE) {
-          P_chain[l,j,iter] <- P_lj
-          }
+        # if (verbose==TRUE) {
+        #   P_chain[l,j,iter] <- P_lj
+        #   }
         eta[l,j] <- rbinom(1, 1, prob = P_lj)
       }
     }
