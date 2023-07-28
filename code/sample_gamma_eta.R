@@ -62,7 +62,7 @@ log_target_chain <- numeric(n_iterations)
 
 # Specify functions
 get_mvnorm_var <- function(j, gamma, U, sigma2, n) {
-  Sigma2_j <- U[, gamma] %*% diag(tau2[gamma,j]) %*% t(U[, gamma]) + diag(n) 
+  Sigma2_j <- U[, gamma, drop = FALSE] %*% diag(tau2[gamma,j]) %*% t(U[, gamma, drop = FALSE]) + diag(n) 
   mvnorm_var <- sigma2[j] * Sigma2_j
   return(mvnorm_var)
 }
@@ -108,23 +108,27 @@ get_P_lj <- function(log_G0, log_G1) {
   return(exp(x) / (exp(x) + exp(y)))
 }
 
-# TODO verify understanding of calculation and verify implementation
+# TODO should I be calculating this just for the lth component worth of data? 
 log_target_density <- function(gamma, eta, log_dmvnorm_vector, 
                                prior_component_selection, 
                                prior_variable_selection, r, p_m) {
   log_G <- get_log_G(eta, log_dmvnorm_vector, prior_variable_selection, r, p_m)
-  if (verbose == TRUE) {
-    print("log_G:")
-    print(log_G) 
-    }
   n_active_components <- sum(gamma)
   log_prod_p_gamma <- n_active_components * log(prior_component_selection) +
     (r - n_active_components) * log(1-prior_component_selection)
-  if (verbose == TRUE) {
-    print("log_prod_p_gamma:")
-    print(log_prod_p_gamma) 
-    }
   return(log_G + log_prod_p_gamma)
+}
+
+# TODO calculate log_proposal_density at the lth component level
+# TODO add to the Metropolis-Hastings acceptance/ rejection to have true MH algorithm
+log_proposal_density_l <- function(gamma_l, eta_l, gamma_l_new, eta_l_new, p_m) {
+  if (gamma_l == 1 & gamma_l_new == 0 & sum(eta_l_new) == 0) {
+    return(0)
+  } else if (gamma_l==0 & gamma_l_new == 1) {
+    
+  } else {
+    stop("log_proposal_density_l has invalid inputs.")
+  }
 }
 
 # Begin MCMC
@@ -133,6 +137,9 @@ log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
 log_target <- log_target_density(gamma, eta, log_dmvnorm_vector, 
                                  prior_component_selection, 
                                  prior_variable_selection, r, p_m)
+
+# TODO calculate P matrix for evaluation of the log proposal density
+# P <- 
 
 if (verbose==TRUE) {
   initial_conditions <- list(gamma=gamma, eta=eta, sigma2=sigma2, tau2=tau2, U=U,
