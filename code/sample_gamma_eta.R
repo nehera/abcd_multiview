@@ -1,7 +1,7 @@
 # Set-up environment
 library(tidyverse)
 
-dev <- TRUE # Flag for indicating active development
+dev <- FALSE # Flag for indicating active development
 verbose <- TRUE 
 
 if (dev == TRUE) { 
@@ -38,7 +38,7 @@ prior_variable_selection <- 0.05
 n_sample <- 5000
 n_burnin <- 1000
 n_iterations <- n_sample + n_burnin
-if (verbose==TRUE) { n_iterations <- 3 }
+if (dev==TRUE) { n_iterations <- 3 }
 
 # Initialize data structures
 gamma_chain <- matrix(nrow = r, ncol = n_iterations)
@@ -77,7 +77,6 @@ get_log_dmvnorm_vector <- function(gamma, x, U, sigma2, p_m, n) {
   x_list <- as.list(as.data.frame(x))
   # TODO breakout from function to reduce redundant calculations
   mvnorm_var_list <- lapply(1:p_m, get_mvnorm_var, gamma, U, sigma2, n) 
-  # TODO why is the resulting log_dmvnorm_vector constant? This happens when gamma=0000 is proposed, and the covariance matrix is an identity matrix.
   log_dmvnorm_vector <- mapply(get_log_dmvnorm_j, x_list, mvnorm_var_list, n)
   return(unname(log_dmvnorm_vector))
 }
@@ -91,10 +90,6 @@ get_log_G_j <- function(log_dmvnorm_j, eta_j, prior_variable_selection, r) {
 
 get_log_G <- function(eta, log_dmvnorm_vector, prior_variable_selection, r, p_m) {
   n_active_features <- sum(eta)
-  # TODO is it fine that log_G is so negative? 
-  # What matters is not the absolute value of log_G but its relation to the proposed values.
-  # Yet, log_G is seemingly driving the negative acceptance ratios. 
-  # TODO understand why log_G is more negative for proposed gammas than the accepted gamma.
   log_G <- sum(log_dmvnorm_vector) +
     log(prior_variable_selection) * n_active_features +
     log(1 - prior_variable_selection) * (r * p_m - n_active_features) # TODO verify whether this line is appropriate
@@ -108,6 +103,22 @@ get_P_lj <- function(log_G0, log_G1) {
   return(exp(x) / (exp(x) + exp(y)))
 }
 
+get_P_l <- function(l, log_dmvnorm_vector, eta, r, p_m) {
+  P_l <- rep(NA, p_m)
+  for (j in 1:p_m) {
+    eta_1 <- eta[, j]
+    eta_1[l] <- 1
+    eta_0 <- eta[, j]
+    eta_0[l] <- 0
+    log_G1 <- get_log_G_j(log_dmvnorm_vector[j], eta_1, 
+                          prior_variable_selection, r)
+    log_G0 <- get_log_G_j(log_dmvnorm_vector[j], eta_0, 
+                          prior_variable_selection, r)
+    P_l[j] <- get_P_lj(log_G0, log_G1)
+  }
+  return(P_l)
+}
+
 # TODO should I be calculating this just for the lth component worth of data? 
 log_target_density <- function(gamma, eta, log_dmvnorm_vector, 
                                prior_component_selection, 
@@ -119,15 +130,17 @@ log_target_density <- function(gamma, eta, log_dmvnorm_vector,
   return(log_G + log_prod_p_gamma)
 }
 
-# TODO calculate log_proposal_density at the lth component level
-# TODO add to the Metropolis-Hastings acceptance/ rejection to have true MH algorithm
-log_proposal_density_l <- function(gamma_l, eta_l, gamma_l_new, eta_l_new, p_m) {
-  if (gamma_l == 1 & gamma_l_new == 0 & sum(eta_l_new) == 0) {
+log_proposal_l_density <- function(gamma_l, eta_l, 
+                                   gamma_l_prime, eta_l_prime, P_l) {
+  if (gamma_l==1 & gamma_l_prime==0 & sum(eta_l_prime)==0) {
     return(0)
-  } else if (gamma_l==0 & gamma_l_new == 1) {
-    
+  } else if (gamma_l==0 & gamma_l_prime==1) {
+    return(
+      ifelse(eta_l_prime==1, log(P_l), 
+             1 - log(P_l)) %>% sum()
+    )
   } else {
-    stop("log_proposal_density_l has invalid inputs.")
+    stop("Error in log_proposal_l_density evaluation possibly due to issue in gamma and eta proposal.")
   }
 }
 
@@ -138,18 +151,17 @@ log_target <- log_target_density(gamma, eta, log_dmvnorm_vector,
                                  prior_component_selection, 
                                  prior_variable_selection, r, p_m)
 
-# TODO calculate P matrix for evaluation of the log proposal density
-# P <- 
-
 if (verbose==TRUE) {
   initial_conditions <- list(gamma=gamma, eta=eta, sigma2=sigma2, tau2=tau2, U=U,
                              log_dmvnorm_vector=log_dmvnorm_vector, log_target=log_target)
   # r x n_iteration proposals and accept/ rejects occur, so last two dimensions represent this
-  log_target_prime_chain <- matrix(nrow = r, ncol = n_iterations)
+  log_proposal_forward_chain <- matrix(nrow = r, ncol = n_iterations)
+  log_proposal_reverse_chain <- matrix(nrow = r, ncol = n_iterations)
+  log_target_new_chain <- matrix(nrow = r, ncol = n_iterations)
   log_acceptance_ratio_chain <- matrix(nrow = r, ncol = n_iterations)
   acceptance_indicator_chain <- matrix(nrow = r, ncol = n_iterations)
-  gamma_prime_chain <- array(dim = c(r, r, n_iterations))
-  eta_prime_chain <- array(dim = c(r, p_m, r, n_iterations))
+  gamma_new_chain <- array(dim = c(r, r, n_iterations))
+  eta_new_chain <- array(dim = c(r, p_m, r, n_iterations))
   P_chain <- array(dim = c(r, p_m, n_iterations))
 }
 
@@ -159,77 +171,75 @@ for (iter in 1:n_iterations) {
     print("iter:")
     print(iter) 
     }
-  
-  # Store previous result
-  gamma_chain[,iter] <- gamma
-  eta_chain[,,iter] <- eta
-  log_target_chain[iter] <- log_target
-  
+
   for (l in 1:r) {
     
     if (verbose==TRUE) { 
       print("component:")
       print(l) 
-      print("gamma:")
+      print("gamma previous:")
       print(gamma)
     }
     
-    if (gamma[l] == 1) {
+    # Initialize from previous result
+    gamma_new <- gamma
+    eta_new <- eta
+    
+    if (gamma_new[l] == 1) {
       # Propose component deactivation
-      gamma[l] <- 0
-      log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
+      gamma_new[l] <- 0
+      log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma_new, x, U, sigma2, p_m, n)
       # Propose feature deactivation
-      eta[l,] <- rep(0, p_m)
+      eta_new[l,] <- rep(0, p_m)
     } else {
       # Propose component activation
-      gamma[l] <- 1
-      log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
+      gamma_new[l] <- 1
+      log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma_new, x, U, sigma2, p_m, n)
       # Propose feature activation
-      for (j in 1:p_m) {
-        eta_1 <- eta[, j]
-        eta_1[l] <- 1
-        eta_0 <- eta[, j]
-        eta_0[l] <- 0
-        log_G1 <- get_log_G_j(log_dmvnorm_vector[j], eta_1, 
-                              prior_variable_selection, r)
-        log_G0 <- get_log_G_j(log_dmvnorm_vector[j], eta_0, 
-                              prior_variable_selection, r)
-        P_lj <- get_P_lj(log_G0, log_G1)
-        # if (verbose==TRUE) {
-        #   P_chain[l,j,iter] <- P_lj
-        #   }
-        eta[l,j] <- rbinom(1, 1, prob = P_lj)
+      P_l <- get_P_l(l, log_dmvnorm_vector, eta_new, r, p_m)
+      if (verbose == TRUE) {
+        P_chain[l, , iter] <- P_l
       }
+      eta_new[l, ] <- rbinom(n = p_m, size = 1, prob = P_l)
     }
     
-    log_target <- log_target_density(gamma, eta, log_dmvnorm_vector, 
+    # Calculate log proposal densities
+    log_proposal_forward <- log_proposal_l_density(gamma[l], eta[l, ], 
+                                           gamma_new[l], eta_new[l, ], P_l)
+    
+    log_proposal_reverse <- log_proposal_l_density(gamma_new[l], eta_new[l, ], 
+                           gamma[l], eta[l, ], P_l)
+    
+    # Calculate log target density
+    log_target_new <- log_target_density(gamma_new, eta_new, log_dmvnorm_vector, 
                                      prior_component_selection, 
                                      prior_variable_selection, r, p_m)
     
-    log_acceptance_ratio <- log_target - log_target_chain[iter]
+    log_acceptance_ratio <- log_target_new + log_proposal_reverse - log_target - log_proposal_forward
     
-    if (verbose==TRUE) { 
+    if (verbose==TRUE) {
+      print("gamma new:")
+      print(gamma_new)
       print("log_acceptance_ratio:")
       print(log_acceptance_ratio)
-      log_target_prime_chain[l,iter] <- log_target
+      log_proposal_reverse_chain[l, iter] <- log_proposal_reverse
+      log_proposal_forward_chain[l, iter] <- log_proposal_forward
+      log_target_new_chain[l,iter] <- log_target_new
       log_acceptance_ratio_chain[l,iter] <- log_acceptance_ratio
-      gamma_prime_chain[,l,iter] <- gamma
-      eta_prime_chain[,,l,iter] <- eta
+      gamma_new_chain[,l,iter] <- gamma_new
+      eta_new_chain[,,l,iter] <- eta_new
     }
     
     if (log(runif(1)) < log_acceptance_ratio) {
-      # Accept by maintaining gamma, eta, log_target
-      gamma_chain[,iter] <- gamma
-      eta_chain[,,iter] <- eta
-      log_target_chain[iter] <- log_target
+      # Accept gamma, eta, log_target
+      gamma <- gamma_chain[,iter] <- gamma_new
+      eta <- eta_chain[,,iter] <- eta_new
+      log_target <- log_target_chain[iter] <- log_target_new
       if (verbose == TRUE) {
         acceptance_indicator_chain[l,iter] <- 1
       }
     } else {
-      # Reject by reverting to the previous result
-      gamma <- gamma_chain[,iter]
-      eta <- eta_chain[,,iter]
-      log_target <- log_target_chain[iter]
+      # Reject by maintaining previous result
       if (verbose == TRUE) {
         acceptance_indicator_chain[l,iter] <- 0
       }
