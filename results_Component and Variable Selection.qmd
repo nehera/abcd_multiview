@@ -15,7 +15,7 @@ editor: visual
 #| output: false
 library(tidyverse)
 seed <- 1
-date <- Sys.Date()
+date <- "2023-07-31"
 results_file_name <- paste0("data/", date, "_image_", seed, ".RData")
 load(results_file_name)
 ```
@@ -38,7 +38,7 @@ Here we see that gamma's are being proposed with the desired stepwise machinatio
 print("Gamma accepted in first 3 iterations:")
 gamma_chain[,1:3]
 print("Gamma proposed in first 3 iterations:")
-gamma_prime_chain[,,1:3]
+gamma_new_chain[,,1:3]
 ```
 
 ## Which components are getting selected for?
@@ -92,15 +92,15 @@ Here we consider results from a different starting point (seed = 2), and notice 
 
 ```{r}
 #| echo: false
-load_job_seed(2)
-print("Initial conditions:")
-str(initial_conditions)
-print("Gamma accepted in first 3 iterations:")
-gamma_chain[,1:3]
-print("Gamma proposed in first 3 iterations:")
-gamma_prime_chain[,,1:3]
-print("Cumulative component selections:")
-gamma_chain[, (n_burnin+1):n_iterations] %>% rowSums()
+# load_job_seed(2)
+# print("Initial conditions:")
+# str(initial_conditions)
+# print("Gamma accepted in first 3 iterations:")
+# gamma_chain[,1:3]
+# print("Gamma proposed in first 3 iterations:")
+# gamma_new_chain[,,1:3]
+# print("Cumulative component selections:")
+# gamma_chain[, (n_burnin+1):n_iterations] %>% rowSums()
 ```
 
 ## Questions to consider

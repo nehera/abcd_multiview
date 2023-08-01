@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Aidan Neher">
+<meta name="dcterms.date" content="2023-08-01">
 
 <title>Component and Variable Selection Results</title>
 <style>
@@ -68,59 +69,69 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="results_Component and Variable Selection_files/libs/bootstrap/bootstrap.min.js"></script>
 <link href="results_Component and Variable Selection_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="results_Component and Variable Selection_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<style>
+
+      .quarto-title-block .quarto-title-banner h1,
+      .quarto-title-block .quarto-title-banner h2,
+      .quarto-title-block .quarto-title-banner h3,
+      .quarto-title-block .quarto-title-banner h4,
+      .quarto-title-block .quarto-title-banner h5,
+      .quarto-title-block .quarto-title-banner h6
+      {
+        color: #7A0019;
+      }
+
+      .quarto-title-block .quarto-title-banner {
+        color: #7A0019;
+background: #FFCC33;
+      }
+</style>
 
 
 </head>
 
 <body class="fullcontent">
 
-<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
-
-<main class="content" id="quarto-document-content">
-
-<header id="title-block-header" class="quarto-title-block default">
-<div class="quarto-title">
-<h1 class="title">Component and Variable Selection Results</h1>
-</div>
-
-
-
-<div class="quarto-title-meta">
-
-    <div>
-    <div class="quarto-title-meta-heading">Author</div>
-    <div class="quarto-title-meta-contents">
-             <p>Aidan Neher </p>
-          </div>
+<header id="title-block-header" class="quarto-title-block default page-columns page-full">
+  <div class="quarto-title-banner page-columns page-full">
+    <div class="quarto-title column-body">
+      <h1 class="title">Component and Variable Selection Results</h1>
+                      </div>
   </div>
     
   
+  <div class="quarto-title-meta">
+
+      <div>
+      <div class="quarto-title-meta-heading">Author</div>
+      <div class="quarto-title-meta-contents">
+               <p>Aidan Neher </p>
+            </div>
+    </div>
+      
+      <div>
+      <div class="quarto-title-meta-heading">Published</div>
+      <div class="quarto-title-meta-contents">
+        <p class="date">August 1, 2023</p>
+      </div>
+    </div>
     
-  </div>
+      
+    </div>
+    
   
+  </header><div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
 
-</header>
+<main class="content quarto-banner-title-block" id="quarto-document-content">
 
-<div class="cell">
-<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stderr">
-<pre><code>── Attaching packages ─────────────────────────────────────── tidyverse 1.3.2 ──
-✔ ggplot2 3.4.2     ✔ purrr   1.0.1
-✔ tibble  3.2.1     ✔ dplyr   1.1.2
-✔ tidyr   1.3.0     ✔ stringr 1.5.0
-✔ readr   2.1.3     ✔ forcats 0.5.2
-── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
-✖ dplyr::filter() masks stats::filter()
-✖ dplyr::lag()    masks stats::lag()</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">load</span>(<span class="st">"data/2023-07-26_image_1.RData"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-<section id="intro-to-results" class="level2">
-<h2 class="anchored" data-anchor-id="intro-to-results">Intro to results</h2>
+
+
+
+<section id="introduction-to-results" class="level2">
+<h2 class="anchored" data-anchor-id="introduction-to-results">Introduction to results</h2>
 <p>The data visualized is from the most recent version of the MCMC for sampling component and variable selection indicators, gamma and eta respectively. To generate this data, the RNG seed was set at 1.</p>
 <p>First, let’s look at the MCMC’s initial conditions:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">str</span>(initial_conditions)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>List of 7
  $ gamma             : int [1:4] 0 0 1 1
@@ -140,23 +151,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="is-the-code-proposing-gamma-values-stepwise-rather-than-blockwise-within-an-iteration">Is the code proposing gamma values stepwise (rather than blockwise) within an iteration?</h2>
 <p>Here we see that gamma’s are being proposed with the desired stepwise machination.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Gamma accepted in first 3 iterations:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] "Gamma accepted in first 3 iterations:"</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>gamma_chain[,<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>     [,1] [,2] [,3]
-[1,]    0    0    0
-[2,]    0    0    0
-[3,]    0    0    0
-[4,]    1    1    1</code></pre>
+[1,]    0   NA   NA
+[2,]    0   NA   NA
+[3,]    0   NA   NA
+[4,]    0   NA   NA</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Gamma proposed in first 3 iterations:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] "Gamma proposed in first 3 iterations:"</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>gamma_prime_chain[,,<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>, , 1
 
@@ -172,7 +179,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 [1,]    1    0    0    0
 [2,]    0    1    0    0
 [3,]    0    0    1    0
-[4,]    1    1    1    0
+[4,]    0    0    0    1
 
 , , 3
 
@@ -180,7 +187,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 [1,]    1    0    0    0
 [2,]    0    1    0    0
 [3,]    0    0    1    0
-[4,]    1    1    1    0</code></pre>
+[4,]    0    0    0    1</code></pre>
 </div>
 </div>
 </section>
@@ -188,14 +195,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="which-components-are-getting-selected-for">Which components are getting selected for?</h2>
 <p>Below we observe that the chain is getting stuck with only the fourth component considered as active, even after a burn-in of 1,000 iterations.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>last_iter <span class="ot">&lt;-</span> <span class="dv">1500</span> <span class="co"># </span><span class="al">TODO</span><span class="co"> remove when full chain available</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="st">"Cumulative component selections:"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] "Cumulative component selections:"</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>gamma_chain[, (n_burnin<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span>last_iter] <span class="sc">%&gt;%</span> <span class="fu">rowSums</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1]   0   0   0 500</code></pre>
+<pre><code>[1] NA NA NA NA</code></pre>
 </div>
 </div>
 </section>
@@ -204,17 +208,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>Below we examine the log acceptance ratio from first 10 iterations.</p>
 <p>From the initial conditions to the first iteration, we observe a large positive log acceptance ratio, which equates to a high probability of acceptance of the proposed gamma.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>log_target_chain[<span class="dv">1</span>] <span class="sc">-</span> initial_conditions<span class="sc">$</span>log_target</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>log_target_chain[<span class="dv">1</span>] <span class="sc">-</span> initial_conditions<span class="sc">$</span>log_target</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 243.2783</code></pre>
+<pre><code>[1] 215.8407</code></pre>
 </div>
 </div>
 <p>Aftwerwards, the log target density become quite negative and stays there, which is associated with an almost zero probability of acceptance. This is reflected in the chain getting stuck at 0001.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>log_acceptance_ratio_chain[<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code> [1] -153.15657 -203.21203  243.27830  -27.43757 -243.27830 -252.11162
- [7] -249.16718  -27.43757 -249.16718 -258.00050</code></pre>
+<div class="cell-output-display">
+<p><img src="results_Component-and-Variable-Selection_files/figure-html/unnamed-chunk-6-1.png" class="img-fluid" width="672"></p>
 </div>
 </div>
 <p>This suggests either the chain hasn’t run long enough or more likely that there’s an issue in the evaluation of the log target densities.</p>
@@ -223,48 +225,49 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="how-are-the-variable-selection-indicators-eta-behaving">How are the variable selection indicators, eta, behaving?</h2>
 <p>Since only the fourth component is getting selected, we examine only its variable selection indicators. Note, for now, only 500 iterations are available and correspond to the last dimension.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>eta_chain[<span class="dv">4</span>, ,(n_burnin<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span>last_iter] <span class="sc">%&gt;%</span> <span class="fu">rowSums</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>eta_chain[<span class="dv">4</span>, ,(n_burnin<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span>n_iterations] <span class="sc">%&gt;%</span> <span class="fu">rowSums</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>  [1]   0 500   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
- [19]   0   0   0   0   0   0 500 500   0   0   0   0   0   0   0   0   0   0
- [37]   0 500   0   0   0   0 500   0   0   0   0   0   0   0   0   0   0   0
- [55]   0   0   0   0   0   0   0   0   0   0   0 500   0   0   0   0   0   0
- [73]   0   0   0   0   0   0   0   0   0   0   0   0 500   0   0   0   0   0
- [91]   0   0   0   0   0   0   0   0   0   0 500 500   0   0 500   0   0   0
-[109]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[127]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[145]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[163]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[181]   0   0   0   0   0   0   0   0   0   0   0   0   0   0 500   0   0   0
-[199]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[217]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[235]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[253]   0   0 500   0   0   0   0   0   0   0   0   0   0   0   0   0   0 500
-[271]   0   0   0   0   0 500   0   0   0   0   0   0   0   0   0   0   0   0
-[289]   0   0   0   0   0   0   0   0   0   0 500   0   0   0   0   0   0   0
-[307]   0   0   0 500   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[325]   0   0   0   0   0   0   0   0   0   0 500   0   0   0   0   0   0   0
-[343]   0   0   0   0   0   0   0 500   0   0   0   0   0   0   0   0   0   0
-[361]   0   0   0   0   0   0   0 500   0   0   0   0   0   0   0 500   0   0
-[379] 500   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[397]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[415]   0   0   0 500 500   0   0   0   0   0   0   0   0   0   0   0   0   0
-[433]   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-[451]   0   0   0   0   0   0   0   0   0   0   0   0   0   0 500   0 500   0
-[469]   0 500   0   0   0   0   0   0   0   0 500   0   0   0   0   0 500   0
-[487]   0   0   0   0   0   0   0   0   0   0   0   0   0 500</code></pre>
+<pre><code>  [1] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+ [26] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+ [51] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+ [76] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[101] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[126] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[151] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[176] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[201] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[226] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[251] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[276] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[301] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[326] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[351] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[376] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[401] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[426] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[451] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA
+[476] NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA NA</code></pre>
 </div>
 </div>
 <p>Because gamma and eta are selected/ rejected together, we notice that the collection of features selected is static i.e.&nbsp;each feature that has been selected once is selected for all available iterations.</p>
 </section>
-<section id="what-are-the-mpps-marginal-posterior-probabilities-of-component-and-feature-selection" class="level2">
-<h2 class="anchored" data-anchor-id="what-are-the-mpps-marginal-posterior-probabilities-of-component-and-feature-selection">What are the MPPs (marginal posterior probabilities) of component and feature selection?</h2>
-<section id="are-the-truly-important-components-features-getting-selected" class="level3">
-<h3 class="anchored" data-anchor-id="are-the-truly-important-components-features-getting-selected">Are the truly important components/ features getting selected?</h3>
+<section id="does-starting-point-impact-the-results" class="level2">
+<h2 class="anchored" data-anchor-id="does-starting-point-impact-the-results">Does starting point impact the results?</h2>
+<p>Here we consider results from a different starting point (seed = 2), and notice the chain is still getting stuck with one active component:</p>
 </section>
+<section id="questions-to-consider" class="level2">
+<h2 class="anchored" data-anchor-id="questions-to-consider">Questions to consider</h2>
+<ul>
+<li>What are the MPPs (marginal posterior probabilities) of component and feature selection? Are the truly important components/ features getting selected?</li>
+<li>Are the MPPs of component and feature selection converging?</li>
+</ul>
 </section>
-<section id="are-the-mpps-of-component-and-feature-selection-converging" class="level2">
-<h2 class="anchored" data-anchor-id="are-the-mpps-of-component-and-feature-selection-converging">Are the MPPs of component and feature selection converging?</h2>
+<section id="about-quarto" class="level2">
+<h2 class="anchored" data-anchor-id="about-quarto">About Quarto</h2>
+<p>Quarto was used to generate this document, since it enables you to weave together content and executable code into a finished document. To learn more about Quarto see <a href="https://quarto.org" class="uri">https://quarto.org</a>.</p>
+<p>Note, the following error on rendering is fine for the purposes of this document:</p>
+<p>ERROR: No output created by quarto render results_Component and Variable Selection.qmd</p>
+<p>Error: No output created by quarto render results_Component and Variable Selection.qmd at handleRenderResult (file:///Applications/quarto/bin/quarto.js:102402:15) at renderForPreview (file:///Applications/quarto/bin/quarto.js:102417:25) at async render (file:///Applications/quarto/bin/quarto.js:102303:20) at async preview (file:///Applications/quarto/bin/quarto.js:102309:21) at async Command.fn (file:///Applications/quarto/bin/quarto.js:103760:9) at async Command.execute (file:///Applications/quarto/bin/quarto.js:8437:13) at async quarto (file:///Applications/quarto/bin/quarto.js:127535:5) at async file:///Applications/quarto/bin/quarto.js:127553:9</p>
 </section>
 
 </main>

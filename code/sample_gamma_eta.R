@@ -58,7 +58,7 @@ sigma2 <- rep(1, p_m)
 tau2 <- matrix(1, nrow = r, ncol = p_m)
 U <- simulation_results$U # U is a fixed set of covariates
 
-log_target_chain <- numeric(n_iterations)
+log_target_chain <- rep(NA, n_iterations)
 
 # Specify functions
 get_mvnorm_var <- function(j, gamma, U, sigma2, n) {
@@ -232,14 +232,17 @@ for (iter in 1:n_iterations) {
     
     if (log(runif(1)) < log_acceptance_ratio) {
       # Accept gamma, eta, log_target
-      gamma <- gamma_chain[,iter] <- gamma_new
-      eta <- eta_chain[,,iter] <- eta_new
-      log_target <- log_target_chain[iter] <- log_target_new
+      gamma_chain[,iter] <- gamma <- gamma_new
+      eta_chain[,,iter] <- eta <- eta_new
+      log_target_chain[iter] <- log_target <- log_target_new
       if (verbose == TRUE) {
         acceptance_indicator_chain[l,iter] <- 1
       }
     } else {
       # Reject by maintaining previous result
+      gamma_chain[,iter] <- gamma
+      eta_chain[,,iter] <- eta
+      log_target_chain[iter] <- log_target
       if (verbose == TRUE) {
         acceptance_indicator_chain[l,iter] <- 0
       }
