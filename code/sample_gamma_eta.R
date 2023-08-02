@@ -136,8 +136,8 @@ log_proposal_l_density <- function(gamma_l, eta_l,
     return(0)
   } else if (gamma_l==0 & gamma_l_prime==1) {
     return(
-      ifelse(eta_l_prime==1, log(P_l), 
-             1 - log(P_l)) %>% sum()
+      ifelse(eta_l_prime==1, log(P_l),
+             log(1 - P_l)) %>% sum()
     )
   } else {
     stop("Error in log_proposal_l_density evaluation possibly due to issue in gamma and eta proposal.")
