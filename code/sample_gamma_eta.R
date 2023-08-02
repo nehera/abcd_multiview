@@ -38,7 +38,7 @@ prior_variable_selection <- 0.05
 n_sample <- 5000
 n_burnin <- 1000
 n_iterations <- n_sample + n_burnin
-if (dev==TRUE) { n_iterations <- 3 }
+if (dev==TRUE) { n_iterations <- 10 }
 
 # Initialize data structures
 gamma_chain <- matrix(nrow = r, ncol = n_iterations)
