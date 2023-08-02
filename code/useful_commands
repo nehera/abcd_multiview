@@ -19,6 +19,7 @@ scp neher015@mesabi.msi.umn.edu:abcd_multiview/data/2023-07-31_image_1.RData 202
 
 # Copy a single file from local to remote with scp
 scp myfile.txt remoteuser@remoteserver:/remote/folder/
+scp code/sample_gamma_eta.R neher015@mesabi.msi.umn.edu:abcd_multiview/code/sample_gamma_eta.R
 
 # Refresh SSH connection fingerprints if they've recently changed
 ssh-keygen -R <host>
