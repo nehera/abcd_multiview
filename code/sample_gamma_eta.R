@@ -11,7 +11,7 @@ if (dev == TRUE) {
     args = commandArgs(trailingOnly=TRUE)
     # test if there is at least one argument: if not, return an error
     if (length(args)==0) {
-      stop("At least one argument must be supplied (input file).n", call.=FALSE)
+      stop("At least one argument must be supplied in CLI", call.=FALSE)
     } else if (length(args)==1) {
       # default output file
       args[2] = "out.txt"
@@ -144,6 +144,12 @@ log_proposal_l_density <- function(gamma_l, eta_l,
   }
 }
 
+log_proposal_feature_resampling <- function(P_lj, eta_lj_prime) {
+  return(
+    eta_lj_prime * log(P_lj) + (1-eta_lj_prime) * log(1-P_lj)
+  )
+}
+
 # Begin MCMC
 log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n)
 
@@ -185,30 +191,37 @@ for (iter in 1:n_iterations) {
     gamma_new <- gamma
     eta_new <- eta
     
-    if (gamma_new[l] == 1) {
+    if (gamma[l] == 1) {
       # Propose component deactivation
       gamma_new[l] <- 0
-      log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma_new, x, U, sigma2, p_m, n)
       # Propose feature deactivation
       eta_new[l,] <- rep(0, p_m)
-    } else {
+    } else if (gamma[l] == 0) {
       # Propose component activation
       gamma_new[l] <- 1
-      log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma_new, x, U, sigma2, p_m, n)
+    } else {
+      stop("There's an issue in component activation/ deactivation.")
+    }
+    
+    log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma_new, x, U, sigma2, p_m, n)
+    P_l <- get_P_l(l, log_dmvnorm_vector, eta_new, r, p_m)
+    
+    if (verbose == TRUE) {
+      P_chain[l, , iter] <- P_l
+    }
+    
+    if (gamma[l] == 0) {
       # Propose feature activation
-      P_l <- get_P_l(l, log_dmvnorm_vector, eta_new, r, p_m)
-      if (verbose == TRUE) {
-        P_chain[l, , iter] <- P_l
-      }
       eta_new[l, ] <- rbinom(n = p_m, size = 1, prob = P_l)
     }
+
     
     # Calculate log proposal densities
     log_proposal_forward <- log_proposal_l_density(gamma[l], eta[l, ], 
                                            gamma_new[l], eta_new[l, ], P_l)
     
     log_proposal_reverse <- log_proposal_l_density(gamma_new[l], eta_new[l, ], 
-                           gamma[l], eta[l, ], P_l)
+                           gamma[l], eta[l, ], P_l) # TODO Is the correct P_l used here?
     
     # Calculate log target density
     log_target_new <- log_target_density(gamma_new, eta_new, log_dmvnorm_vector, 
@@ -231,18 +244,53 @@ for (iter in 1:n_iterations) {
     }
     
     if (log(runif(1)) < log_acceptance_ratio) {
-      # Accept gamma, eta, log_target
+      log_target_chain[iter] <- log_target <- log_target_new
+      # Accept proposed gamma and eta
       gamma_chain[,iter] <- gamma <- gamma_new
       eta_chain[,,iter] <- eta <- eta_new
-      log_target_chain[iter] <- log_target <- log_target_new
       if (verbose == TRUE) {
         acceptance_indicator_chain[l,iter] <- 1
       }
     } else {
-      # Reject by maintaining previous result
-      gamma_chain[,iter] <- gamma
-      eta_chain[,,iter] <- eta
       log_target_chain[iter] <- log_target
+      # Reject proposed gamma and eta
+      gamma_chain[,iter] <- gamma
+      if (gamma[l] == 1) {
+        # Metropolis-Hastings to mix the feature activation indicators
+        eta_new <- eta # TODO understand if re-initialization necessary
+        log_dmvnorm_vector <- get_log_dmvnorm_vector(gamma, x, U, sigma2, p_m, n) # TODO understand if re-initialization necessary
+        for (j in 1:p_m) {
+          if (eta[l,j] == 1) {
+            # Propose deactivation
+            eta_new[l,j] <- 0
+          } else if (eta[l,j] == 0) {
+            # Propose activation
+            eta_new[l,j] <- 1
+          } else {
+            stop("Issue in Metropolis-Hastings for mixing the feature activation indicators after rejecting component deactivation.")
+          }
+          P_l <- get_P_l(l, log_dmvnorm_vector, eta, r, p_m) # TODO only calculate P_lj
+          P_lj <- P_l[j]
+          P_l_new <- get_P_l(l, log_dmvnorm_vector, eta_new, r, p_m) # TODO only calculate P_lj_new
+          P_lj_new <- P_l_new[j]
+
+          # Calculate log_acceptance_ratio_feature_resampling
+          log_acceptance_ratio_feature_resampling <- log(prior_variable_selection) + log_proposal_feature_resampling(P_lj_new, eta[l,j]) -
+            log(prior_variable_selection) - log_proposal_feature_resampling(P_lj, eta_new[l,j]) # TODO unfix probability of variable selection
+          
+          if (log(runif(1)) < log_acceptance_ratio_feature_resampling) {
+            # Accept feature indicator change
+            eta <- eta_new # TODO avoid whole matrix reassigment
+          } else {
+            # Reject feature activation indicator change
+            eta_new <- eta # TODO avoid whole matrix reassigment
+          }
+        }
+        eta_chain[,,iter] <- eta
+      } else {
+        eta_chain[,,iter] <- eta
+      }
+
       if (verbose == TRUE) {
         acceptance_indicator_chain[l,iter] <- 0
       }
