@@ -21,6 +21,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -74,91 +108,69 @@ ul.task-list li input[type="checkbox"] {
 <section id="results-from-original-bip-vs.-step-b1" class="level2">
 <h2 class="anchored" data-anchor-id="results-from-original-bip-vs.-step-b1">Results from original <code>BIP()</code> vs.&nbsp;step B1</h2>
 <p>Defaults used for original <code>BIP()</code>: sample = 5000, burn-in = 1000</p>
-<p>Step B1 results taken from in-progress sampling. Thus, we have sample = 2500, burn-in = 1000.</p>
+<p>Note, we are only focused on the results for the first view (m=1) for now.</p>
+<p>Here are the component selection MPPs using the original <code>BIP()</code> function:</p>
 <div class="cell">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>bip_0 <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">"data/2023-07-03_simulation_BIP_results.rds"</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>bip_0<span class="sc">$</span>CompoSelMean[<span class="dv">1</span>, ]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>       [,1]   [,2]   [,3]   [,4]
-[1,] 0.3026 0.1828 0.2258 0.9722
-[2,] 0.7514 1.0000 0.6192 0.4896
-[3,] 0.7312 0.8324 0.6396 0.9634</code></pre>
+<pre><code>[1] 0.3026 0.1828 0.2258 0.9722</code></pre>
 </div>
 </div>
+<p>Here are the component selection MPPs from one starting point:</p>
 <div class="cell">
-<div class="cell-output cell-output-stderr">
-<pre><code>── Attaching packages ─────────────────────────────────────── tidyverse 1.3.2 ──
-✔ ggplot2 3.4.2     ✔ purrr   1.0.1
-✔ tibble  3.2.1     ✔ dplyr   1.1.2
-✔ tidyr   1.3.0     ✔ stringr 1.5.0
-✔ readr   2.1.3     ✔ forcats 0.5.2
-── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
-✖ dplyr::filter() masks stats::filter()
-✖ dplyr::lag()    masks stats::lag()
-
-Attaching package: 'gridExtra'
-
-
-The following object is masked from 'package:dplyr':
-
-    combine</code></pre>
-</div>
-<div class="cell-output cell-output-stderr">
-<pre><code>Warning: Removed 2000 rows containing missing values (`geom_point()`).
-Removed 2000 rows containing missing values (`geom_point()`).
-Removed 2000 rows containing missing values (`geom_point()`).</code></pre>
-</div>
-<div class="cell-output-display">
-<p><img src="Step-B1.-Sampling-Component-and-Variable-Activation-Report_files/figure-html/unnamed-chunk-2-1.png" class="img-fluid" width="672"></p>
-</div>
-<div class="cell-output-display">
-<p><img src="Step-B1.-Sampling-Component-and-Variable-Activation-Report_files/figure-html/unnamed-chunk-2-2.png" class="img-fluid" width="672"></p>
-</div>
-<div class="cell-output cell-output-stderr">
-<pre><code>Warning: Removed 4000 rows containing missing values (`geom_point()`).</code></pre>
-</div>
-<div class="cell-output cell-output-stderr">
-<pre><code>Warning: Removed 4000 rows containing missing values (`geom_point()`).
-Removed 4000 rows containing missing values (`geom_point()`).</code></pre>
-</div>
-<div class="cell-output-display">
-<p><img src="Step-B1.-Sampling-Component-and-Variable-Activation-Report_files/figure-html/unnamed-chunk-2-3.png" class="img-fluid" width="672"></p>
-</div>
-<div class="cell-output cell-output-stderr">
-<pre><code>Warning: Removed 4000 rows containing missing values (`geom_point()`).
-Removed 4000 rows containing missing values (`geom_point()`).
-Removed 4000 rows containing missing values (`geom_point()`).</code></pre>
-</div>
-<div class="cell-output-display">
-<p><img src="Step-B1.-Sampling-Component-and-Variable-Activation-Report_files/figure-html/unnamed-chunk-2-4.png" class="img-fluid" width="672"></p>
-</div>
-<div class="cell-output-display">
-<p><img src="Step-B1.-Sampling-Component-and-Variable-Activation-Report_files/figure-html/unnamed-chunk-2-5.png" class="img-fluid" width="672"></p>
-</div>
-<div class="cell-output-display">
-<p><img src="Step-B1.-Sampling-Component-and-Variable-Activation-Report_files/figure-html/unnamed-chunk-2-6.png" class="img-fluid" width="672"></p>
-</div>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">load</span>(<span class="st">"data/2023-08-26_image_1.RData"</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>get_CompoSelMean_m <span class="ot">&lt;-</span> <span class="cf">function</span>(gamma_chain_m, n_burnin, n_iterations) {</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span> ( gamma_chain[, (n_burnin<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span>n_iterations] <span class="sc">%&gt;%</span> <span class="fu">rowMeans</span>() )</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">get_CompoSelMean_m</span>(gamma_chain, n_burnin, n_iterations)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>TableGrob (5 x 1) "arrange": 5 grobs
-  z     cells    name            grob
-1 1 (1-1,1-1) arrange gtable[arrange]
-2 2 (2-2,1-1) arrange gtable[arrange]
-3 3 (3-3,1-1) arrange gtable[arrange]
-4 4 (4-4,1-1) arrange gtable[arrange]
-5 5 (5-5,1-1) arrange gtable[arrange]</code></pre>
+<pre><code>[1] 0 0 0 1</code></pre>
 </div>
 </div>
-<!-- Here's a trace plot of the MPP of the first 10 variables in the 1st view. -->
+<p>These results indicate that the chain got stuck on a particular component.</p>
+<p>Now, we look at the results from a different starting point:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">load</span>(<span class="st">"data/2023-08-26_image_2.RData"</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">get_CompoSelMean_m</span>(gamma_chain, n_burnin, n_iterations)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0 0 1 0</code></pre>
+</div>
+</div>
+<p>Again, these results indicate that the chain got stuck on a particular component.</p>
+<p>Here we look at the MPPs of 50 features (every 10th i.e.&nbsp;1st, 11th, 21st, …) in the component active in the MCMC:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>get_VarSelMean_m_l <span class="ot">&lt;-</span> <span class="cf">function</span>(eta_chain_m, l, n_burnin, n_iterations) {</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>( eta_chain[l,,(n_burnin<span class="sc">+</span><span class="dv">1</span>)<span class="sc">:</span>n_iterations] <span class="sc">%&gt;%</span> <span class="fu">rowMeans</span>() )</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>l <span class="ot">&lt;-</span> <span class="dv">3</span> <span class="co"># </span><span class="al">TODO</span><span class="co"> remove hardcoding</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>VarSelMean_m_l <span class="ot">&lt;-</span> <span class="fu">get_VarSelMean_m_l</span>(eta_chain, l, n_burnin, n_iterations)</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>features_of_iterest <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="at">from =</span> <span class="dv">1</span>, <span class="at">to =</span> p_m, <span class="at">by =</span> <span class="dv">10</span>)</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>VarSelMean_m_l[features_of_iterest]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code> [1] 0.9550 0.9524 0.9484 0.9470 0.9478 0.9516 0.9516 0.9516 0.9496 0.9424
+[11] 0.9486 0.9462 0.9470 0.9516 0.9492 0.9476 0.9482 0.9514 0.9486 0.9496
+[21] 0.9474 0.9500 0.9516 0.9496 0.9494 0.9484 0.9504 0.9536 0.9516 0.9498
+[31] 0.9498 0.9514 0.9496 0.9480 0.9544 0.9500 0.9520 0.9508 0.9506 0.9502
+[41] 0.9526 0.9486 0.9544 0.9484 0.9492 0.9470 0.9528 0.9536 0.9546 0.9440</code></pre>
+</div>
+</div>
+<p>There’s no discrimination between important (the first 100 features) and unimportant (the last 400) features and the MPPs are close to 95%.</p>
+<p>We contrast these results with those from the original <code>BIP()</code> function where important features of interest are selected around 10-15% of iterations and unimportant ones are selected generally &lt; 1% of iterations.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>bip_0<span class="sc">$</span>VarSelMean[[m]][features_of_iterest,l]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code> [1] 0.1146 0.0974 0.1208 0.1234 0.1056 0.1594 0.1128 0.1246 0.1080 0.1262
+[11] 0.0022 0.0034 0.0020 0.0030 0.0040 0.0044 0.0028 0.0032 0.0032 0.0030
+[21] 0.0030 0.0030 0.0062 0.0048 0.0038 0.0040 0.0042 0.0028 0.0048 0.0044
+[31] 0.0024 0.0020 0.0038 0.0036 0.0054 0.0020 0.0026 0.0014 0.0056 0.0030
+[41] 0.0020 0.0028 0.0040 0.0024 0.0018 0.0026 0.0030 0.0034 0.0106 0.0034</code></pre>
+</div>
+</div>
 </section>
 <section id="run-time" class="level2">
 <h2 class="anchored" data-anchor-id="run-time">Run Time</h2>
-<p>Step B1 alone is slow…</p>
-</section>
-<section id="questions" class="level2">
-<h2 class="anchored" data-anchor-id="questions">Questions</h2>
-<ul>
-<li>How might I decide if my code is doing what it’s meant to do?</li>
-<li>How might I approach these tests/ simulation studies in a meaningful way?</li>
-<li>How might I speed the code? Parallel compuation and conversion to Rcpp…</li>
-</ul>
+<p>The latest version of Step B1 required 16 hours.</p>
 </section>
 
 </main>

@@ -224,7 +224,7 @@ for (iter in 1:n_iterations) {
                            gamma[l], eta[l, ], P_l) # TODO Is the correct P_l used here?
     
     # Calculate log target density
-    log_target_new <- log_target_density(gamma_new, eta_new, log_dmvnorm_vector, 
+    log_target_new <- log_target_density(gamma_new, eta_new, log_dmvnorm_vector, # TODO only take the log target density at the lth component level since it's currently outweighing the log proposal density.
                                      prior_component_selection, 
                                      prior_variable_selection, r, p_m)
     
