@@ -119,7 +119,6 @@ get_P_l <- function(l, log_dmvnorm_vector, eta, r, p_m) {
   return(P_l)
 }
 
-# TODO should I be calculating this just for the lth component worth of data? 
 log_target_density <- function(gamma, eta, log_dmvnorm_vector, 
                                prior_component_selection, 
                                prior_variable_selection, r, p_m) {
@@ -129,6 +128,20 @@ log_target_density <- function(gamma, eta, log_dmvnorm_vector,
     (r - n_active_components) * log(1-prior_component_selection)
   return(log_G + log_prod_p_gamma)
 }
+
+# TODO calculate for just for the lth component worth of data? 
+# gamma_l <- gamma[l]
+# eta_l <- eta[l, ] # vector
+# log_target_l_density <- function(gamma_l, eta_l, log_dmvnorm_vector, 
+#                                prior_component_selection, 
+#                                prior_variable_selection, r, p_m) {
+#   # TODO come up with better object name
+#   part_1 <- gamma_l * log(prior_component_selection) + 
+#     (1-gamma_l) * log(1-prior_component_selection) +
+#     sum(eta_l) * log(prior_variable_selection) +
+#     (p_m - sum(eta_l)) * log(1-prior_variable_selection)
+#   # part_2 <- 
+# }
 
 log_proposal_l_density <- function(gamma_l, eta_l, 
                                    gamma_l_prime, eta_l_prime, P_l) {
