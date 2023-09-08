@@ -1,3 +1,6 @@
+# The following blog article provides perspective on how to create a fast Woodbury function:
+# https://gregorygundersen.com/blog/2018/11/30/woodbury/#:~:text=The%20Woodbury%20matrix%20identity%20states,inverse%20of%20the%20original%20matrix.
+
 # Define a function that takes a matrix A and matrices U and V as arguments
 woodbury_inverse_matrix <- function(A, U, V) {
   # Check that the arguments are compatible
