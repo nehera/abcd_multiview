@@ -201,3 +201,10 @@ for (iter in 1:n_iterations) {
     }
   }
 }
+
+# Save output
+# TODO remove seed hardcoding
+output_name <- paste0("data/", Sys.Date(), "_gamma_chain_seed_", 1, ".rds")
+saveRDS(gamma_chain, file = output_name)
+output_name <- paste0("data/", Sys.Date(), "_eta_chain_seed_", 1, ".rds")
+saveRDS(eta_chain, file = output_name)

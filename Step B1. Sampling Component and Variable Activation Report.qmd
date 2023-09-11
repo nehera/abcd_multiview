@@ -8,66 +8,105 @@ editor: visual
 ```{r}
 #| include: false
 library(tidyverse)
+library(zoo) # for rollmean
+library(latex2exp) # for plotting latex
 ```
 
 ## About the simulated data
 
-With `set.seed(1)`, data from BIP manuscript scenario 1 was simulated.
+We simulate 10 iid normal random variables for 2 views. The first five features are active in the first two components. All else are inactive.
 
-## Results from original `BIP()` vs. step B1
-
-Defaults used for original `BIP()`: sample = 5000, burn-in = 1000
-
-Note, we are only focused on the results for the first view (m=1) for now.
-
-Here are the component selection MPPs using the original `BIP()` function:
+## Results
 
 ```{r}
-bip_0 <- readRDS("data/2023-07-03_simulation_BIP_results.rds")
-bip_0$CompoSelMean[1, ]
+gamma_chain <- readRDS("data/2023-09-08_gamma_chain_seed_1.rds")
+eta_chain <- readRDS("data/2023-09-08_eta_chain_seed_1.rds")
 ```
 
-Here are the component selection MPPs from one starting point:
+I was running the MCMC locally and needed to terminate the run early to get to a meeting. Here we see how many iterations are available.
 
 ```{r}
-load("data/2023-08-26_image_1.RData")
-get_CompoSelMean_m <- function(gamma_chain_m, n_burnin, n_iterations) {
-  return ( gamma_chain[, (n_burnin+1):n_iterations] %>% rowMeans() )
-}
-get_CompoSelMean_m(gamma_chain, n_burnin, n_iterations)
+n_iterations <- gamma_chain[1, ] %>% is.na() %>% which() %>% min()
+n_iterations <- n_iterations - 1
+print(n_iterations)
 ```
 
-These results indicate that the chain got stuck on a particular component.
-
-Now, we look at the results from a different starting point:
+Below is the trace plot for $\gamma$'s MPPs.
 
 ```{r}
-load("data/2023-08-26_image_2.RData")
-get_CompoSelMean_m(gamma_chain, n_burnin, n_iterations)
+n_burnin <- 1000
+r <- 4
+gamma_names <- paste("gamma", 1:r, sep = "_")
+gamma_df <- gamma_chain[, 1:n_iterations] %>% 
+  apply(MARGIN = 1, FUN = cummean) %>% 
+  as.data.frame() %>% mutate(iteration = 1:n_iterations) %>% 
+  gather(key = "gamma", value = "MPP", -iteration) %>%
+  mutate(gamma = gamma %>% as.factor()) 
+
+gamma_plot <- ggplot(gamma_df, 
+                     aes(x = iteration, y = MPP, color = gamma)) + 
+  geom_line() + geom_vline(xintercept = n_burnin, 
+                           linetype = "dashed", color = "red") +
+  labs(x = "iteration", y = "MPP", 
+       title = "Trace plot for gamma")
+
+print(gamma_plot)
 ```
 
-Again, these results indicate that the chain got stuck on a particular component.
+Here we start to look at the posterior for $\eta$. 
 
-Here we look at the MPPs of 50 features (every 10th i.e. 1st, 11th, 21st, ...) in the component active in the MCMC:
+Note, $\eta_{lj}=1$ denotes that in the lth component, the jth feature is active. 
+
+Since the MCMC selected the first component and second components as active, we start by looking at the results for the first component $\eta_{1j}$ for $j=1, 2, 6, 7$ since, truly, $j=1:5$ active and $j=6:10$ inactive.
 
 ```{r}
-get_VarSelMean_m_l <- function(eta_chain_m, l, n_burnin, n_iterations) {
-  return( eta_chain[l,,(n_burnin+1):n_iterations] %>% rowMeans() )
-}
-l <- 3 # TODO remove hardcoding
-VarSelMean_m_l <- get_VarSelMean_m_l(eta_chain, l, n_burnin, n_iterations)
-features_of_iterest <- seq(from = 1, to = p_m, by = 10)
-VarSelMean_m_l[features_of_iterest]
+features_of_interest <- c(1, 2, 6, 7)
+feature_names <- paste("j", features_of_interest, sep = "_")
+# TODO make trace plot function to reduce copy paste going forward
+eta_df <- eta_chain[1, features_of_interest, 1:n_iterations] %>%
+  apply(MARGIN = 1, FUN = cummean) %>% 
+  as.data.frame() %>% rename_at(vars(names(.)), ~ feature_names) %>% mutate(iteration = 1:n_iterations) %>% 
+  gather(key = "eta", value = "MPP", -iteration) %>%
+  mutate(eta = eta %>% as.factor()) 
+
+eta_1_plot <- ggplot(eta_df, 
+                     aes(x = iteration, y = MPP, color = eta)) + 
+  geom_line() + geom_vline(xintercept = n_burnin, 
+                           linetype = "dashed", color = "red") +
+  labs(x = "iteration", y = "MPP", 
+       title = "Trace plot for eta_1.")
+
+print(eta_1_plot)
 ```
 
-There's no discrimination between important (the first 100 features) and unimportant (the last 400) features and the MPPs are close to 95%.
-
-We contrast these results with those from the original `BIP()` function where important features of interest are selected around 10-15% of iterations and unimportant ones are selected generally < 1% of iterations.
+Now we calculate the component selection mean after burnin.
 
 ```{r}
-bip_0$VarSelMean[[m]][features_of_iterest,l]
+n_samples <- n_iterations - n_burnin
+component_sel_mean <- gamma_chain[, (n_burnin+1):n_iterations] %>%
+  apply(MARGIN = 1, FUN = mean)
+print(component_sel_mean)
 ```
 
-## Run Time
+The feature selection mean after burnin:
 
-The latest version of Step B1 required 16 hours. 
+```{r}
+feature_sel_mean <- eta_chain[,, (n_burnin+1):n_iterations] %>%
+  apply(MARGIN = c(1,2), FUN = mean)
+print(feature_sel_mean)
+```
+
+The global feature selection mean after burnin:
+
+```{r}
+# TODO is this the proper way to calculate VarSelMeanGlobal?
+feature_sel_global_matrix <- eta_chain[,, (n_burnin+1):n_iterations] %>% 
+  apply(c(2,3), FUN = sum)
+feature_sel_global_matrix <- ifelse(feature_sel_global_matrix !=0, 1, 0)
+feature_sel_mean_global <- rowMeans(feature_sel_global_matrix)
+print(feature_sel_mean_global)
+```
+
+## Discussion
+
+The algorithm is selecting for the active components and active features while ignoring inactive ones :) 
