@@ -183,7 +183,7 @@ sample_gamma_eta <- function(job, seed, r, n_obs, p_m,
     initial_conditions <- list(gamma=gamma, eta=eta, sigma2=sigma2, tau2=tau2, U=U)
     # r x n_iteration proposals and accept/ rejects occur, so last two dimensions represent this
     log_proposal_forward_chain <- matrix(nrow = r, ncol = n_iterations)
-    log_proposal_reverse_chain <- matrix(nrow = r, ncol = n_iterations)
+    log_proposal_backward_chain <- matrix(nrow = r, ncol = n_iterations)
     log_target_chain <- matrix(nrow = r, ncol = n_iterations)
     log_target_new_chain <- matrix(nrow = r, ncol = n_iterations)
     log_acceptance_ratio_chain <- matrix(nrow = r, ncol = n_iterations)
@@ -219,7 +219,7 @@ sample_gamma_eta <- function(job, seed, r, n_obs, p_m,
         print(gamma_new)
         print("log_acceptance_ratio:")
         print(log_acceptance_ratio)
-        log_proposal_reverse_chain[l, iter] <- log_proposal_reverse
+        log_proposal_backward_chain[l, iter] <- log_proposal_backward
         log_proposal_forward_chain[l, iter] <- log_proposal_forward
         log_target_chain[l,iter] <- log_target_new
         log_target_new_chain[l,iter] <- log_target_new
