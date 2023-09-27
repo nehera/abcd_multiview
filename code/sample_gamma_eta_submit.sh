@@ -18,4 +18,4 @@ cd /home/mfiecas/neher015/abcd_multiview
 
 module load R
 
-Rscript code/sample_gamma_eta_2.R $SLURM_ARRAY_TASK_ID
+Rscript code/sample_gamma_eta.R $SLURM_ARRAY_TASK_ID
