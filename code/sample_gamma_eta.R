@@ -1,5 +1,14 @@
-dev <- FALSE
-if (dev == FALSE) {
+# This script implements an MCMC sampler for component and feature selection
+# It's described in Thierry & Sandra's 2021 Biostatistics paper's supplement
+# See the supplement's MCMC step B.1 for details.
+# Only gamma and eta are sampled in this script. 
+# All other parameters are fixed.
+# Author: Aidan (neher015@umn.edu)
+
+# This flag indicates if the script is being submitted to MSI
+# This is to allow for the passing of command line arguments
+submit <- FALSE
+if (submit == TRUE) {
   # Get CLI arguments
   args = commandArgs(trailingOnly=TRUE)
   # test if there is at least one argument: if not, return an error
@@ -36,7 +45,7 @@ saveRDS(data_list, fname_data_list)
 fname_bip_0 <- paste0("data/", today_date, "_job_", job, "_simulation_BIP_results.rds")
 saveRDS(bip_0, fname_bip_0)
 
-# Load packages
+## -- Begin gamma and eta sampler
 library(tidyverse)
 # Set parameters
 r <- 4
@@ -47,16 +56,15 @@ prob_feature_selection <- 0.5
 n_sample <- 5000
 n_burnin <- 1000
 n_iterations <- n_sample + n_burnin
-# Load data
-m <- 1 # Start with the 1st view
-# data_list <- readRDS("data/2023-09-08_simulation_data_list.rds")
+
+# Start with the 1st view
+m <- 1 
 x <- data_list[[m]]
 
-# Set covariates
+# Fix covariates
 sigma2 <- rep(1, p_m)
 tau2 <- matrix(1, nrow = r, ncol = p_m)
-# simulation_results <- readRDS("data/2023-09-08_simulation_results.rds")
-U <- simulation_results$U # U is a fixed set of covariates
+U <- simulation_results$U 
 
 # Define sub-routines
 initialize_gamma <- function(r=4, prior_component_selection=0.5) {
@@ -76,14 +84,13 @@ initialize_eta <- function(gamma, r=4, p_m=10, prior_feature_selection=0.5) {
   return(eta)
 }
 
-## -- calculate P_lj
 calculate_mvnorm_var_j <- function(eta_j, sigma2_j, tau2_j, U, n_obs) {
   n_components_active_in <- sum(eta_j)
   if (n_components_active_in > 0) {
     components_active_in <- which(eta_j==1)
     Sigma2_j <- U[, components_active_in, drop = FALSE] %*% 
       diag(n_components_active_in) %*% 
-      t(U[, components_active_in, drop = FALSE]) + # TODO use Woodbury matrix formula for inversion
+      t(U[, components_active_in, drop = FALSE]) +
       diag(n_obs) 
   } else {
     Sigma2_j <- diag(n_obs)
@@ -134,7 +141,6 @@ calculate_eta_lj_threshold <- function(l, gamma, eta_j, sigma2_j, tau2_j, U, n_o
   return(log_G_j_1 - log_G_j_0)
 }
 
-## -- Calculate log_target_density_l 
 log_target_density_l <- function(l, gamma, eta, sigma2, tau2, U, n_obs, p_m, 
                                  x, prob_component_selection, prob_feature_selection) {
   sum_log_target_density_lj <- 0
@@ -148,7 +154,6 @@ log_target_density_l <- function(l, gamma, eta, sigma2, tau2, U, n_obs, p_m,
   return(log_target_density_l)
 }
 
-## -- Calculate log_proposal_l
 log_proposal_l_density <- function(l, gamma_prime, eta_prime, gamma, eta,
                                    sigma2, tau2, U, n_obs, p_m, x, prob_feature_selection) {
   if (gamma[l]==1 & gamma_prime[l]==0 & sum(eta_prime[l,])==0) {
@@ -165,8 +170,7 @@ log_proposal_l_density <- function(l, gamma_prime, eta_prime, gamma, eta,
   }
 }
 
-# Define MCMC
-# seed=1
+# Define main function
 sample_gamma_eta <- function(job, seed, r, n_obs, p_m, 
                              prob_component_selection, prob_feature_selection, 
                              n_iterations, x, sigma2, tau2, U, verbose=FALSE) {
