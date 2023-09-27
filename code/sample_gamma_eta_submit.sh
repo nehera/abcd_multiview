@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=sample_gamma_eta
-#SBATCH --array=1-3
+#SBATCH --array=1
 #SBATCH --output=sample_gamma_eta_%A_%a.out
 #SBATCH --error=sample_gamma_eta_%A_%a.err
 
