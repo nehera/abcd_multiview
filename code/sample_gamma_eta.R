@@ -35,7 +35,7 @@ data_list <- lapply(data_list, scale)
 indic_var <- c(0, 0, 1) 
 method <- "BIP" # method without grouping information to start
 group_list <- NULL # default when grouping information not included
-bip_0 <- BIPnet::BIP(dataList = data_list, IndicVar = indic_var, Method = method)
+bip_0 <- BIPnet::BIP(dataList = data_list, IndicVar = indic_var, Method = method, probvarsel = prob_feature_selection)
 # Store simulated data and results
 today_date <- Sys.Date()
 fname_simulation_results <- paste0("data/", today_date, "_job_", job, "_simulation_results.rds")
@@ -101,7 +101,9 @@ calculate_mvnorm_var_j <- function(eta_j, sigma2_j, tau2_j, U, n_obs) {
 
 calculate_log_dmvnorm_j <- function(eta_j, sigma2_j, tau2_j, U, n_obs, x_j) {
   mvnorm_var_j <- calculate_mvnorm_var_j(eta_j, sigma2_j, tau2_j, U, n_obs)
-  log_dmvnorm_j <- mvtnorm::dmvnorm(x = x_j, mean = rep(0, n_obs), sigma = mvnorm_var_j, log = TRUE)
+  # TODO use woodbury matrix identity for log_dmvnorm evaluation for sigma inversion
+  # TODO compare the results of the woodbury identity function with those of dmvnorm
+  log_dmvnorm_j <- mvtnorm::dmvnorm(x = x_j, mean = rep(0, n_obs), sigma = mvnorm_var_j, log = TRUE) 
   return(log_dmvnorm_j)
 }
 
@@ -145,7 +147,8 @@ log_target_density_l <- function(l, gamma, eta, sigma2, tau2, U, n_obs, p_m,
                                  x, prob_component_selection, prob_feature_selection) {
   sum_log_target_density_lj <- 0
   for (j in 1:p_m) {
-    log_dmvnorm_j <- calculate_log_dmvnorm_j(eta[, j], sigma2[j], tau2[,j], U, n_obs, x[,j])
+    # TODO understand if log_dmvnorm_j should only use data within. Note, this should cancel in the log_acceptance_ratio subtraction.
+    log_dmvnorm_j <- calculate_log_dmvnorm_j(eta[, j], sigma2[j], tau2[,j], U, n_obs, x[,j]) 
     sum_log_target_density_lj <- sum_log_target_density_lj + log_dmvnorm_j + 
       eta[l,j]*log(prob_feature_selection) + (1-eta[l,j])*log(1-prob_feature_selection)
   }
@@ -171,6 +174,8 @@ log_proposal_l_density <- function(l, gamma_prime, eta_prime, gamma, eta,
 }
 
 # Define main function
+# seed=1
+# verbose=TRUE
 sample_gamma_eta <- function(job, seed, r, n_obs, p_m, 
                              prob_component_selection, prob_feature_selection, 
                              n_iterations, x, sigma2, tau2, U, verbose=FALSE) {
@@ -196,9 +201,11 @@ sample_gamma_eta <- function(job, seed, r, n_obs, p_m,
   }
   
   # Sample for n_iterations
+  # iter=1
   for (iter in 1:n_iterations) {
     cat("iter", iter, "\n")
     # Sample across components
+    # l=1
     for (l in 1:r) {
       # Propose values
       gamma_new <- replace(gamma, l, 1-gamma[l])
@@ -213,7 +220,8 @@ sample_gamma_eta <- function(job, seed, r, n_obs, p_m,
       log_target_new <- log_target_density_l(l, gamma_new, eta_new, sigma2, tau2, U, n_obs, p_m, x, prob_component_selection, prob_feature_selection)
       log_proposal_forward <- log_proposal_l_density(l, gamma_new, eta_new, gamma, eta, sigma2, tau2, U, n_obs, p_m, x, prob_feature_selection)
       log_proposal_backward <- log_proposal_l_density(l, gamma, eta, gamma_new, eta_new, sigma2, tau2, U, n_obs, p_m, x, prob_feature_selection)
-      log_acceptance_ratio <- log_target_new + log_proposal_backward - log_target - log_proposal_forward
+      # TODO fix too large/ positive log_acceptance_ratio. ??Expected to be negative if two components on
+      log_acceptance_ratio <- log_target_new - log_target + log_proposal_backward - log_proposal_forward
       
       if (verbose==TRUE) {
         # Note, these items are available in the stored images
