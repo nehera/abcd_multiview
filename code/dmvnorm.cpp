@@ -18,7 +18,7 @@ mat woodburyInv(mat U, mat D) {
 // [[Rcpp::export]]
 double log_dmvnorm(vec x, vec mu, mat U, mat D) {
   // This function takes two matrices U and D as inputs instead of a covariance matrix,
-  // such that UDU' = Sigma, the covariance matrix
+  // such that UDU'+I = Sigma, the covariance matrix
   double k = x.n_elem;
   double sigma_det = det(inv(D) + U.t()*U)*det(D);
   mat sigma_inv = woodburyInv(U, D);
