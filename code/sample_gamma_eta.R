@@ -7,7 +7,7 @@
 
 # This flag indicates if the script is being submitted to MSI
 # This is to allow for the passing of command line arguments
-submit <- FALSE
+submit <- TRUE
 if (submit == TRUE) {
   # Get CLI arguments
   args = commandArgs(trailingOnly=TRUE)
