@@ -19,7 +19,7 @@ We simulate 10 iid normal random variables for 2 views. The first five features 
 ## Results
 
 ```{r}
-bip_0 <- readRDS("data/2023-09-18_job_1_simulation_BIP_results.rds")
+bip_0 <- readRDS("data/2023-10-09_job_1_simulation_BIP_results.rds")
 print("BIP Component Selection Mean:")
 bip_0$CompoSelMean
 print("BIP Variable Selection Mean for 1st View:")
@@ -29,9 +29,8 @@ bip_0$VarSelMean[[1]]
 Now we load the chains produced by BIP2 from the first starting point.
 
 ```{r}
-job_results <- readRDS("data/2023-09-18_job_1_results.rds")
-gamma_chain <- job_results[[1]]$gamma_chain # start with 1st start point
-eta_chain <- job_results[[1]]$eta_chain
+gamma_chain <- readRDS("data/2023-10-09_job_1_seed_1_gamma_chain.rds")
+eta_chain <- readRDS("data/2023-10-09_job_1_seed_1_eta_chain.rds")
 ```
 
 Here are the number of iterations available:
@@ -112,7 +111,7 @@ feature_sel_mean <- eta_chain[,, (n_burnin+1):n_iterations] %>%
 print(feature_sel_mean)
 ```
 
-Now we compare the gamma_chain to different starting points: 
+Now we compare the gamma_chain to different starting points:
 
 ```{r}
 gamma_results <- lapply(job_results,"[[",1) %>% 

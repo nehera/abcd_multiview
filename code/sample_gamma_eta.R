@@ -23,6 +23,17 @@ if (submit == TRUE) {
   job <- 1
 }
 
+library(tidyverse)
+# Set parameters
+r <- 4
+n_obs <- 200
+p_m <- 10
+prob_component_selection <- 0.5
+prob_feature_selection <- 0.5
+n_sample <- 5000
+n_burnin <- 1000
+n_iterations <- n_sample + n_burnin
+
 # Simulate data
 source("code/simulate_simple_data.R")
 simulation_results <- simulate_iid_data(seed=job)
@@ -46,16 +57,6 @@ fname_bip_0 <- paste0("data/", today_date, "_job_", job, "_simulation_BIP_result
 saveRDS(bip_0, fname_bip_0)
 
 ## -- Begin gamma and eta sampler
-library(tidyverse)
-# Set parameters
-r <- 4
-n_obs <- 200
-p_m <- 10
-prob_component_selection <- 0.5
-prob_feature_selection <- 0.5
-n_sample <- 5000
-n_burnin <- 1000
-n_iterations <- n_sample + n_burnin
 
 # Start with the 1st view
 m <- 1 
