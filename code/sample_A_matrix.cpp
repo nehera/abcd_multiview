@@ -34,13 +34,6 @@ arma::mat extractColumns(arma::mat m, uvec x) {
   return selectedColumns;
 }
 
-// Function for taking the inverse of a matrix using the Woodbury Identity
-mat woodburyInv(mat U, mat D) {
-  mat I = eye(U.n_rows, U.n_rows);
-  mat sigma_inv = I - U*inv(inv(D) + U.t()*U)*U.t();
-  return sigma_inv;
-}
-
 // Function to sample from a multivariate normal distribution
 // In this code: mean is the mean vector of the multivariate normal distribution.
 // covariance is the covariance matrix of the multivariate normal distribution.
@@ -102,12 +95,13 @@ arma::vec sample_a_j(vec x_j, float sigma2_j, mat U,
 }
 
 // [[Rcpp::export]]
-arma::vec sample_A(mat X, vec sigma2, mat U, 
+arma::mat sample_A(mat X, vec sigma2, mat U, 
                    uvec gamma, mat eta, int r, int p_m) {
   
   arma::mat A(r, p_m, arma::fill::zeros);
   
   for (int j = 0; j < p_m; j++) {
+    
     std::cout << j << std::endl;
     vec x_j = X.col(j);
     float sigma2_j = sigma2[j];
@@ -116,7 +110,7 @@ arma::vec sample_A(mat X, vec sigma2, mat U,
     arma::uvec eta_j = arma::conv_to<arma::uvec>::from(doubleVec.head(r)); // Use .head(r) to ensure a consistent size
     vec a_j = sample_a_j(x_j, sigma2_j, U, gamma, eta_j, r);
     std::cout << a_j << std::endl;
-    A.col(j) = a_j;
+    A.col(j) = a_j; 
     std::cout << A.col(j) << std::endl;
   }
   
