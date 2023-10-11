@@ -101,6 +101,29 @@ arma::vec sample_a_j(vec x_j, float sigma2_j, mat U,
   return a_j;
 }
 
+// [[Rcpp::export]]
+arma::vec sample_A(mat X, vec sigma2, mat U, 
+                   uvec gamma, mat eta, int r, int p_m) {
+  
+  arma::mat A(r, p_m, arma::fill::zeros);
+  
+  for (int j = 0; j < p_m; j++) {
+    std::cout << j << std::endl;
+    vec x_j = X.col(j);
+    float sigma2_j = sigma2[j];
+    // eta_j needs to be a uvec
+    arma::vec doubleVec = eta.col(j);
+    arma::uvec eta_j = arma::conv_to<arma::uvec>::from(doubleVec.head(r)); // Use .head(r) to ensure a consistent size
+    vec a_j = sample_a_j(x_j, sigma2_j, U, gamma, eta_j, r);
+    std::cout << a_j << std::endl;
+    A.col(j) = a_j;
+    std::cout << A.col(j) << std::endl;
+  }
+  
+  return A;
+  
+}
+
 // You can include R code blocks in C++ files processed with sourceCpp
 // (useful for testing and development). The R code will be automatically 
 // run after the compilation.
@@ -114,12 +137,24 @@ j = 1
 sigma2_j = 1
 U = simulation_results$U
 gamma = c(1,1,0,0)
-eta_j = gamma
+eta_j = c(1,1,0,0)
 r = 4
-x_j = simulation_results$X_list[[m]][, j]
+X = simulation_results$X_list[[m]]
+x_j = X[, j]
 print("Sampled a_j:")
 a_j = sample_a_j(x_j, sigma2_j, U, gamma, eta_j, r)
 a_j
 print("True a_j:")
 simulation_results$A_list[[m]][, j]
+
+# Now we sample the whole A matrix
+p_m = 10
+# TODO remove hardcoding
+Eta = matrix(c(rep(eta_j, 5), rep(0, r*5)), nrow = r, ncol = p_m) 
+sigma2 = rep(sigma2_j, p_m)
+
+print("Sampled A:")
+sample_A(X, sigma2, U, gamma, Eta, r, p_m)
+print("True A:")
+simulation_results$A_list[[m]]
 */
