@@ -114,7 +114,9 @@ arma::mat sample_A(mat X, vec sigma2, mat U,
 
 /*** R
 source("simulate_simple_data.R")
-simulation_results = simulate_iid_data(n_obs = 100)
+# The Frobenius norm of the difference between A_mean and A_truth is responsive to n_obs. 
+# The norm approaches zero as n_obs increases. 
+simulation_results = simulate_iid_data(n_obs = 100) 
 m = 1 # start with first view
 j = 1
 sigma2_j = 1
@@ -154,7 +156,10 @@ for (iter in 1:n_iterations) {
 # Note, we don't take after burn-in since no mixing required
 A_mean <- apply(A_chain, MARGIN = c(1,2), mean)
 print("Mean A across iterations:")
-print(A_mean)
+A_mean
 print("Difference between A_mean and A_truth:")
-print(A_mean-A_truth)
+A_diff <- A_mean-A_truth
+A_diff
+print("Frobenius Norm of Difference between A_mean and A_truth:")
+norm(A_diff, type = "F")
 */
