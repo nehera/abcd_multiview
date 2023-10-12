@@ -8,7 +8,7 @@ using namespace Rcpp;
 using namespace arma;
 
 // Function to get indices of elements equal to 1
-uvec getIndicesOfOnes(uvec x) {
+uvec get_indices_of_ones(uvec x) {
   int n = x.size();
   uvec indices;
   for (int i = 0; i < n; i++) {
@@ -25,15 +25,6 @@ uvec getIndicesOfOnes(uvec x) {
   return indices;
 }
 
-// Function to extract columns from a matrix based on 'x'
-arma::mat extractColumns(arma::mat m, uvec x) {
-  // Get indices of elements equal to 1
-  uvec indices = getIndicesOfOnes(x);
-  // Extract the selected columns
-  arma::mat selectedColumns = m.cols(indices);
-  return selectedColumns;
-}
-
 // Function to sample from a multivariate normal distribution
 // In this code: mean is the mean vector of the multivariate normal distribution.
 // covariance is the covariance matrix of the multivariate normal distribution.
@@ -41,8 +32,8 @@ arma::mat extractColumns(arma::mat m, uvec x) {
 // Generates random samples z from a standard normal distribution (mean = 0, variance = 1).
 // Performs the Cholesky decomposition of the covariance matrix covariance to obtain the lower triangular matrix L.
 // Samples from the multivariate normal distribution by multiplying the Cholesky-decomposed L with the random samples z and adding it to the mean vector.
-// You can call the sampleMultivariateNormalExample function with your mean vector and covariance matrix to sample from the multivariate normal distribution. 
-arma::vec sampleMultivariateNormal(const arma::vec mean, const arma::mat covariance) {
+// You can call the sample_mvnorm_example function with your mean vector and covariance matrix to sample from the multivariate normal distribution. 
+arma::vec sample_mvnorm(const arma::vec mean, const arma::mat covariance) {
   // Generate random samples from a standard normal distribution
   arma::vec z = arma::randn<arma::vec>(mean.n_elem);
   // Perform Cholesky decomposition of the covariance matrix
@@ -54,8 +45,8 @@ arma::vec sampleMultivariateNormal(const arma::vec mean, const arma::mat covaria
 
 // Example usage
 // [[Rcpp::export]]
-arma::vec sampleMultivariateNormalExample(const arma::vec mean, const arma::mat covariance) {
-  return sampleMultivariateNormal(mean, covariance);
+arma::vec sample_mvnorm_example(const arma::vec mean, const arma::mat covariance) {
+  return sample_mvnorm(mean, covariance);
 }
 
 // [[Rcpp::export]]
@@ -70,7 +61,7 @@ arma::vec sample_a_j(vec x_j, float sigma2_j, mat U,
   
   if (n_components_active > 0) {
     
-    uvec indices = getIndicesOfOnes(gamma);
+    uvec indices = get_indices_of_ones(gamma);
 
     mat activeU = U.cols(indices);
     
@@ -79,7 +70,7 @@ arma::vec sample_a_j(vec x_j, float sigma2_j, mat U,
     
     mu_a = Sigma_a * activeU.t() * x_j;
     
-    vec active_a_j = sampleMultivariateNormal(mu_a, Sigma_a);
+    vec active_a_j = sample_mvnorm(mu_a, Sigma_a);
     
     // If eta_lj = 0, a_lj = 0
     for (int i = 0; i < n_components_active; i++) {
@@ -102,16 +93,14 @@ arma::mat sample_A(mat X, vec sigma2, mat U,
   
   for (int j = 0; j < p_m; j++) {
     
-    std::cout << j << std::endl;
     vec x_j = X.col(j);
     float sigma2_j = sigma2[j];
     // eta_j needs to be a uvec
     arma::vec doubleVec = eta.col(j);
     arma::uvec eta_j = arma::conv_to<arma::uvec>::from(doubleVec.head(r)); // Use .head(r) to ensure a consistent size
     vec a_j = sample_a_j(x_j, sigma2_j, U, gamma, eta_j, r);
-    std::cout << a_j << std::endl;
     A.col(j) = a_j; 
-    std::cout << A.col(j) << std::endl;
+
   }
   
   return A;
@@ -148,7 +137,24 @@ Eta = matrix(c(rep(eta_j, 5), rep(0, r*5)), nrow = r, ncol = p_m)
 sigma2 = rep(sigma2_j, p_m)
 
 print("Sampled A:")
-sample_A(X, sigma2, U, gamma, Eta, r, p_m)
+A_sampled <- sample_A(X, sigma2, U, gamma, Eta, r, p_m)
+print(A_sampled)
 print("True A:")
-simulation_results$A_list[[m]]
+A_truth <- simulation_results$A_list[[m]]
+print(A_truth)
+
+# Check A_mean with all else set to truth
+n_sample <- 10000
+n_burnin <- 1000
+n_iterations <- n_sample + n_burnin
+A_chain <- array(NA, dim = c(r, p_m, n_iterations))
+for (iter in 1:n_iterations) {
+  A_chain[,,iter] <- sample_A(X, sigma2, U, gamma, Eta, r, p_m)
+}
+# Note, we don't take after burn-in since no mixing required
+A_mean <- apply(A_chain, MARGIN = c(1,2), mean)
+print("Mean A across iterations:")
+print(A_mean)
+print("Difference between A_mean and A_truth:")
+print(A_mean-A_truth)
 */
