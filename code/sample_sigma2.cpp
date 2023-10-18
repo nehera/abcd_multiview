@@ -29,57 +29,6 @@ float sample_gamma(float alpha, float beta) {
   return sample;
 }
 
-arma::mat get_Sigma_j(mat U, vec tau_j, uvec eta_j, int n_obs) {
-  
-  mat Sigma_j;
-  
-  int n_components_active_in = arma::sum(eta_j);
-  
-  arma::uvec components_active_in;
-  arma::mat Sigma2_j;
-  
-  if (n_components_active_in > 0) {
-    
-    components_active_in = find(eta_j == 1);
-    mat U_active = U.cols(components_active_in);
-    vec tau_active = tau_j(components_active_in);
-    mat tau_diag = diagmat(tau_active);
-    Sigma2_j = U_active * tau_diag * U_active.t() + eye(n_obs, n_obs);
-    
-  } else {
-    
-    Sigma2_j = eye(n_obs, n_obs);
-    
-  }
-  
-  return Sigma_j;
-  
-}
-
-arma::mat get_Sigma_j_inv(mat U, vec tau_j, uvec eta_j, int n_obs) {
-  
-  mat Sigma_j_inv;
-
-  int n_components_active_in = sum(eta_j);
-  
-  if (n_components_active_in > 0) {
-    
-    uvec components_active_in = find(eta_j == 1);
-    mat U_active = U.cols(components_active_in);
-    vec tau_active = tau_j(components_active_in);
-    mat tau_diag = diagmat(tau_active);
-    Sigma_j_inv = get_woodbury_inv(U_active, tau_diag);
-    
-  } else {
-    
-    Sigma_j_inv = eye(n_obs, n_obs);
-    
-  }
-  
-  return Sigma_j_inv;
-  
-}
-
 // [[Rcpp::export]]
 float sample_sigma2_j(float alpha_0, float beta_0, vec x_j, mat Sigma_j_inv, int n_obs) {
 
