@@ -17,14 +17,8 @@ float sample_gamma(float alpha, float beta) {
     throw std::runtime_error("Error: Alpha and Beta must be positive.");
   }
   
-  // Create a random number generator engine
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  
-  // Sample from the gamma distribution
-  std::gamma_distribution<float> rgamma_distribution(alpha, beta);
-  
-  float sample = rgamma_distribution(gen);
+  // Generate a random sample from a gamma distribution
+  float sample = arma::randg<arma::vec>(1, arma::distr_param(alpha, beta))(0);
   
   return sample;
 }
