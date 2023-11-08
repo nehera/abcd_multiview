@@ -220,29 +220,72 @@ Rcpp::List main_sample_gamma_Eta(int job, int seed, int n_iterations,
   // Sample for n_iterations
   for (int iter = 0; iter < n_iterations; iter++) {
     
-    // Sample across components
+    // Sample gamma_Eta
+  
     for(int l = 0; l < r; l++) {
       
-      // Propose new values
+      // Sample gamma_Eta_l
+      
+      // Propose new values for the lth component
+      vec gamma_new = clone(gamma);
+      mat Eta_new = clone(Eta);
+      gamma_new[l] = 1 - gamma_new[l];
+      if (gamma_new[l] == 0) {
+        for (int j = 0; j < p_m; j++) {
+          Eta_new(l, j) = 0;
+        }
+      } else {
+        for (int j = 0; j < p_m; j++) {
+          // Generate a random number between 0 and 1
+          double random_u = arma::randu();
+          // Perform Bernoulli draw
+          int eta_new_lj = (random_u < prob_feature_selection) ? 1 : 0;
+          Eta_new(l, j) = eta_new_lj;
+        }
+      }
       
       // Calculate log acceptance ratio
+      // Dummy vars result in log_acceptance_ratio ~ 0.5
+      double log_target_new = 1.0;
+      double log_target = 1.6931472;
+      double log_proposal_backward = 1.0;
+      double log_proposal_forward = 1.0;
+      double log_acceptance_ratio = log_target_new - log_target + log_proposal_backward - log_proposal_forward;
       
       // Accept/ reject proposed gamma and eta
+      double random_u = arma::randu();
+      double log_random_u = log(random_u);
+      if (log_random_u < log_acceptance_ratio) {
+        gamma[l] = gamma_new[l];
+        Eta.row(l) = Eta_new.row(l);
+      }
       
-        // If gamma_l accepted == 1, 
-          // Gibb's sample to mix feature activation parameters
+      // Gibb's sample to mix feature activation parameters
+      if (gamma[l]==1) {
+        for (int j = 0; j < p_m; j++) {
+          // Calculate eta_lj_threshold
+          // double eta_lj_threshold = calculate_eta_lj_threshold(l, mu_j,  gamma, Eta[,j], sigma2[j], tau2[,j], U_gamma, active_components, n_obs, x_j, prob_feature_selection);
+          double eta_lj_threshold = 0.0;
+          // Turn on/ turn off eta_lj
+          double random_u = arma::randu();
+          double logit_random_u = log(random_u/(1.0-random_u));
+          if (logit_random_u < eta_lj_threshold) {
+            Eta(l, j) = 1;
+          } else {
+            Eta(l, j) = 0;
+          }
+        }
+      }
       
     }
     
     // Report on progress
+    std::cout << "gamma:" << std::endl;
+    std::cout << gamma << std::endl;
+    std::cout << "Eta:" << std::endl;
+    std::cout << Eta << std::endl;
     
   }
-  
-  // Display final result
-  std::cout << "gamma:" << std::endl;
-  std::cout << gamma << std::endl;
-  std::cout << "Eta:" << std::endl;
-  std::cout << Eta << std::endl;
   
   // Convert gamma and Eta to exportable list
   struct_gamma_Eta_combined gamma_Eta = combine_gamma_Eta(gamma, Eta);
