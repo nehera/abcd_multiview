@@ -7,6 +7,8 @@
 using namespace arma;
 using namespace Rcpp;
 
+#include <utils.h>
+
 // Set parameters
 int r = 4;
 int n_obs = 200;
@@ -27,32 +29,6 @@ mat tau2 = ones(r, p_m);
 //mat U = simulation_results$U;
 
 // [[Rcpp::export]]
-int main() {
-  arma_rng::set_seed(123);
-  // TO-DO: add code for submitting MSI job
-  cout << n_iterations;
-}
-
-// Function to get indices of elements equal to 1
-// [[Rcpp::export]]
-uvec get_indices_of_ones(uvec x) {
-  int n = x.size();
-  uvec indices;
-  for (int i = 0; i < n; i++) {
-    if (x[i] == 1) {
-      // Create a new uvector one element longer and copy the elements
-      arma::uvec newIndices(indices.n_elem + 1);
-      newIndices.head(indices.n_elem) = indices;
-      // Append the new element to the end
-      newIndices(indices.n_elem) = i;
-      // Replace the original indices with the newIndices if needed
-      indices = newIndices;
-    }
-  }
-  return indices;
-}
-
-// [[Rcpp::export]]
 vec initialize_gamma(int r=4, double prior_component_selection=0.5) {
   vec gamma = Rcpp::rbinom(r, 1, prior_component_selection);
   
@@ -60,7 +36,7 @@ vec initialize_gamma(int r=4, double prior_component_selection=0.5) {
 }
 
 // [[Rcpp::export]]
-mat initialize_eta(vec gamma, int r=4, int p_m=10, double prior_feature_selection=0.5) {
+mat initialize_Eta(vec gamma, int r=4, int p_m=10, double prior_feature_selection=0.5) {
   mat Eta(r, p_m, fill::value(datum::nan));
   
   for(int l = 0; l < r; l++) {
@@ -173,24 +149,106 @@ double calculate_eta_lj_threshold(int l, vec mu_j, vec gamma, vec eta_j, double 
   return log_G_j_1 - log_G_j_0;
 }
 
-// [[Rcpp::export]]
-double log_target_density_l(int l, vec mu, vec gamma, vec eta, double sigma2, vec tau2, mat U, uvec active_components, int n_obs, int p_m, 
-                                 vec x_j, double prob_component_selection, double prob_feature_selection) {
-  double sum_log_target_density_lj = 0;
-  for (int j=0; j<p_m; j++) {
-// TODO understand if log_dmvnorm_j should only use data within. Note, this should cancel in the log_acceptance_ratio subtraction.
-    double log_dmvnorm_j = calculate_log_dmvnorm_j(x_j, mu, U, eta, tau2, sigma2, active_components, n_obs);
-    double sum_log_target_density_lj = sum_log_target_density_lj + log_dmvnorm_j + 
-      eta(l,j)*log(prob_feature_selection) + (1-eta(l,j))*log(1-prob_feature_selection);
-  }
-  double log_target_density_l = gamma(l)*log(prob_component_selection) + 
-    (1-gamma(l))*log(1-prob_component_selection) + sum_log_target_density_lj;
-  return(log_target_density_l);
-    
-}
+// double log_target_density_l(int l, vec mu, vec gamma, vec eta, double sigma2, vec tau2, mat U, uvec active_components, int n_obs, int p_m, 
+//                                  vec x_j, double prob_component_selection, double prob_feature_selection) {
+//   double sum_log_target_density_lj = 0;
+//   for (int j=0; j<p_m; j++) {
+// // TODO understand if log_dmvnorm_j should only use data within. Note, this should cancel in the log_acceptance_ratio subtraction.
+//     double log_dmvnorm_j = calculate_log_dmvnorm_j(x_j, mu, U, eta, tau2, sigma2, active_components, n_obs);
+//     double sum_log_target_density_lj = sum_log_target_density_lj + log_dmvnorm_j + // Issue: sum_log_target_density_lj is uninitialized when used within its own initialization c++
+//       eta(l,j)*log(prob_feature_selection) + (1-eta(l,j))*log(1-prob_feature_selection);
+//   }
+//   double log_target_density_l = gamma(l)*log(prob_component_selection) + 
+//     (1-gamma(l))*log(1-prob_component_selection) + sum_log_target_density_lj;
+//   return(log_target_density_l);
+//     
+// }
 
 // Main function
 
+
+// Custom struct: A custom struct can hold multiple objects and return that container. 
+// This approach allows you to group related objects together and return them as a single unit. 
+
+// Define custom structs to hold gamma and Eta from the mth view
+struct struct_gamma_Eta_combined {
+  arma::vec gamma;
+  arma::mat Eta;
+};
+
+// Define custom struct for sample_gamma_eta_l to return
+struct gamma_eta_l_combined {
+  int gamma_l; 
+  arma::vec eta_l;
+};
+
+// A function that returns a dummy gamma_Eta_combined struct
+struct_gamma_Eta_combined combine_gamma_Eta(vec gamma, mat Eta) {
+  return {gamma, Eta};
+}
+
+// Function for exporting custom struct to R
+SEXP gamma_Eta_combined_to_R(struct_gamma_Eta_combined gamma_Eta) {
+  // Create a List to hold gamma and Eta
+  Rcpp::List list;
+  list["gamma"] = gamma_Eta.gamma;
+  list["Eta"] = gamma_Eta.Eta;
+  return Rcpp::wrap(list);
+}
+
+// [[Rcpp::export]]
+Rcpp::List main_sample_gamma_Eta(int job, int seed, int n_iterations,
+                          int r, int n_obs, int p_m, 
+                          double prob_component_selection, 
+                          double prob_feature_selection, 
+                          arma::mat X, arma::vec sigma2, 
+                          arma::mat tau2, arma::mat U) {
+  
+  // Display job parameters
+  std::cout << "Job:" << std::endl;
+  std::cout << job << std::endl;
+  std::cout << "Seed:" << std::endl;
+  std::cout << seed << std::endl;
+  std::cout << "n_iterations:" << std::endl;
+  std::cout << n_iterations << std::endl;
+  
+  // Initialize data structures
+  arma_rng::set_seed(seed);
+  vec gamma = initialize_gamma(r, prob_component_selection);
+  mat Eta = initialize_Eta(gamma, r, p_m, prob_feature_selection);
+  
+  // Sample for n_iterations
+  for (int iter = 0; iter < n_iterations; iter++) {
+    
+    // Sample across components
+    for(int l = 0; l < r; l++) {
+      
+      // Propose new values
+      
+      // Calculate log acceptance ratio
+      
+      // Accept/ reject proposed gamma and eta
+      
+        // If gamma_l accepted == 1, 
+          // Gibb's sample to mix feature activation parameters
+      
+    }
+    
+    // Report on progress
+    
+  }
+  
+  // Display final result
+  std::cout << "gamma:" << std::endl;
+  std::cout << gamma << std::endl;
+  std::cout << "Eta:" << std::endl;
+  std::cout << Eta << std::endl;
+  
+  // Convert gamma and Eta to exportable list
+  struct_gamma_Eta_combined gamma_Eta = combine_gamma_Eta(gamma, Eta);
+  Rcpp::List gamma_Eta_list = gamma_Eta_combined_to_R(gamma_Eta);
+  return gamma_Eta_list;
+}
 
 
 /*** R
@@ -217,7 +275,7 @@ mu_j <- rep(0, n_obs)
 gamma <- initialize_gamma(r = 4, prior_component_selection = 0.5)
 gamma
 
-Eta <- initialize_eta(gamma, r, p_m, 0.5)
+Eta <- initialize_Eta(gamma, r, p_m, 0.5)
 Eta
 
 j <- 1
@@ -239,6 +297,6 @@ mvtnorm::dmvnorm(x_j, mu_j, Sigma_j, log=T)
 calculate_log_G_j(mu_j, gamma, Eta[,j], sigma2[j], tau2[,j], U_gamma, active_components, n_obs, x_j, prob_feature_selection)
 calculate_log_PQ_lj(l, mu_j,  gamma, Eta[,j], sigma2[j], tau2[,j], U_gamma, active_components, n_obs, x_j, prob_feature_selection)
 calculate_eta_lj_threshold(l, mu_j,  gamma, Eta[,j], sigma2[j], tau2[,j], U_gamma, active_components, n_obs, x_j, prob_feature_selection)
-log_target_density_l(l, mu_j, gamma, Eta[,j], sigma2[j], tau2[,j], U_gamma, active_components, n_obs, p_m, 
-                     x, prob_component_selection, prob_feature_selection)
+# log_target_density_l(l, mu_j, gamma, Eta[,j], sigma2[j], tau2[,j], U_gamma, active_components, n_obs, p_m, 
+#                      x, prob_component_selection, prob_feature_selection)
 */
