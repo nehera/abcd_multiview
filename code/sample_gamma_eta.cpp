@@ -149,23 +149,22 @@ double calculate_eta_lj_threshold(int l, vec mu_j, vec gamma, vec eta_j, double 
   return log_G_j_1 - log_G_j_0;
 }
 
-// double log_target_density_l(int l, vec mu, vec gamma, vec eta, double sigma2, vec tau2, mat U, uvec active_components, int n_obs, int p_m, 
-//                                  vec x_j, double prob_component_selection, double prob_feature_selection) {
-//   double sum_log_target_density_lj = 0;
-//   for (int j=0; j<p_m; j++) {
-// // TODO understand if log_dmvnorm_j should only use data within. Note, this should cancel in the log_acceptance_ratio subtraction.
-//     double log_dmvnorm_j = calculate_log_dmvnorm_j(x_j, mu, U, eta, tau2, sigma2, active_components, n_obs);
-//     double sum_log_target_density_lj = sum_log_target_density_lj + log_dmvnorm_j + // Issue: sum_log_target_density_lj is uninitialized when used within its own initialization c++
-//       eta(l,j)*log(prob_feature_selection) + (1-eta(l,j))*log(1-prob_feature_selection);
-//   }
-//   double log_target_density_l = gamma(l)*log(prob_component_selection) + 
-//     (1-gamma(l))*log(1-prob_component_selection) + sum_log_target_density_lj;
-//   return(log_target_density_l);
-//     
-// }
+double log_target_density_l(int l, vec mu, vec gamma, vec eta, double sigma2, vec tau2, mat U, uvec active_components, int n_obs, int p_m,
+                                 vec x_j, double prob_component_selection, double prob_feature_selection) {
+  double sum_log_target_density_lj = 0;
+  for (int j=0; j<p_m; j++) {
+// TODO understand if log_dmvnorm_j should only use data within. Note, this should cancel in the log_acceptance_ratio subtraction.
+    double log_dmvnorm_j = calculate_log_dmvnorm_j(x_j, mu, U, eta, tau2, sigma2, active_components, n_obs);
+    sum_log_target_density_lj = sum_log_target_density_lj + log_dmvnorm_j + 
+      eta(l,j)*log(prob_feature_selection) + (1-eta(l,j))*log(1-prob_feature_selection);
+  }
+  double log_target_density_l = gamma(l)*log(prob_component_selection) +
+    (1-gamma(l))*log(1-prob_component_selection) + sum_log_target_density_lj;
+  return(log_target_density_l);
+
+}
 
 // Main function
-
 
 // Custom struct: A custom struct can hold multiple objects and return that container. 
 // This approach allows you to group related objects together and return them as a single unit. 
