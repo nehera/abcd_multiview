@@ -31,7 +31,7 @@ arma::mat sample_U(int n_obs, int p, int r, mat X_combined,
     // Calculate mu_u_i
     vec mu_u_i = Sigma_u * A_combined * diagmat(sigma2_combined) * X_i;
     
-    // Sample u_i from rmvnorm
+    // Sample u_i from rmvnorm. Note: Returned u_i is column vector. 
     vec u_i = sample_mvnorm(mu_u_i, Sigma_u);
     
     // Repace ith row of U with u_i row vector
