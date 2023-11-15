@@ -251,6 +251,8 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
     std::cout << "n Selected Components x Features:" << std::endl;
     std::cout << sum(Eta) << std::endl;
     
+    // TODO Summarize the MPPs and print
+    
     // Sample gamma_Eta
   
     for (int l = 0; l < r; l++) {
@@ -258,16 +260,18 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
       std::cout << "l:" << std::endl;
       std::cout << l << std::endl;
       
-      std::cout << "gamma:" << std::endl;
-      std::cout << gamma << std::endl;
-      
       // Sample gamma_Eta_l
       
       // Propose new values for the lth component
 
-      vec gamma_new = gamma;
+      std::cout << "gamma:" << std::endl;
+      std::cout << gamma << std::endl;
+      vec gamma_new = gamma; // Does changing gamma_new impact gamma?
       mat Eta_new = Eta;
-      gamma_new[l] = 1 - gamma_new[l];
+      gamma_new[l] = 1 - gamma_new[l];  
+      std::cout << "gamma_new:" << std::endl;
+      std::cout << gamma_new << std::endl;
+      
       if (gamma_new[l] == 0) {
         for (int j = 0; j < p_m; j++) {
           Eta_new(l, j) = 0;
@@ -281,9 +285,6 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
           Eta_new(l, j) = eta_new_lj;
         }
       }
-      
-      std::cout << "gamma_new:" << std::endl;
-      std::cout << gamma_new << std::endl;
       
       // Calculate log acceptance ratio
       // Dummy vars result in log_acceptance_ratio ~ 0.5
@@ -484,7 +485,7 @@ prob_feature_selection <- 0.5
 # Fix covariates
 sigma2 <- rep(1, p_m)
 tau2 <- matrix(1, nrow = r, ncol = p_m)
-U <- matrix(rnorm(n_obs*r), ncol = r)
+U <- simulation_results$U
 
 I <- diag(n_obs)
 mu <- rep(0, n_obs)
