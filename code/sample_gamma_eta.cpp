@@ -31,7 +31,6 @@ mat tau2 = ones(r, p_m);
 // [[Rcpp::export]]
 vec initialize_gamma(int r=4, double prior_component_selection=0.5) {
   vec gamma = randbin(r, 1, prior_component_selection);
-  
   return gamma;
 }
 
@@ -41,8 +40,8 @@ mat initialize_Eta(vec gamma, int r=4, int p_m=10, double prior_feature_selectio
   
   for(int l = 0; l < r; l++) {
     if(gamma(l) == 1) {
-      rowvec Eta_l = randbin(p_m, 1, prior_feature_selection);
-      Eta.row(l) = Eta_l;
+      vec Eta_l = randbin(p_m, 1, prior_feature_selection);
+      Eta.row(l) = Eta_l.t();
     } else {
       Eta.row(l).zeros();
     }
@@ -188,65 +187,87 @@ double log_proposal_l_density(int l, vec mu, vec gamma_prime, mat Eta_prime,
 // Custom struct: A custom struct can hold multiple objects and return that container. 
 // This approach allows you to group related objects together and return them as a single unit. 
 
-// Define custom structs to hold gamma and Eta from the mth view
-struct struct_gamma_Eta_combined {
-  arma::vec gamma;
-  arma::mat Eta;
-};
+// // Define custom structs to hold gamma and Eta from the mth view
+// struct struct_gamma_Eta_combined {
+//   arma::vec gamma;
+//   arma::mat Eta;
+// };
+// 
+// // Define custom struct for sample_gamma_eta_l to return
+// struct gamma_eta_l_combined {
+//   int gamma_l; 
+//   arma::vec eta_l;
+// };
+// 
+// // A function that returns a dummy gamma_Eta_combined struct
+// struct_gamma_Eta_combined combine_gamma_Eta(vec gamma, mat Eta) {
+//   return {gamma, Eta};
+// }
 
-// Define custom struct for sample_gamma_eta_l to return
-struct gamma_eta_l_combined {
-  int gamma_l; 
-  arma::vec eta_l;
-};
+// // Function for exporting custom struct to R
+// SEXP gamma_Eta_combined_to_R(struct_gamma_Eta_combined gamma_Eta) {
+//   // Create a List to hold gamma and Eta
+//   Rcpp::List list;
+//   list["gamma"] = gamma_Eta.gamma;
+//   list["Eta"] = gamma_Eta.Eta;
+//   return Rcpp::wrap(list);
+// }
 
-// A function that returns a dummy gamma_Eta_combined struct
-struct_gamma_Eta_combined combine_gamma_Eta(vec gamma, mat Eta) {
-  return {gamma, Eta};
-}
-
-// Function for exporting custom struct to R
-SEXP gamma_Eta_combined_to_R(struct_gamma_Eta_combined gamma_Eta) {
-  // Create a List to hold gamma and Eta
-  Rcpp::List list;
-  list["gamma"] = gamma_Eta.gamma;
-  list["Eta"] = gamma_Eta.Eta;
-  return Rcpp::wrap(list);
-}
+// The main function should eventually return Rcpp::List
 
 // [[Rcpp::export]]
-Rcpp::List main_sample_gamma_Eta(int job, int seed, int n_iterations,
+int main_sample_gamma_Eta(int n_iterations, int n_burnin,
                           int r, int n_obs, int p_m, 
                           double prob_component_selection, 
                           double prob_feature_selection, 
                           arma::mat X, arma::vec sigma2, 
                           arma::mat tau2, arma::mat U) {
   
-  // Display job parameters
-  std::cout << "Job:" << std::endl;
-  std::cout << job << std::endl;
-  std::cout << "Seed:" << std::endl;
-  std::cout << seed << std::endl;
+  // Fix mu to a vec of zeros. Note, the functions that use mu likely don't require it as an argument. 
+  arma::vec mu = arma::zeros<arma::vec>(n_obs);
+  
+  // Display MCMC parameters
   std::cout << "n_iterations:" << std::endl;
   std::cout << n_iterations << std::endl;
+  std::cout << "n_burnin:" << std::endl;
+  std::cout << n_burnin << std::endl;
   
-  // Initialize data structures
-  arma_rng::set_seed(seed);
+  // Initialize intermediate data structures
+  std::cout << "Initializing intermediate data structures..." << std::endl;
   vec gamma = initialize_gamma(r, prob_component_selection);
   mat Eta = initialize_Eta(gamma, r, p_m, prob_feature_selection);
+  // Initialize posterior chain structures 
+  std::cout << "Initializing posterior summary structures..." << std::endl;
+  mat gamma_chain = arma::zeros(r, n_iterations);
+  arma::cube Eta_chain(r, p_m, n_iterations, arma::fill::zeros);
   
   // Sample for n_iterations
+  std::cout << "Starting MCMC sampling..." << std::endl;
   for (int iter = 0; iter < n_iterations; iter++) {
+    
+    std::cout << "iter:" << std::endl;
+    std::cout << iter << std::endl;
+    std::cout << "n Selected Components:" << std::endl;
+    std::cout << sum(gamma) << std::endl;
+    std::cout << "n Selected Components x Features:" << std::endl;
+    std::cout << sum(Eta) << std::endl;
     
     // Sample gamma_Eta
   
-    for(int l = 0; l < r; l++) {
+    for (int l = 0; l < r; l++) {
+      
+      std::cout << "l:" << std::endl;
+      std::cout << l << std::endl;
+      
+      std::cout << "gamma:" << std::endl;
+      std::cout << gamma << std::endl;
       
       // Sample gamma_Eta_l
       
       // Propose new values for the lth component
-      vec gamma_new = clone(gamma);
-      mat Eta_new = clone(Eta);
+
+      vec gamma_new = gamma;
+      mat Eta_new = Eta;
       gamma_new[l] = 1 - gamma_new[l];
       if (gamma_new[l] == 0) {
         for (int j = 0; j < p_m; j++) {
@@ -262,24 +283,39 @@ Rcpp::List main_sample_gamma_Eta(int job, int seed, int n_iterations,
         }
       }
       
+      std::cout << "gamma_new:" << std::endl;
+      std::cout << gamma_new << std::endl;
+      
       // Calculate log acceptance ratio
       // Dummy vars result in log_acceptance_ratio ~ 0.5
-      double log_target_new = 1.0;
-      double log_target = 1.6931472;
-      double log_proposal_backward = 1.0;
-      double log_proposal_forward = 1.0;
+      // double log_target_new = 1.0;
+      // double log_target = 1.6931472;
+      // double log_proposal_backward = 1.0;
+      // double log_proposal_forward = 1.0;
+      double log_target_new = log_target_density_l(l, mu, gamma_new, Eta_new, sigma2, tau2, U, 
+                                                   n_obs, p_m, X, prob_component_selection, prob_feature_selection);
+      double log_target = log_target_density_l(l, mu, gamma_new, Eta_new, sigma2, tau2, U, 
+                                                   n_obs, p_m, X, prob_component_selection, prob_feature_selection);
+      double log_proposal_backward = log_proposal_l_density(l, mu, gamma, Eta, gamma_new, Eta_new, sigma2, tau2, U, 
+                                                            n_obs, p_m, X, prob_feature_selection);
+      double log_proposal_forward = log_proposal_l_density(l, mu, gamma_new, Eta_new, gamma, Eta, sigma2, tau2, U, 
+                                                            n_obs, p_m, X, prob_feature_selection);
+      
       double log_acceptance_ratio = log_target_new - log_target + log_proposal_backward - log_proposal_forward;
       
       // Accept/ reject proposed gamma and eta
       double random_u = arma::randu();
       double log_random_u = log(random_u);
       if (log_random_u < log_acceptance_ratio) {
+        
+        std::cout << "Proposal accepted." << std::endl;
         gamma[l] = gamma_new[l];
         Eta.row(l) = Eta_new.row(l);
       }
       
       // Gibb's sample to mix feature activation parameters
       if (gamma[l]==1) {
+        std::cout << "Gibb's sampling feature activation parameters..." << std::endl;
         for (int j = 0; j < p_m; j++) {
           // Calculate eta_lj_threshold
           // double eta_lj_threshold = calculate_eta_lj_threshold(l, mu_j,  gamma, Eta[,j], sigma2[j], tau2[,j], U_gamma, active_components, n_obs, x_j, prob_feature_selection);
@@ -297,18 +333,21 @@ Rcpp::List main_sample_gamma_Eta(int job, int seed, int n_iterations,
       
     }
     
-    // Report on progress
-    std::cout << "gamma:" << std::endl;
-    std::cout << gamma << std::endl;
-    std::cout << "Eta:" << std::endl;
-    std::cout << Eta << std::endl;
+    // Store posterior sample
+    std::cout << "Storing posterior sample..." << std::endl;
     
-  }
+    gamma_chain.col(iter) = gamma;
+    Eta_chain.slice(iter) = Eta;
+    
+    }
   
-  // Convert gamma and Eta to exportable list
-  struct_gamma_Eta_combined gamma_Eta = combine_gamma_Eta(gamma, Eta);
-  Rcpp::List gamma_Eta_list = gamma_Eta_combined_to_R(gamma_Eta);
-  return gamma_Eta_list;
+  // Write Eta_chain and gamma_chain to files
+  gamma_chain.save("gamma_chain.txt", arma::raw_ascii);
+  Eta_chain.save("Eta_chain.txt", arma::raw_ascii);
+  
+  std::cout << "Files written successfully." << std::endl;
+  
+  return 0;
 }
 
 
@@ -499,7 +538,16 @@ log_proposal_l_density(reindex_r_cpp(l), mu, gamma_new, Eta_new, gamma, Eta, sig
                        U, n_obs, p_m, X, prob_feature_selection)
 log_proposal_l_density_R(l, gamma_new, Eta_new, gamma, eta, sigma2, tau2, U, n_obs, p_m, X, prob_feature_selection)
 
+##################################################################
 
-
-
+set.seed(1)
+start_time <- Sys.time()
+main_sample_gamma_Eta(n_iterations=5000, n_burnin = 1000, 
+                      r=4, n_obs, p_m, 
+                      prob_component_selection, 
+                      prob_feature_selection, 
+                      X, sigma2, tau2, U) 
+end_time <- Sys.time()
+print("MCMC Duration:")
+print(end_time - start_time)
 */
