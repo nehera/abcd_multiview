@@ -9,24 +9,23 @@ using namespace Rcpp;
 
 #include <utils.h>
 
-// Set parameters
-int r = 4;
-int n_obs = 200;
-int p_m = 10;
-double prob_component_selection = 0.5;
-double prob_feature_selection = 0.5;
-int n_sample = 5000;
-int n_burnin = 1000;
-int n_iterations = n_sample + n_burnin;
-
-// Start with the 1st view
-int m = 1;
-//x <- data_list[[m]
-
-// Fix covariates
-vec sigma2 = ones(p_m);
-mat tau2 = ones(r, p_m);
-//mat U = simulation_results$U;
+// // Set parameters
+// int r = 4;
+// int n_obs = 200;
+// int p_m = 10;
+// double prob_component_selection = 0.5;
+// double prob_feature_selection = 0.5;
+// int n_sample = 5000;
+// int n_burnin = 1000;
+// int n_iterations = n_sample + n_burnin;
+// 
+// // Start with the 1st view
+// int m = 1;
+// 
+// // Fix covariates
+// vec sigma2 = ones(p_m);
+// mat tau2 = ones(r, p_m);
+// //mat U = simulation_results$U;
 
 // [[Rcpp::export]]
 vec initialize_gamma(int r=4, double prior_component_selection=0.5) {
@@ -318,8 +317,8 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
         std::cout << "Gibb's sampling feature activation parameters..." << std::endl;
         for (int j = 0; j < p_m; j++) {
           // Calculate eta_lj_threshold
-          // double eta_lj_threshold = calculate_eta_lj_threshold(l, mu_j,  gamma, Eta[,j], sigma2[j], tau2[,j], U_gamma, active_components, n_obs, x_j, prob_feature_selection);
-          double eta_lj_threshold = 0.0;
+          double eta_lj_threshold = calculate_eta_lj_threshold(l, mu, gamma, Eta.col(j), sigma2[j], tau2.col(j), U, n_obs, X.col(j), prob_feature_selection);
+          
           // Turn on/ turn off eta_lj
           double random_u = arma::randu();
           double logit_random_u = log(random_u/(1.0-random_u));

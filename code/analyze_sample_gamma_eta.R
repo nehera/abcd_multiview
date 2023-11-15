@@ -46,7 +46,7 @@ gamma_plot <- ggplot(gamma_df,
 
 print(gamma_plot)
 
-## -- Analyze Feature Selection
+## -- Analyze Feature Selection in Component 1
 features_of_interest <- c(1, 2, 6, 7)
 feature_names <- paste("j", features_of_interest, sep = "_")
 # TODO make trace plot function to reduce copy paste going forward
