@@ -28,7 +28,15 @@ using namespace Rcpp;
 // //mat U = simulation_results$U;
 
 // [[Rcpp::export]]
+void set_seed(double seed) {
+  Rcpp::Environment base_env("package:base");
+  Rcpp::Function set_seed_r = base_env["set.seed"];
+  set_seed_r(std::floor(std::fabs(seed)));
+}
+
+// [[Rcpp::export]]
 vec initialize_gamma(int r=4, double prior_component_selection=0.5) {
+  //vec gamma = rbinom(r, 1, prior_component_selection);
   vec gamma = randbin(r, 1, prior_component_selection);
   return gamma;
 }
@@ -215,7 +223,7 @@ double log_proposal_l_density(int l, vec mu, vec gamma_prime, mat Eta_prime,
 // The main function should eventually return Rcpp::List
 
 // [[Rcpp::export]]
-int main_sample_gamma_Eta(int n_iterations, int n_burnin,
+Rcpp::List main_sample_gamma_Eta(int n_iterations, int n_burnin,
                           int r, int n_obs, int p_m, 
                           double prob_component_selection, 
                           double prob_feature_selection, 
@@ -224,6 +232,9 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
   
   // Fix mu to a vec of zeros. Note, the functions that use mu likely don't require it as an argument. 
   arma::vec mu = arma::zeros<arma::vec>(n_obs);
+  
+  // Set frequency of result printing
+  int k = 500;
   
   // Display MCMC parameters
   std::cout << "n_iterations:" << std::endl;
@@ -235,6 +246,9 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
   std::cout << "Initializing intermediate data structures..." << std::endl;
   vec gamma = initialize_gamma(r, prob_component_selection);
   mat Eta = initialize_Eta(gamma, r, p_m, prob_feature_selection);
+  
+  std::cout << "Initial gamma: " << gamma << std::endl;
+  
   // Initialize posterior chain structures 
   std::cout << "Initializing posterior summary structures..." << std::endl;
   mat gamma_chain = arma::zeros(r, n_iterations);
@@ -243,20 +257,18 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
   // Sample for n_iterations
   std::cout << "Starting MCMC sampling..." << std::endl;
   for (int iter = 0; iter < n_iterations; iter++) {
-    
+    if (iter % k == 0) {
     std::cout << "iter:" << std::endl;
     std::cout << iter << std::endl;
-    std::cout << "n Selected Components:" << std::endl;
-    std::cout << sum(gamma) << std::endl;
-    std::cout << "n Selected Components x Features:" << std::endl;
-    std::cout << sum(Eta) << std::endl;
-    
+    std::cout << "n Selected Components: " << sum(gamma) << std::endl;
+    std::cout << "n Selected Components x Features:" << sum(Eta) << std::endl;
+    }
     // TODO Summarize the MPPs and print
     
     // Sample gamma_Eta
   
     for (int l = 0; l < r; l++) {
-      
+      if(iter % k == 0) {
       std::cout << "l:" << std::endl;
       std::cout << l << std::endl;
       
@@ -266,11 +278,16 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
 
       std::cout << "gamma:" << std::endl;
       std::cout << gamma << std::endl;
+      }
+      
       vec gamma_new = gamma; // Does changing gamma_new impact gamma?
       mat Eta_new = Eta;
-      gamma_new[l] = 1 - gamma_new[l];  
+      gamma_new[l] = 1 - gamma_new[l];
+      
+      if (iter % k == 0) {
       std::cout << "gamma_new:" << std::endl;
       std::cout << gamma_new << std::endl;
+      }
       
       if (gamma_new[l] == 0) {
         for (int j = 0; j < p_m; j++) {
@@ -308,14 +325,16 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
       double log_random_u = log(random_u);
       if (log_random_u < log_acceptance_ratio) {
         
-        std::cout << "Proposal accepted." << std::endl;
+        //std::cout << "Proposal accepted." << std::endl;
         gamma[l] = gamma_new[l];
         Eta.row(l) = Eta_new.row(l);
+      } else {
+        //std::cout << "Proposal rejected." << std::endl;
       }
       
       // Gibb's sample to mix feature activation parameters
       if (gamma[l]==1) {
-        std::cout << "Gibb's sampling feature activation parameters..." << std::endl;
+        //std::cout << "Gibb's sampling feature activation parameters..." << std::endl;
         for (int j = 0; j < p_m; j++) {
           // Calculate eta_lj_threshold
           double eta_lj_threshold = calculate_eta_lj_threshold(l, mu, gamma, Eta.col(j), sigma2[j], tau2.col(j), U, n_obs, X.col(j), prob_feature_selection);
@@ -334,12 +353,12 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
     }
     
     // Store posterior sample
-    std::cout << "Storing posterior sample..." << std::endl;
+    //std::cout << "Storing posterior sample..." << std::endl;
     
     gamma_chain.col(iter) = gamma;
     Eta_chain.slice(iter) = Eta;
     
-    }
+  }
   
   // Write Eta_chain and gamma_chain to files
   gamma_chain.save("gamma_chain.txt", arma::raw_ascii);
@@ -347,7 +366,10 @@ int main_sample_gamma_Eta(int n_iterations, int n_burnin,
   
   std::cout << "Files written successfully." << std::endl;
   
-  return 0;
+  return Rcpp::List::create(
+    Rcpp::Named("gamma_chain") = gamma_chain,
+    Rcpp::Named("Eta_chain") = Eta_chain
+  );
 }
 
 
@@ -459,6 +481,16 @@ log_proposal_l_density_R <- function(l, gamma_prime, eta_prime, gamma, eta,
   }
 }
 
+get_gamma_df <- function(gamma_chain) {
+  n_iterations <- ncol(gamma_chain)
+  gamma_df <- gamma_chain[, 1:n_iterations] %>% 
+    apply(MARGIN = 1, FUN = cummean) %>% 
+    as.data.frame() %>% mutate(iteration = 1:n_iterations) %>% 
+    gather(key = "gamma", value = "MPP", -iteration) %>%
+    mutate(gamma = gamma %>% as.factor()) 
+  return(gamma_df)
+}
+
 ############################################
 
 # Generating data
@@ -472,10 +504,26 @@ data_list <- lapply(data_list, scale)
 m <- 1 
 X <- data_list[[m]]
 
+# Scale data
+#data_list <- lapply(data_list, scale)
+indic_var <- c(0, 0, 1) 
+method <- "BIP" # method without grouping information to start
+group_list <- NULL # default when grouping information not included
+bip_0 <- BIPnet::BIP(dataList = data_list, IndicVar = indic_var, Method = method, probvarsel = prob_feature_selection)
+
 reindex_r_cpp <- function(x) return(x-1)
 reindex_cpp_r <- function(x) return(x+1)
 
-set.seed(123)
+# Set R and Rcpp seeds; NOTE: they are not generating the same random numbers
+#RNGkind(sample.kind = "Rounding")
+set.seed(job)
+set_seed(job)
+
+# Some other things I tried
+#rngCpp(5)
+#cbind( runif(5), rnorm(5), rt(5, 5), rbeta(5, 1, 1))
+#setArmaRNGseed(1)
+
 r <- 4
 n_obs <- 200
 p_m <- 10
@@ -490,12 +538,11 @@ U <- simulation_results$U
 I <- diag(n_obs)
 mu <- rep(0, n_obs)
 
-
 gamma <- initialize_gamma(r = 4, prior_component_selection = 0.5)
 gamma
 initialize_gamma_R(r = 4, prior_component_selection = 0.5)
 
-Eta <- initialize_eta(gamma, r, p_m, 0.5)
+Eta <- initialize_Eta(gamma, r, p_m, 0.5)
 Eta
 
 j <- 1
@@ -540,14 +587,22 @@ log_proposal_l_density_R(l, gamma_new, Eta_new, gamma, eta, sigma2, tau2, U, n_o
 
 ##################################################################
 
-set.seed(1)
 start_time <- Sys.time()
-main_sample_gamma_Eta(n_iterations=5000, n_burnin = 1000, 
-                      r=4, n_obs, p_m, 
-                      prob_component_selection, 
-                      prob_feature_selection, 
-                      X, sigma2, tau2, U) 
+gamma_Eta <- main_sample_gamma_Eta(n_iterations=5000, n_burnin = 1000,
+                      r=4, n_obs, p_m,
+                      prob_component_selection,
+                      prob_feature_selection,
+                      X, sigma2, tau2, U)
 end_time <- Sys.time()
 print("MCMC Duration:")
 print(end_time - start_time)
+
+n_burnin <- 1000
+gamma_df <- get_gamma_df(gamma_Eta$gamma_chain)
+ggplot(gamma_df,
+       aes(x = iteration, y = MPP, color = gamma)) +
+  geom_line() + geom_vline(xintercept = n_burnin,
+                           linetype = "dashed", color = "red") +
+  labs(x = "iteration", y = "MPP",
+       title = "Trace plot for gamma")
 */
