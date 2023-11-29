@@ -9,24 +9,6 @@ using namespace Rcpp;
 
 #include <utils.h>
 
-// // Set parameters
-// int r = 4;
-// int n_obs = 200;
-// int p_m = 10;
-// double prob_component_selection = 0.5;
-// double prob_feature_selection = 0.5;
-// int n_sample = 5000;
-// int n_burnin = 1000;
-// int n_iterations = n_sample + n_burnin;
-// 
-// // Start with the 1st view
-// int m = 1;
-// 
-// // Fix covariates
-// vec sigma2 = ones(p_m);
-// mat tau2 = ones(r, p_m);
-// //mat U = simulation_results$U;
-
 // [[Rcpp::export]]
 void set_seed(double seed) {
   Rcpp::Environment base_env("package:base");
@@ -191,37 +173,6 @@ double log_proposal_l_density(int l, vec mu, vec gamma_prime, mat Eta_prime,
 
 // Main function
 
-// Custom struct: A custom struct can hold multiple objects and return that container. 
-// This approach allows you to group related objects together and return them as a single unit. 
-
-// // Define custom structs to hold gamma and Eta from the mth view
-// struct struct_gamma_Eta_combined {
-//   arma::vec gamma;
-//   arma::mat Eta;
-// };
-// 
-// // Define custom struct for sample_gamma_eta_l to return
-// struct gamma_eta_l_combined {
-//   int gamma_l; 
-//   arma::vec eta_l;
-// };
-// 
-// // A function that returns a dummy gamma_Eta_combined struct
-// struct_gamma_Eta_combined combine_gamma_Eta(vec gamma, mat Eta) {
-//   return {gamma, Eta};
-// }
-
-// // Function for exporting custom struct to R
-// SEXP gamma_Eta_combined_to_R(struct_gamma_Eta_combined gamma_Eta) {
-//   // Create a List to hold gamma and Eta
-//   Rcpp::List list;
-//   list["gamma"] = gamma_Eta.gamma;
-//   list["Eta"] = gamma_Eta.Eta;
-//   return Rcpp::wrap(list);
-// }
-
-// The main function should eventually return Rcpp::List
-
 // [[Rcpp::export]]
 Rcpp::List main_sample_gamma_Eta(int n_iterations, int n_burnin,
                           int r, int n_obs, int p_m, 
@@ -257,30 +208,26 @@ Rcpp::List main_sample_gamma_Eta(int n_iterations, int n_burnin,
   // Sample for n_iterations
   std::cout << "Starting MCMC sampling..." << std::endl;
   for (int iter = 0; iter < n_iterations; iter++) {
+    
     if (iter % k == 0) {
     std::cout << "iter:" << std::endl;
     std::cout << iter << std::endl;
     std::cout << "n Selected Components: " << sum(gamma) << std::endl;
     std::cout << "n Selected Components x Features:" << sum(Eta) << std::endl;
     }
-    // TODO Summarize the MPPs and print
     
     // Sample gamma_Eta
   
     for (int l = 0; l < r; l++) {
-      if(iter % k == 0) {
+      
+      if (iter % k == 0) {
       std::cout << "l:" << std::endl;
       std::cout << l << std::endl;
-      
-      // Sample gamma_Eta_l
-      
-      // Propose new values for the lth component
-
       std::cout << "gamma:" << std::endl;
       std::cout << gamma << std::endl;
       }
       
-      vec gamma_new = gamma; // Does changing gamma_new impact gamma?
+      vec gamma_new = gamma; 
       mat Eta_new = Eta;
       gamma_new[l] = 1 - gamma_new[l];
       
@@ -295,20 +242,21 @@ Rcpp::List main_sample_gamma_Eta(int n_iterations, int n_burnin,
         }
       } else {
         for (int j = 0; j < p_m; j++) {
+          // Calculate eta_lj_threshold
+          double eta_lj_threshold = calculate_eta_lj_threshold(l, mu, gamma_new, Eta.col(j), sigma2[j], tau2.col(j), U, n_obs, X.col(j), prob_feature_selection);
           // Generate a random number between 0 and 1
           double random_u = arma::randu();
-          // Perform Bernoulli draw
-          int eta_new_lj = (random_u < prob_feature_selection) ? 1 : 0;
-          Eta_new(l, j) = eta_new_lj;
+          // Turn on/ turn off Eta_new_lj
+          double logit_random_u = log(random_u/(1.0-random_u));
+          if (logit_random_u < eta_lj_threshold) {
+            Eta_new(l, j) = 1;
+          } else {
+            Eta_new(l, j) = 0;
+          }
         }
       }
       
       // Calculate log acceptance ratio
-      // Dummy vars result in log_acceptance_ratio ~ 0.5
-      // double log_target_new = 1.0;
-      // double log_target = 1.6931472;
-      // double log_proposal_backward = 1.0;
-      // double log_proposal_forward = 1.0;
       double log_target_new = log_target_density_l(l, mu, gamma_new, Eta_new, sigma2, tau2, U, 
                                                    n_obs, p_m, X, prob_component_selection, prob_feature_selection);
       double log_target = log_target_density_l(l, mu, gamma_new, Eta_new, sigma2, tau2, U, 
@@ -324,17 +272,13 @@ Rcpp::List main_sample_gamma_Eta(int n_iterations, int n_burnin,
       double random_u = arma::randu();
       double log_random_u = log(random_u);
       if (log_random_u < log_acceptance_ratio) {
-        
-        //std::cout << "Proposal accepted." << std::endl;
         gamma[l] = gamma_new[l];
         Eta.row(l) = Eta_new.row(l);
-      } else {
-        //std::cout << "Proposal rejected." << std::endl;
       }
       
       // Gibb's sample to mix feature activation parameters
       if (gamma[l]==1) {
-        //std::cout << "Gibb's sampling feature activation parameters..." << std::endl;
+
         for (int j = 0; j < p_m; j++) {
           // Calculate eta_lj_threshold
           double eta_lj_threshold = calculate_eta_lj_threshold(l, mu, gamma, Eta.col(j), sigma2[j], tau2.col(j), U, n_obs, X.col(j), prob_feature_selection);
@@ -352,135 +296,52 @@ Rcpp::List main_sample_gamma_Eta(int n_iterations, int n_burnin,
       
     }
     
-    // Store posterior sample
-    //std::cout << "Storing posterior sample..." << std::endl;
-    
     gamma_chain.col(iter) = gamma;
     Eta_chain.slice(iter) = Eta;
     
   }
-  
-  // Write Eta_chain and gamma_chain to files
-  gamma_chain.save("gamma_chain.txt", arma::raw_ascii);
-  Eta_chain.save("Eta_chain.txt", arma::raw_ascii);
-  
-  std::cout << "Files written successfully." << std::endl;
-  
+
   return Rcpp::List::create(
     Rcpp::Named("gamma_chain") = gamma_chain,
     Rcpp::Named("Eta_chain") = Eta_chain
   );
+
 }
 
 
 /*** R
-# R functions
-initialize_gamma_R <- function(r=4, prior_component_selection=0.5) {
-  gamma <- rbinom(n = r, size = 1, prob = prior_component_selection)
-  return(gamma)
-}
+library(tidyverse)
 
-initialize_eta_R <- function(gamma, r=4, p_m=10, prior_feature_selection=0.5) {
-  eta <- matrix(nrow = r, ncol = p_m)
-  for (l in 1:r) {
-    if (gamma[l] == 1) {
-      eta[l, ] <- rbinom(n = p_m, size = 1, prior_feature_selection)
-    } else {
-      eta[l, ] <- rep(0, p_m)
-    }
-  }
-  return(eta)
-}
+# Define parameters
+seed <- 1
+r <- 4
+n_obs <- 200
+p_m <- 10
+prob_component_selection <- 0.25
+prob_feature_selection <- 0.5
+n_iterations <- 5000
+n_burnin <- 1000
 
-calculate_mvnorm_var_j_R <- function(eta_j, sigma2_j, tau2_j, U, n_obs) {
-  n_components_active_in <- sum(eta_j)
-  if (n_components_active_in > 0) {
-    components_active_in <- which(eta_j==1)
-    Sigma2_j <- U[, components_active_in, drop = FALSE] %*% 
-      diag(n_components_active_in) %*% 
-      t(U[, components_active_in, drop = FALSE]) +
-      diag(n_obs) 
-  } else {
-    Sigma2_j <- diag(n_obs)
-  }
-  mvnorm_var <- sigma2_j * Sigma2_j
-  return(mvnorm_var)
-}
+# Generate data
+source("simulate_simple_data.R")
 
-calculate_log_dmvnorm_j_R <- function(eta_j, sigma2_j, tau2_j, U, n_obs, x_j) {
-  mvnorm_var_j <- calculate_mvnorm_var_j(eta_j, sigma2_j, tau2_j, U, n_obs)
-  # TODO use woodbury matrix identity for log_dmvnorm evaluation for sigma inversion
-  # TODO compare the results of the woodbury identity function with those of dmvnorm
-  log_dmvnorm_j <- mvtnorm::dmvnorm(x = x_j, mean = rep(0, n_obs), sigma = mvnorm_var_j, log = TRUE) 
-  return(log_dmvnorm_j)
-}
+set.seed(1)
+simulation_results <- simulate_iid_data(prob_component_importance = prob_component_selection)
+data_list <- list(simulation_results$X_list[[1]], 
+                  simulation_results$X_list[[2]], 
+                  simulation_results$Y)
+data_list <- lapply(data_list, scale)
 
-calculate_log_G_j_R <- function(gamma, eta_j, sigma2_j, tau2_j, U, n_obs, x_j, prob_feature_selection) {
-  log_dmvnorm_j <- calculate_log_dmvnorm_j_R(eta_j, sigma2_j, tau2_j, U, n_obs, x_j)
-  active_gamma <- which(gamma == 1)
-  n_active_gamma <- length(active_gamma) # TODO account for all inactive
-  n_active_eta_given_gamma_1 <- eta_j[active_gamma] %>% sum()
-  log_G_j <- log_dmvnorm_j + 
-    n_active_eta_given_gamma_1 * log(prob_feature_selection) + 
-    (n_active_gamma - n_active_eta_given_gamma_1) * log(1 - prob_feature_selection)
-  return(log_G_j) 
-}
+# Start with the 1st view
+m <- 1 
+X <- data_list[[m]]
 
-calculate_log_PQ_lj_R <- function(l, gamma, eta_j, sigma2_j, tau2_j, U, n_obs, x_j, prob_feature_selection) {
-  gamma_1 <- replace(gamma, l, 1)
-  eta_1 <- replace(eta_j, l, 1)
-  eta_0 <- replace(eta_j, l, 0)
-  log_G_j_1 <- calculate_log_G_j_R(gamma_1, eta_1, sigma2_j, tau2_j, U, n_obs, x_j, prob_feature_selection)
-  log_G_j_0 <- calculate_log_G_j_R(gamma_1, eta_0, sigma2_j, tau2_j, U, n_obs, x_j, prob_feature_selection)
-  # Use logsumexp trick
-  max_arg <- max(log_G_j_1, log_G_j_0) 
-  a <- log_G_j_1 - max_arg
-  b <- log_G_j_0 - max_arg
-  # TODO understand if the log(exp(...)) is ok.
-  log_P_lj <- a - log(exp(a)+exp(b)) 
-  log_Q_lj <- b - log(exp(a)+exp(b))
-  return(c(log_P_lj, log_Q_lj))
-}
+# Fix covariates
+sigma2 <- rep(1, p_m)
+tau2 <- matrix(1, nrow = r, ncol = p_m)
+U <- simulation_results$U
 
-calculate_eta_lj_threshold_R <- function(l, gamma, eta_j, sigma2_j, tau2_j, U, n_obs, x_j, prob_feature_selection) {
-  gamma_1 <- replace(gamma, l, 1)
-  eta_1 <- replace(eta_j, l, 1)
-  eta_0 <- replace(eta_j, l, 0)
-  log_G_j_1 <- calculate_log_G_j_R(gamma_1, eta_1, sigma2_j, tau2_j, U, n_obs, x_j, prob_feature_selection)
-  log_G_j_0 <- calculate_log_G_j_R(gamma_1, eta_0, sigma2_j, tau2_j, U, n_obs, x_j, prob_feature_selection)
-  return(log_G_j_1 - log_G_j_0)
-}
-
-log_target_density_l_R <- function(l, gamma, eta, sigma2, tau2, U, n_obs, p_m, 
-                                   x, prob_component_selection, prob_feature_selection) {
-  sum_log_target_density_lj <- 0
-  for (j in 1:p_m) {
-    # TODO understand if log_dmvnorm_j should only use data within. Note, this should cancel in the log_acceptance_ratio subtraction.
-    log_dmvnorm_j <- calculate_log_dmvnorm_j_R(eta[, j], sigma2[j], tau2[,j], U, n_obs, x[,j]) 
-    sum_log_target_density_lj <- sum_log_target_density_lj + log_dmvnorm_j + 
-      eta[l,j]*log(prob_feature_selection) + (1-eta[l,j])*log(1-prob_feature_selection)
-  }
-  log_target_density_l <- gamma[l]*log(prob_component_selection) + 
-    (1-gamma[l])*log(1-prob_component_selection) + sum_log_target_density_lj
-  return(log_target_density_l)
-}
-
-log_proposal_l_density_R <- function(l, gamma_prime, eta_prime, gamma, eta,
-                                     sigma2, tau2, U, n_obs, p_m, x, prob_feature_selection) {
-  if (gamma[l]==1 & gamma_prime[l]==0 & sum(eta_prime[l,])==0) {
-    return(0)
-  } else if (gamma[l]==0 & gamma_prime[l]==1) {
-    log_proposal_l_density <- 0
-    for (j in 1:p_m) {
-      PQ_lj <- calculate_log_PQ_lj_R(l, gamma_prime, eta_prime[, j], sigma2[j], tau2[, j], U, n_obs, x[, j], prob_feature_selection)
-      log_proposal_l_density <- log_proposal_l_density + eta_prime[l,j] * PQ_lj[1] + (1-eta_prime[l,j]) * PQ_lj[2]
-    }
-    return(log_proposal_l_density)
-  } else {
-    stop("Error in log_proposal_l_density evaluation.")
-  }
-}
-
+# Define custom functions
 get_gamma_df <- function(gamma_chain) {
   n_iterations <- ncol(gamma_chain)
   gamma_df <- gamma_chain[, 1:n_iterations] %>% 
@@ -491,118 +352,42 @@ get_gamma_df <- function(gamma_chain) {
   return(gamma_df)
 }
 
-############################################
-
-# Generating data
-source("simulate_simple_data.R")
-job <- 1
-simulation_results <- simulate_iid_data(seed=job)
-data_list <- list(simulation_results$X_list[[1]], 
-                  simulation_results$X_list[[2]], 
-                  simulation_results$Y)
-data_list <- lapply(data_list, scale)
-m <- 1 
-X <- data_list[[m]]
-
-# Scale data
-#data_list <- lapply(data_list, scale)
-indic_var <- c(0, 0, 1) 
-method <- "BIP" # method without grouping information to start
-group_list <- NULL # default when grouping information not included
-bip_0 <- BIPnet::BIP(dataList = data_list, IndicVar = indic_var, Method = method, probvarsel = prob_feature_selection)
-
-reindex_r_cpp <- function(x) return(x-1)
-reindex_cpp_r <- function(x) return(x+1)
-
-# Set R and Rcpp seeds; NOTE: they are not generating the same random numbers
-#RNGkind(sample.kind = "Rounding")
-set.seed(job)
-set_seed(job)
-
-# Some other things I tried
-#rngCpp(5)
-#cbind( runif(5), rnorm(5), rt(5, 5), rbeta(5, 1, 1))
-#setArmaRNGseed(1)
-
-r <- 4
-n_obs <- 200
-p_m <- 10
-prob_component_selection <- 0.5
-prob_feature_selection <- 0.5
-
-# Fix covariates
-sigma2 <- rep(1, p_m)
-tau2 <- matrix(1, nrow = r, ncol = p_m)
-U <- simulation_results$U
-
-I <- diag(n_obs)
-mu <- rep(0, n_obs)
-
-gamma <- initialize_gamma(r = 4, prior_component_selection = 0.5)
-gamma
-initialize_gamma_R(r = 4, prior_component_selection = 0.5)
-
-Eta <- initialize_Eta(gamma, r, p_m, 0.5)
-Eta
-
-j <- 1
-l <- 2
-
-gamma_new <- replace(gamma, l, 1-gamma[l])
-Eta_new <- Eta
-if (gamma_new[l] == 0) {
-  Eta_new[l, ] <- rep(0, p_m)
-} else {
-  Eta_new[l, ] <- rbinom(n = p_m, size = 1, prob = prob_feature_selection)
-}
-
-Var_j <- calculate_mvnorm_var_j(Eta[,j], sigma2[j], tau2[,j], U, n_obs)
-Var_j_R <- calculate_mvnorm_var_j_R(Eta[,j], sigma2[j], tau2[j], U, n_obs)
-
-which(round(Var_j, 6) != round(Var_j_R, 6))
-
-calculate_log_dmvnorm_j(X[,j], mu, U, Eta[,j], tau2[,j], sigma2[j], n_obs)
-calculate_log_dmvnorm_j_R(Eta[,j], sigma2[j], tau2[,j], U, n_obs, X[,j])
-
-calculate_log_G_j(mu, gamma, Eta[,j], sigma2[j], tau2[,j], U, n_obs, X[,j], 
-                  prob_feature_selection)
-calculate_log_G_j_R(gamma, Eta[,j], sigma2[j], tau2[,j], U, n_obs, X[,j], prob_feature_selection)
-
-calculate_log_PQ_lj(reindex_r_cpp(l), mu,  gamma, Eta[,j], sigma2[j], tau2[,j], U, n_obs, 
-                    X[,j], prob_feature_selection)
-calculate_log_PQ_lj_R(l, gamma, Eta[,j], sigma2[j], tau2[,j], U, n_obs, X[,j], prob_feature_selection)
-
-calculate_eta_lj_threshold(reindex_r_cpp(l), mu,  gamma, Eta[,j], sigma2[j], tau2[,j], U, 
-                           n_obs, X[,j], prob_feature_selection)
-calculate_eta_lj_threshold_R(l, gamma, Eta[,j], sigma2[j], tau2[,j], U, n_obs, X[,j], prob_feature_selection)
-
-log_target_density_l(reindex_r_cpp(l), mu, gamma, Eta, sigma2, tau2, U, n_obs, p_m, 
-                     X, prob_component_selection, prob_feature_selection)
-log_target_density_l_R(l, gamma, Eta, sigma2, tau2, U, n_obs, p_m, 
-                       X, prob_component_selection, prob_feature_selection)
-
-log_proposal_l_density(reindex_r_cpp(l), mu, gamma_new, Eta_new, gamma, Eta, sigma2, tau2, 
-                       U, n_obs, p_m, X, prob_feature_selection)
-log_proposal_l_density_R(l, gamma_new, Eta_new, gamma, eta, sigma2, tau2, U, n_obs, p_m, X, prob_feature_selection)
-
-##################################################################
-
+# Get MCMC results
 start_time <- Sys.time()
-gamma_Eta <- main_sample_gamma_Eta(n_iterations=5000, n_burnin = 1000,
-                      r=4, n_obs, p_m,
-                      prob_component_selection,
-                      prob_feature_selection,
+gamma_Eta <- main_sample_gamma_Eta(n_iterations, n_burnin, r, n_obs, p_m,
+                      prob_component_selection, prob_feature_selection,
                       X, sigma2, tau2, U)
 end_time <- Sys.time()
 print("MCMC Duration:")
 print(end_time - start_time)
 
-n_burnin <- 1000
-gamma_df <- get_gamma_df(gamma_Eta$gamma_chain)
-ggplot(gamma_df,
-       aes(x = iteration, y = MPP, color = gamma)) +
-  geom_line() + geom_vline(xintercept = n_burnin,
-                           linetype = "dashed", color = "red") +
-  labs(x = "iteration", y = "MPP",
-       title = "Trace plot for gamma")
+gamma_chain <- gamma_Eta$gamma_chain
+Eta_chain <- gamma_Eta$Eta_chain
+
+print("Component Selection Mean:")
+gamma_chain[, (n_burnin+1):n_iterations] %>% apply(MARGIN = 1, FUN = mean)
+
+print("Variable Selection Mean:")
+Eta_chain[,,(n_burnin+1):n_iterations] %>% apply(MARGIN = c(1,2), FUN = mean)
+
+gamma_df <- get_gamma_df(gamma_chain)
+gamma_plot <- ggplot(gamma_df, aes(x = iteration, y = MPP, color = gamma)) +
+  geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "red") +
+  labs(x = "iteration", y = "MPP", title = "Trace plot for gamma")
+print(gamma_plot)
+
+# Analyze feature selection in component 1
+features_of_interest <- c(1, 2, 6, 7)
+feature_names <- paste("j", features_of_interest, sep = "_")
+eta_df <- Eta_chain[1, features_of_interest, 1:n_iterations] %>%
+  apply(MARGIN = 1, FUN = cummean) %>% 
+  as.data.frame() %>% rename_at(vars(names(.)), ~ feature_names) %>% mutate(iteration = 1:n_iterations) %>% 
+  gather(key = "eta", value = "MPP", -iteration) %>%
+  mutate(eta = eta %>% as.factor()) 
+
+eta_1_plot <- ggplot(eta_df, aes(x = iteration, y = MPP, color = eta)) + 
+  geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "red") +
+  labs(x = "iteration", y = "MPP", title = "Trace plot for eta_1.")
+
+print(eta_1_plot)
 */
