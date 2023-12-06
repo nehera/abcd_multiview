@@ -8,117 +8,41 @@ editor: visual
 ```{r}
 #| include: false
 library(tidyverse)
-library(zoo) # for rollmean
-library(latex2exp) # for plotting latex
 ```
 
-## About the simulated data
-
-We simulate 10 iid normal random variables for 2 views. The first five features are active in the first two components. All else are inactive.
-
-## Results
+For 2 views: We simulate 10 iid normal random variables. 5 of these are active, and 5 are inactive *across all active components*. We set r=4 components and first consider 5 scenarios: 0, 1, 2, 3, or 4 components active.
 
 ```{r}
-bip_0 <- readRDS("data/2023-10-09_job_1_simulation_BIP_results.rds")
-print("BIP Component Selection Mean:")
-bip_0$CompoSelMean
-print("BIP Variable Selection Mean for 1st View:")
-bip_0$VarSelMean[[1]]
-```
+# Set-up environment
+source("code/simulate_simple_data.R")
+Rcpp::sourceCpp("code/sample_gamma_eta.cpp")
 
-Now we load the chains produced by BIP2 from the first starting point.
-
-```{r}
-gamma_chain <- readRDS("data/2023-10-09_job_1_seed_1_gamma_chain.rds")
-eta_chain <- readRDS("data/2023-10-09_job_1_seed_1_eta_chain.rds")
-```
-
-Here are the number of iterations available:
-
-```{r}
-n_iterations <- gamma_chain[1, ] %>% length()
-print(n_iterations)
-```
-
-Below is the trace plot for $\gamma$'s MPPs. Note: Components 1 and 2 are getting selected \~100% of the time.
-
-```{r}
-n_burnin <- 1000
+# Define parameters
+prob_component_selection_of_interest <- seq(0, 1, 0.25)
+seed <- 1
 r <- 4
-get_gamma_df <- function(gamma_chain) {
-  n_iterations <- ncol(gamma_chain)
-  gamma_df <- gamma_chain[, 1:n_iterations] %>% 
-    apply(MARGIN = 1, FUN = cummean) %>% 
-    as.data.frame() %>% mutate(iteration = 1:n_iterations) %>% 
-    gather(key = "gamma", value = "MPP", -iteration) %>%
-    mutate(gamma = gamma %>% as.factor()) 
-  return(gamma_df)
+n_obs <- 200
+p_m <- 10
+prob_feature_selection <- 0.5
+n_iterations <- 5000
+n_burnin <- 1000
+# Start with the first view
+m <- 1 
+# Fix covariates
+sigma2 <- rep(1, p_m)
+tau2 <- matrix(1, nrow = r, ncol = p_m)
+
+# Get results
+set.seed(seed)
+results <- list()
+for (i in 1:length(prob_component_selection_of_interest)) {
+  prob_component_selection <- prob_component_selection_of_interest[i]
+  simulation_result <- simulate_iid_data(prob_component_importance = prob_component_selection)
+  X <- simulation_result$X_list[[m]]
+  U <- simulation_results$U
+  results[[i]] <- main_sample_gamma_Eta(n_iterations, n_burnin, r, n_obs, p_m,
+                      prob_component_selection, prob_feature_selection,
+                      X, sigma2, tau2, U)
 }
-
-gamma_df <- get_gamma_df(gamma_chain)
-
-# TODO use latex in the title and labels e.g. latex2exp::TeX("$\\alpha$")
-gamma_plot <- ggplot(gamma_df, 
-                     aes(x = iteration, y = MPP, color = gamma)) + 
-  geom_line() + geom_vline(xintercept = n_burnin, 
-                           linetype = "dashed", color = "red") +
-  labs(x = "iteration", y = "MPP", 
-       title = "Trace plot for gamma")
-
-print(gamma_plot)
 ```
 
-Here we start to look at the posterior for $\eta$.
-
-Note, $\eta_{lj}=1$ denotes that in the lth component, the jth feature is active.
-
-Since the MCMC selected the first component and second components as active, we start by looking at the results for the first component $\eta_{1j}$ for $j=1, 2, 6, 7$ since, truly, $j=1:5$ active and $j=6:10$ inactive.
-
-```{r}
-features_of_interest <- c(1, 2, 6, 7)
-feature_names <- paste("j", features_of_interest, sep = "_")
-# TODO make trace plot function to reduce copy paste going forward
-eta_df <- eta_chain[1, features_of_interest, 1:n_iterations] %>%
-  apply(MARGIN = 1, FUN = cummean) %>% 
-  as.data.frame() %>% rename_at(vars(names(.)), ~ feature_names) %>% mutate(iteration = 1:n_iterations) %>% 
-  gather(key = "eta", value = "MPP", -iteration) %>%
-  mutate(eta = eta %>% as.factor()) 
-
-eta_1_plot <- ggplot(eta_df, 
-                     aes(x = iteration, y = MPP, color = eta)) + 
-  geom_line() + geom_vline(xintercept = n_burnin, 
-                           linetype = "dashed", color = "red") +
-  labs(x = "iteration", y = "MPP", 
-       title = "Trace plot for eta_1.")
-
-print(eta_1_plot)
-```
-
-Now we calculate the component selection mean after burnin.
-
-```{r}
-n_samples <- n_iterations - n_burnin
-component_sel_mean <- gamma_chain[, (n_burnin+1):n_iterations] %>%
-  apply(MARGIN = 1, FUN = mean)
-print(component_sel_mean)
-```
-
-The feature selection mean after burnin:
-
-```{r}
-feature_sel_mean <- eta_chain[,, (n_burnin+1):n_iterations] %>%
-  apply(MARGIN = c(1,2), FUN = mean)
-print(feature_sel_mean)
-```
-
-Now we compare the gamma_chain to different starting points:
-
-```{r}
-gamma_results <- lapply(job_results,"[[",1) %>% 
-  lapply(get_gamma_df)
-# Get correlation across MPPs
-```
-
-## Discussion
-
-The algorithm is selecting the correct active features, but is also selecting the inactive components at high rates. This is true even after removing the direct evaluation of P_lj. There's likely an issue in the Metropolis-Hastings acceptance/ rejection since the correct active features are getting selected by the mixing step.
