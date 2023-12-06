@@ -267,11 +267,19 @@ Rcpp::List main_sample_gamma_Eta(int n_iterations, int n_burnin,
       double log_acceptance_ratio = log_target_new - log_target + log_proposal_backward - log_proposal_forward;
       
       // Accept/ reject proposed gamma and eta
-      double random_u = arma::randu();
-      double log_random_u = log(random_u);
-      if (log_random_u < log_acceptance_ratio) {
+      if (log_acceptance_ratio >= 0.0) {
+        // Accept proposed gamma and eta
         gamma[l] = gamma_new[l];
         Eta.row(l) = Eta_new.row(l);
+      } else {
+        double random_u = arma::randu();
+        double log_random_u = log(random_u);
+        if (log_random_u < log_acceptance_ratio) {
+          // Accept proposed gamma and eta
+          gamma[l] = gamma_new[l];
+          Eta.row(l) = Eta_new.row(l);
+        }
+        // else reject proposed gamma and eta by not storing them
       }
       
       // Gibb's sample to mix feature activation parameters
