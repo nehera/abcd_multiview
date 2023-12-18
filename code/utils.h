@@ -8,7 +8,7 @@ using namespace arma;
 using namespace Rcpp;
 
 // Function to get indices of elements equal to 1
-uvec get_indices_of_ones(uvec x) {
+uvec get_indices_of_ones(vec x) {
   int n = x.size();
   uvec indices;
   for (int i = 0; i < n; i++) {
@@ -45,7 +45,25 @@ arma::vec sample_mvnorm(const arma::vec mean, const arma::mat covariance) {
 
 mat get_woodbury_inv(mat U, mat D) {
   mat I = eye(U.n_rows, U.n_rows);
-  mat sigma_inv = I - U*inv(inv(D) + U.t() * U) * U.t();
-  return sigma_inv;
+  mat Sigma_inv = I - U*inv(inv(D) + U.t()*U)*U.t();
+  return Sigma_inv;
 }
 
+arma::vec randbin(int n, int size=1, double prob=0.5) {
+  vec randbin_result = arma::zeros<arma::vec>(n);
+  int bern = 0;
+  // Draw n observations from binomial distribution
+  for (int i = 0; i < n; i++) {
+    // Draw one observation from binomial distribution
+    int obs_tally = 0;
+    for (int j = 0; j < size; j++) {
+      // Generate a random number between 0 and 1
+      double random_u = arma::randu();
+      // Perform Bernoulli draw
+      bern = (random_u < prob) ? 1 : 0;
+      obs_tally = obs_tally + bern;
+    }
+    randbin_result[i] = obs_tally;
+  }
+  return randbin_result;
+}

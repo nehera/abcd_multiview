@@ -1,0 +1,48 @@
+---
+title: "Step B1. Sampling Component and Variable Activation Report"
+author: "Aidan Neher"
+format: html
+editor: visual
+---
+
+```{r}
+#| include: false
+library(tidyverse)
+```
+
+For 2 views: We simulate 10 iid normal random variables. 5 of these are active, and 5 are inactive *across all active components*. We set r=4 components and first consider 5 scenarios: 0, 1, 2, 3, or 4 components active.
+
+```{r}
+# Set-up environment
+source("code/simulate_simple_data.R")
+Rcpp::sourceCpp("code/sample_gamma_eta.cpp")
+
+# Define parameters
+prob_component_selection_of_interest <- seq(0, 1, 0.25)
+seed <- 1
+r <- 4
+n_obs <- 200
+p_m <- 10
+prob_feature_selection <- 0.5
+n_iterations <- 5000
+n_burnin <- 1000
+# Start with the first view
+m <- 1 
+# Fix covariates
+sigma2 <- rep(1, p_m)
+tau2 <- matrix(1, nrow = r, ncol = p_m)
+
+# Get results
+set.seed(seed)
+results <- list()
+for (i in 1:length(prob_component_selection_of_interest)) {
+  prob_component_selection <- prob_component_selection_of_interest[i]
+  simulation_result <- simulate_iid_data(prob_component_importance = prob_component_selection)
+  X <- simulation_result$X_list[[m]]
+  U <- simulation_results$U
+  results[[i]] <- main_sample_gamma_Eta(n_iterations, n_burnin, r, n_obs, p_m,
+                      prob_component_selection, prob_feature_selection,
+                      X, sigma2, tau2, U)
+}
+```
+
