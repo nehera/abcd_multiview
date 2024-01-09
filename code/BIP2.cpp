@@ -67,6 +67,33 @@ double calculate_log_dmvnorm_j(vec x_j, vec mu, mat U, vec eta_j, vec tau2_j, do
   return log_dens;
 }
 
+// calculate_quad_form_and_log_dmvnorm_j returns a vec 
+// 0th index: quadratic form t(x_j)*Sigma_j_inv*x_j
+// 1st index: log_dmvnorm_j
+
+// [[Rcpp::export]]
+vec calculate_quad_form_and_log_dmvnorm_j(vec x_j, vec mu, mat U, vec eta_j, vec tau2_j, double sigma2_j, int n_obs) {
+  int n_active_components = sum(eta_j);
+  double Sigma_det = 0;
+  mat Sigma_inv(n_obs, n_obs, fill::value(datum::nan));
+  if (n_active_components > 0) {
+    uvec active_components = get_indices_of_ones(eta_j);
+    mat D(n_active_components, n_active_components, fill::value(0));
+    D.diag() = tau2_j.elem(active_components);
+    U = U.cols(active_components);
+    Sigma_det = pow(sigma2_j, n_obs)*det(inv(D) + U.t()*U)*det(D);
+    Sigma_inv = (1.0/sigma2_j)*get_woodbury_inv(U, D);
+  } else {
+    // Sigma2_j = I, an n-by-n identity matrix
+    Sigma_det = pow(sigma2_j, n_obs);
+    Sigma_inv = (1.0/sigma2_j)*eye(n_obs, n_obs);
+  }
+  double quad_form = as_scalar(trans(x_j-mu)*Sigma_inv*(x_j-mu)); 
+  double log_dens = -0.5*n_obs*log(2*datum::pi) - 0.5*log(Sigma_det) - 0.5*quad_form;
+  vec quad_form_and_log_dmvnorm_j = join_cols(vec{quad_form}, vec{log_dens});
+  return quad_form_and_log_dmvnorm_j;
+}
+
 // [[Rcpp::export]]
 double calculate_log_G_j(vec mu, vec gamma, vec eta_j, double sigma2_j, vec tau2_j, mat U, int n_obs, vec x_j, double prob_feature_selection) {
   double log_dmvnorm_j = calculate_log_dmvnorm_j(x_j, mu, U, eta_j, tau2_j, sigma2_j, n_obs);
