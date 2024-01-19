@@ -15,8 +15,6 @@
 #include <gsl/gsl_math.h>
 #include "header.h"
 
-
-
 void SampleIntercept(gsl_rng * rr,int n, int r, double * intercept, double* sigma2, double sigma20,double ** U, double ** A, double **y){
    int i,l;
    double meany=0;
@@ -244,7 +242,6 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, _Bool * rho,doub
       for (l=0;l<r;l++){
          double logq=0;
          if (rho[l]==0){
-            // Propose to turn the component on
             rhonew[l]=1;
             double logpostnew=0;
             double logpostold=0;
@@ -252,7 +249,6 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, _Bool * rho,doub
             double * loggausnew1=malloc(p*sizeof(double));
             double quad1=0; double quad2=0;
             double loggaussold=0; double loggaussnew=0;
-            // Propose to turn on/ off features
             for (j=0;j<p;j++){
                double logqj=0;double logmqj=0;
                logpostold+=loggauss[j];
@@ -271,48 +267,38 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, _Bool * rho,doub
 
                double uni=gsl_ran_flat (rr, 0, 1);
                if ((log(uni/(1-uni))<rat)){
-                  // Turn the feature on
                   Gam[j][l]=1;Gamnew[j][l]=1;
                   logpostnew+=loggaussnew+log(q1[l]);
                   loggausnew1[j]=loggaussnew;
-                  // log proposal difference- add the probability that a feature is on given a component is on
-                  logq+=logqj; 
+                  logq+=logqj; // log proposal difference
                   quadForm1[j]=quad2;
                } else {
                   Gam[j][l]=0;Gamnew[j][l]=0;
-                  logq+=logmqj; 
-                   // log proposal difference- add the probability that a feature is off given a component is on
+                  logq+=logmqj;
                   logpostnew+=loggaussold+log(1-q1[l]);
                   quadForm1[j]=quad1;
                   loggausnew1[j]=loggaussold;
                }
             }
-            // Add the log probability that the component is on
             logpostnew+=log(q2);
             logpostold+=log(1-q2);
             double un=gsl_ran_flat (rr, 0, 1);
             //printf("%lf ",logpostnew-logpostold-logq);
             double rat1=logpostnew-logpostold-logq; // log acceptance ratio
             if (log(un)<rat1){
-               // accept having the component on
                rho[l]=1;
-               // store the new log gauss and quadForms
                for (j=0;j<p;j++){
                   quadForm[j]=quadForm1[j];
                   loggauss[j]=loggausnew1[j];
                }
             } else {
-               // stay off
                rho[l]=0;
                for (j=0;j<p;j++) Gam[j][l]=Gamnew[j][l]=0;
             }
-            // initialize gamma new for the next iteration & remove quadform and loggaussnew since unneccessary for the next step? 
             rhonew[l]=rho[l];
             free(quadForm1);free(loggausnew1);
          } else {
-            // gamma is on and we are proposing to turn it off
             rhonew[l]=0;
-            // initialize proposal data structures
             double logpostnew=0;
             double logpostold=0;
             double * quadForm1=malloc(p*sizeof(double));
@@ -835,3 +821,4 @@ void SampleU(gsl_rng * rr,int r, int n,int p0,int p1,int p2,double *** A, double
    }
    free(SigmaInv);
 }
+

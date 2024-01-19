@@ -67,3 +67,4 @@ arma::vec randbin(int n, int size=1, double prob=0.5) {
   }
   return randbin_result;
 }
+
