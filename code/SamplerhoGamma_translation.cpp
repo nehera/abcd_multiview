@@ -216,7 +216,7 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
           //printf("%lf ",rat);
           double x1=loggaussnew+log(q1[l]); // log G_1
           double x2=loggaussold+log(1-q1[l]); // log G_0
-          double maxq=MAX(x1,x2);
+          double maxq=std::max(x1,x2);
           double den=maxq+log(exp(x1-maxq)+exp(x2-maxq)); // log(G_0 + G_1)
           logqj=x1-den; // log P_lj
           logmqj=x2-den; // log Q_lj = 1 - log P_lj
@@ -271,7 +271,7 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
           if (p!=1){
             double x1=loggaussn+log(q1[l]);
             double x2=loggaussnew+log(1-q1[l]);
-            double maxq=MAX(x1,x2);
+            double maxq=std::max(x1,x2);
             double den=maxq+log(exp(x1-maxq)+exp(x2-maxq));
             double logqj=x1-den;
             double logmqj=x2-den;
