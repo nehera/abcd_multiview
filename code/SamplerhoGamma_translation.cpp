@@ -1,5 +1,24 @@
+#include <stdio.h>
+#include <string.h>
+#include <gsl/gsl_rng.h>
+#include <stdlib.h>
+#include <math.h>
+#include <gsl/gsl_linalg.h>
+#include <gsl/gsl_vector.h>
+#include <gsl/gsl_matrix.h>
+#include <gsl/gsl_blas.h>
+#include <gsl/gsl_linalg.h>
+#include <gsl/gsl_sf_gamma.h>
+#include <gsl/gsl_sf_psi.h>
+#include <gsl/gsl_randist.h>
+#include <gsl/gsl_statistics.h>
+#include <gsl/gsl_math.h>
+
 #include <Rcpp.h>
 using namespace Rcpp;
+
+#include <RcppGSL.h>
+// [[Rcpp::depends(RcppGSL)]]
 
 // [[Rcpp::export]]
 int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
@@ -44,13 +63,13 @@ int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
 
 
 // [[Rcpp::export]]
-void findc(int n,_Bool R[n],int a,int * IDX, int *nx)
+void findc(int n,bool R[n],int a,int * IDX, int *nx)
 {
   int ii_data[n];
   int idx = 0;
   int  ii = 0;
-  _Bool  exitg2 = 0;
-  _Bool guard2=0;
+  bool  exitg2 = 0;
+  bool guard2=0;
   while ((exitg2 == 0) && (ii < n)) {
     guard2 = 0;
     if (R[ii]!= a) {
@@ -79,7 +98,7 @@ void findc(int n,_Bool R[n],int a,int * IDX, int *nx)
 }
 
 // [[Rcpp::export]]
-void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double ** X,double s2,double* quadForm,_Bool * Gam,double * loggauss){
+void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double ** X,double s2,double* quadForm,bool * Gam,double * loggauss){
   int i,s,s1;
   int NZ1[r];
   int nx1=0;
@@ -142,10 +161,10 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
 }
 
 // [[Rcpp::export]]
-void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, _Bool * rho,double ** Tau, double ** U,double ** X, double* q1,double q2,double* s2,double* quadForm,_Bool** Gam,double *loggauss){
+void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,double ** Tau, double ** U,double ** X, double* q1,double q2,double* s2,double* quadForm,bool** Gam,double *loggauss){
   int l,j;
-  _Bool *rhonew=malloc(r*sizeof(_Bool));
-  _Bool Gamnew[p][r];
+  bool *rhonew=malloc(r*sizeof(bool));
+  bool Gamnew[p][r];
   for (l=0;l<r;l++){
     for (j=0;j<p;j++){
       Gamnew[j][l]=Gam[j][l];
