@@ -107,7 +107,7 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
   double result=0;double quadF=0;
   if (nx1>0){
     gsl_vector *work1 =gsl_vector_alloc (nx1);
-    double * Sigma1=malloc(nx1*nx1*sizeof(double));
+    double * Sigma1= static_cast<double*>(malloc(nx1*nx1*sizeof(double)));
     for (s=0;s<nx1;s++){
       for (s1=0;s1<=s;s1++){
         double a=0;
@@ -163,7 +163,7 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
 // [[Rcpp::export]]
 void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,double ** Tau, double ** U,double ** X, double* q1,double q2,double* s2,double* quadForm,bool** Gam,double *loggauss){
   int l,j;
-  bool *rhonew=malloc(r*sizeof(bool));
+  bool *rhonew=static_cast<bool*>(malloc(r*sizeof(bool)));
   bool Gamnew[p][r];
   for (l=0;l<r;l++){
     for (j=0;j<p;j++){
@@ -201,8 +201,8 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
         rhonew[l]=1;
         double logpostnew=0;
         double logpostold=0;
-        double * quadForm1=malloc(p*sizeof(double));
-        double * loggausnew1=malloc(p*sizeof(double));
+        double * quadForm1=static_cast<double*>(malloc(p*sizeof(double)));
+        double * loggausnew1=static_cast<double*>(malloc(p*sizeof(double)));
         double quad1=0; double quad2=0;
         double loggaussold=0; double loggaussnew=0;
         for (j=0;j<p;j++){
@@ -257,8 +257,8 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
         rhonew[l]=0;
         double logpostnew=0;
         double logpostold=0;
-        double * quadForm1=malloc(p*sizeof(double));
-        double * loggausnew1=malloc(p*sizeof(double));
+        double * quadForm1=static_cast<double*>(malloc(p*sizeof(double)));
+        double * loggausnew1=static_cast<double*>(malloc(p*sizeof(double)));
         double quad1;
         double loggaussnew=0; double loggaussn=0;
         double logpq=0;
@@ -305,8 +305,8 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
       /* Within move*/
       if (rho[l]==1){
         double logpostold=0;
-        double * quadForm1=malloc(p*sizeof(double));
-        double * loggausnew1=malloc(p*sizeof(double));
+        double * quadForm1=static_cast<double*>(malloc(p*sizeof(double)));
+        double * loggausnew1=static_cast<double*>(malloc(p*sizeof(double)));
         double quad1,quad2;
         double loggaussold,loggaussnew;
         for (j=0;j<p;j++){
