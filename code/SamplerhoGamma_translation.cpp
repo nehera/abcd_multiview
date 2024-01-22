@@ -14,15 +14,74 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_math.h>
 
-#include <Rcpp.h>
+#include <RcppArmadillo.h>
+// [[Rcpp::depends(RcppArmadillo)]]
+using namespace arma;
 using namespace Rcpp;
 
 #include <RcppGSL.h>
 // [[Rcpp::depends(RcppGSL)]]
 
-#include <RcppArmadillo.h>
-// [[Rcpp::depends(RcppArmadillo)]]
-using namespace arma;
+void nrerror(char error_text[])
+{
+  printf("Utils run-time error...\n");
+  printf("%s\n",error_text);
+  printf("...now exiting to system...\n");
+  exit(1);
+}
+
+double **dmatrix(int nrl, int nrh, int ncl, int nch)
+{
+  int i;
+  double **m;
+  
+  m=static_cast<double**>(malloc((nrh-nrl+1)*sizeof(double*)));
+  // if (!m) nrerror("allocation failure 1 in dmatrix()");
+  m -= nrl;
+  
+  for(i=nrl;i<=nrh;i++)
+  {
+    m[i]=static_cast<double*>(malloc((nch-ncl+1)*sizeof(double)));
+    // if (!m[i]) nrerror("allocation failure 2 in dmatrix()");
+    m[i] -= ncl;
+  }
+  return m;
+}
+
+void free_dmatrix(double **m, int nrl, int nrh, int ncl, int nch)
+{
+  int i;
+  
+  for(i=nrh;i>=nrl;i--) free((char*) (m[i]+ncl));
+  
+  free((char*) (m+nrl));
+}
+
+bool **bmatrix(int nrl, int nrh, int ncl, int nch)
+{
+  int i;
+  bool **m;
+  
+  m=static_cast<bool**>(malloc( (nrh-nrl+1)*sizeof(bool*)));
+  // if (!m) nrerror("allocation failure 1 in dmatrix()");
+  m -= nrl;
+  
+  for(i=nrl;i<=nrh;i++)
+  {
+    m[i]=static_cast<bool*>(malloc((nch-ncl+1)*sizeof(bool)));
+    // if (!m[i]) nrerror("allocation failure 2 in dmatrix()");
+    m[i] -= ncl;
+  }
+  return m;
+}
+void free_bmatrix(bool **m, int nrl, int nrh, int ncl, int nch)
+{
+  int i;
+  
+  for(i=nrh;i>=nrl;i--) free((bool*) (m[i]+ncl));
+  
+  free((bool*) (m+nrl));
+}
 
 int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
                       const gsl_matrix * L,
@@ -364,10 +423,11 @@ void mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
   
   double *** X1 = static_cast<double***>(malloc(Np*sizeof(double **)));
   for (int m=0;m<Np;m++){
-    X1[m] = dmatrix(0, n-1, 0, P[m]-1);
+    arma::mat Xm = Xarg[m]; // consider way to eliminate copy making
+    X1[m] = dmatrix(0, n-1, 0, P[m]-1); 
     for (int i=0; i<n; i++){
       for (int j=0;j<P[m];j++){
-        X1[m][i][j]= Xarg[m](i,j);
+        X1[m][i][j]= Xm(i,j);
       }
     }
   }
@@ -400,12 +460,39 @@ void mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
 
     for (int l=0;l<r;l++) {
       for (int j=0; j<P[m]; j++) {
-        Tau[m][l][j]=1;
-        if (IndVar[m]==2){
-          Tau[m][l][j]=100;
+        Tau[m][l][j]=1.0;
+        // if (IndVar[m]==2){
+        //   Tau[m][l][j]=100;
+        // }
+      }
+      
+      qv[m][l] = 0.5;
+      
+      double  uni=gsl_ran_flat (rr, 0, 1);
+      if (uni<0.5) {
+        rhoest[m][l]=1;
+        for (int j=0;j<P[m];j++){
+          if (gsl_ran_flat (rr, 0, 1)<qv[m][l]) {
+            Gam[m][j][l]=1;
+          } else {
+            Gam[m][j][l]=0;
+          }
+        }
+      } else {
+        rhoest[m][l]=0;
+        for (int j=0;j<P[m];j++) {
+          Gam[m][j][l]=0;
         }
       }
-      qv[m][l] = 0.5;
+      
+      if (IndVar[m]==1){//Response
+        Gam[m][0][l]=rhoest[m][l];
+      } else if (IndVar[m]==2){//Clinical factors
+        rhoest[m][l]=1;
+        for (int j=0;j<P[m];j++) {
+          Gam[m][j][l]=1; 
+        }
+      }
     }
     
     for (int j=0;j<P[m];j++) {
@@ -433,7 +520,9 @@ void mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
   }
 
   // Report
+  
 
+  // Free memory
 
 }
 
