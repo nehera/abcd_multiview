@@ -20,6 +20,10 @@ using namespace Rcpp;
 #include <RcppGSL.h>
 // [[Rcpp::depends(RcppGSL)]]
 
+#include <RcppArmadillo.h>
+// [[Rcpp::depends(RcppArmadillo)]]
+using namespace arma;
+
 int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
                       const gsl_matrix * L,
                       double * result,double *quadF,
@@ -156,7 +160,10 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
   
 }
 
-void SamplerhoGamma(gsl_rng * rr,int r, int n, int IndVar, int p, bool * rho,double ** Tau, double ** U,double ** X, double* q1,double q2,double* s2,double* quadForm,bool** Gam,double *loggauss){
+void SamplerhoGamma(gsl_rng * rr, int r, int n, int IndVar, int p, bool * rho, double ** Tau, 
+                    double ** U, double ** X, double* q1, double q2, 
+                    double* s2, double* quadForm, bool** Gam, 
+                    double *loggauss){
   int l,j;
   bool *rhonew=static_cast<bool*>(malloc(r*sizeof(bool)));
   bool Gamnew[p][r];
@@ -339,28 +346,90 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n, int IndVar, int p, bool * rho,dou
 }
 
 // [[Rcpp::export]]
-void mainfunction(int r, int n, ) {
+void mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
+                  arma::mat Uarg, Rcpp::List Xarg, int N) {
 
-  // Initialize parameters
-  int m=2;
-  int Np = 3; 
-  int P[Np];
-  P[m] = 10;
+  // Initialize
+  long seed=1;
+  gsl_rng * rr = gsl_rng_alloc (gsl_rng_rand48);
+  gsl_rng_set (rr, seed);
   
+  // U and X1 retyped from input
+  double ** U = dmatrix(0, n-1, 0, r-1);
+  for (int i=0; i<n; i++){
+    for (int l=0; l<r; l++){
+      U[i][l]= Uarg(i,l);
+    }
+  }
+  
+  double *** X1 = static_cast<double***>(malloc(Np*sizeof(double **)));
+  for (int m=0;m<Np;m++){
+    X1[m] = dmatrix(0, n-1, 0, P[m]-1);
+    for (int i=0; i<n; i++){
+      for (int j=0;j<P[m];j++){
+        X1[m][i][j]= Xarg[m](i,j);
+      }
+    }
+  }
+  
+  bool ** rhoest=static_cast<bool**>(malloc(Np*sizeof(bool*)));
+  bool *** Gam=static_cast<bool***>(malloc(Np*sizeof(bool**)));
+  
+  double ** s2=static_cast<double**>(malloc(Np*sizeof(double*)));
+  double *** Tau=static_cast<double***>(malloc(Np*sizeof(double**)));
+  
+  double ** quadForm=static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** loggauss=static_cast<double**>(malloc(Np*sizeof(double*)));
+  
+  double * q = static_cast<double*>(malloc(Np*sizeof(double)));
+  double ** qv = static_cast<double**>(malloc(Np*sizeof(double*)));
+  
+  for (int m=0; m<Np; m++) {
+    
+    rhoest[m]=static_cast<bool*>(malloc(r*sizeof(bool)));
+    Gam[m]=bmatrix(0,P[m]-1,0,r-1);
+    
+    s2[m]=static_cast<double*>(malloc(P[m]*sizeof(double)));
+    Tau[m]=dmatrix(0,r-1,0,P[m]-1);
+    
+    quadForm[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
+    loggauss[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
+    
+    q[m] = 0.5;
+    qv[m] = static_cast<double*>(malloc(r*sizeof(double)));
+
+    for (int l=0;l<r;l++) {
+      for (int j=0; j<P[m]; j++) {
+        Tau[m][l][j]=1;
+        if (IndVar[m]==2){
+          Tau[m][l][j]=100;
+        }
+      }
+      qv[m][l] = 0.5;
+    }
+    
+    for (int j=0;j<P[m];j++) {
+      s2[m][j] = 1.0; // fixed to 1 for now 
+      quadForm[m][j] = 0;
+      loggauss[m][j] = 0;
+    }
+  }
 
   // Sample
   for (int t=0; t<N; t++){
-
-      for (int j=0; j<p_m; j++){
-        logGausQuadForm(j, r, n, P[m], Tau[m], U, X1[m], s2[m][j], &quadForm[m][j],Gam[m][j], &loggauss[m][j]);
-        if (t==0){
-          loggauss[m][j]=-DBL_MAX;
+    
+    for (int m=0; m<Np; m++) {
+        for (int j=0; j<P[m]; j++){
+          logGausQuadForm(j, r, n, P[m], Tau[m], U, X1[m], s2[m][j], &quadForm[m][j], Gam[m][j], &loggauss[m][j]);
+          if (t==0){
+            loggauss[m][j]=-DBL_MAX;
+          }
         }
-      }
-
-      if (IndVar[m]!=2){
-        SamplerhoGamma(rr, r, n, IndVar[m], P[m],rhoest[m],Tau[m], U,X1[m],qv[m],q[m],s2[m],quadForm[m],Gam[m],loggauss[m]);
-      }
+  
+        if (IndVar[m]!=2){
+          SamplerhoGamma(rr, r, n, IndVar[m], P[m], rhoest[m], Tau[m], U, X1[m], qv[m], q[m], s2[m], quadForm[m], Gam[m], loggauss[m]);
+        }
+    }
   }
 
   // Report
