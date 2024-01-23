@@ -524,9 +524,9 @@ Rcpp::List mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
         }
   
         if (IndVar[m]!=2){
-          std::cout << "rhoest[" << m << "] = " << rhoest[m][0] << std::endl;
+          // std::cout << "rhoest[" << m << "] = " << rhoest[m][0] << std::endl;
           SamplerhoGamma(rr, r, n, IndVar[m], P[m], rhoest[m], Tau[m], U, X1[m], qv[m], q[m], s2[m], quadForm[m], Gam[m], loggauss[m]);
-          std::cout << "rhoest[" << m << "] = " << rhoest[m][0] << std::endl;
+          // std::cout << "rhoest[" << m << "] = " << rhoest[m][0] << std::endl;
         }
         
         arma::mat gamma_t = arma::zeros(r, Np);
@@ -566,6 +566,41 @@ data_list <- list(simulation_results$X_list[[1]],
 results <- mainfunction(r=4, n=200, IndVar = c(0,0,1), 
              P = sapply(data_list, ncol), Np = length(data_list),
              Uarg = simulation_results$U, Xarg = data_list, 
-             N = 10) # N samples
+             N = 2000) # N samples
+# Assuming results$gamma_chain is your original list
+N <- length(results$gamma_chain)     # Number of matrices in the list
+r <- nrow(results$gamma_chain[[1]])  # Number of rows in each matrix (assuming consistent size)
+Np <- ncol(results$gamma_chain[[1]]) # Number of columns in each matrix (assuming consistent size)
 
+# Initialize a new list to store reshaped matrices
+reshaped_list <- vector("list", Np)
+for (m in 1:Np) {
+  reshaped_list[[m]] <- matrix(nrow = r, ncol = N)
+}
+
+# Iterate over each matrix and reassign the elements
+for (t in 1:N) {
+  for (m in 1:Np) {
+    reshaped_list[[m]][, t] <- results$gamma_chain[[t]][, m]
+  }
+}
+
+# reshaped_list now contains the reshaped matrices
+# Define custom functions
+get_gamma_df <- function(gamma_chain) {
+  n_iterations <- ncol(gamma_chain)
+  gamma_df <- gamma_chain[, 1:n_iterations] %>%
+    apply(MARGIN = 1, FUN = cummean) %>%
+    as.data.frame() %>% mutate(iteration = 1:n_iterations) %>%
+    gather(key = "gamma", value = "MPP", -iteration) %>%
+    mutate(gamma = gamma %>% as.factor())
+  return(gamma_df)
+}
+
+# Start with m =1
+gamma_df <- get_gamma_df(reshaped_list[[3]])
+gamma_plot <- ggplot(gamma_df, aes(x = iteration, y = MPP, color = gamma)) +
+  geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "red") +
+  labs(x = "iteration", y = "MPP", title = "Trace plot for gamma")
+print(gamma_plot)
 */
