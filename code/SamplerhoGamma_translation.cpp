@@ -405,10 +405,20 @@ void SamplerhoGamma(gsl_rng * rr, int r, int n, int IndVar, int p, bool * rho, d
 }
 
 // [[Rcpp::export]]
-void mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
+Rcpp::List mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
                   arma::mat Uarg, Rcpp::List Xarg, int N) {
 
-  // Initialize
+  // Initialize output data structures
+  // arma::mat gamma_m = arma::zeros(r, N);
+  Rcpp::List gamma_chain(N);
+  Rcpp::List Eta_chain(N);
+  // for (int m=0;m<Np;m++) {
+  //   gamma_chain[m] = gamma_m;
+  //   arma::cube Eta_m(r, P[m], N, arma::fill::zeros);
+  //   Eta_chain[m] = Eta_m;
+  // }
+  
+  // Initialize RNG
   long seed=1;
   gsl_rng * rr = gsl_rng_alloc (gsl_rng_rand48);
   gsl_rng_set (rr, seed);
@@ -423,7 +433,7 @@ void mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
   
   double *** X1 = static_cast<double***>(malloc(Np*sizeof(double **)));
   for (int m=0;m<Np;m++){
-    arma::mat Xm = Xarg[m]; // consider way to eliminate copy making
+    arma::mat Xm = Xarg[m]; // TODO: consider way to eliminate copy making
     X1[m] = dmatrix(0, n-1, 0, P[m]-1); 
     for (int i=0; i<n; i++){
       for (int j=0;j<P[m];j++){
@@ -514,15 +524,32 @@ void mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
         }
   
         if (IndVar[m]!=2){
+          std::cout << "rhoest[" << m << "] = " << rhoest[m][0] << std::endl;
           SamplerhoGamma(rr, r, n, IndVar[m], P[m], rhoest[m], Tau[m], U, X1[m], qv[m], q[m], s2[m], quadForm[m], Gam[m], loggauss[m]);
+          std::cout << "rhoest[" << m << "] = " << rhoest[m][0] << std::endl;
         }
+        
+        arma::mat gamma_t = arma::zeros(r, Np);
+        arma::cube Eta_t(r, P[m], Np, arma::fill::zeros);
+        for (int l=0;l<r;l++) { // TODO: Rather than loops, reassign vector-wise
+          gamma_t(l,m) = rhoest[m][l];
+          for (int j=0;j<P[m];j++) {
+            Eta_t(l, j, m) = Gam[m][j][l];
+          }
+        }
+        gamma_chain[t] = gamma_t;
+        Eta_chain[t] = Eta_t;
+        
     }
   }
-
-  // Report
   
 
-  // Free memory
+  return Rcpp::List::create(
+    Rcpp::Named("gamma_chain") = gamma_chain,
+    Rcpp::Named("Eta_chain") = Eta_chain
+  );
+
+  // TODO: Free memory
 
 }
 
@@ -530,6 +557,15 @@ void mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
 
 
 /*** R
-
+source("00_simulate_simple_data.R")
+set.seed(1)
+simulation_results <- simulate_iid_data(prob_component_importance = 0.5)
+data_list <- list(simulation_results$X_list[[1]],
+                  simulation_results$X_list[[2]],
+                  simulation_results$Y)
+results <- mainfunction(r=4, n=200, IndVar = c(0,0,1), 
+             P = sapply(data_list, ncol), Np = length(data_list),
+             Uarg = simulation_results$U, Xarg = data_list, 
+             N = 10) # N samples
 
 */
