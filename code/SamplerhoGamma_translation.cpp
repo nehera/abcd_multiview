@@ -610,7 +610,7 @@ get_gamma_df <- function(gamma_chain_reshaped_m) {
 get_gamma_plt <- function(gamma_chain_reshaped_m) {
   gamma_df <- get_gamma_df(gamma_chain_reshaped_m)
   gamma_plt <- ggplot(gamma_df, aes(x = iteration, y = MPP, color = gamma)) +
-    geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "red") +
+    geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "black") +
     labs(x = "iteration", y = "MPP", title = "Trace plot for gamma")
   return(gamma_plt)
 }
@@ -619,4 +619,79 @@ gamma_plt_list <- lapply(reshaped_list, get_gamma_plt)
 
 grid.arrange(grobs = gamma_plt_list, ncol = 3)
 
+# Analyze feature selection
+# Assuming primary_list is your original list, P is your vector
+primary_list <- results$Eta_chain
+N <- length(primary_list)  # Length of the primary list
+Np <- length(primary_list[[1]])  # Length of each secondary list (assuming consistent size)
+
+# Initialize the final list of arrays
+final_list <- vector("list", Np)
+
+# Iterate over each secondary list index
+for (m in 1:Np) {
+  # Determine the dimensions for the current array
+  r <- nrow(primary_list[[1]][[m]])  # Number of rows (assuming consistent size within each secondary list)
+  Pm <- P[m]  # The specific value from vector P
+  
+  # Initialize the array for this secondary list index
+  final_list[[m]] <- array(dim = c(r, Pm, N))
+  
+  # Fill the array with data from the primary list
+  for (t in 1:N) {
+    final_list[[m]][, , t] <- primary_list[[t]][[m]]
+  }
+}
+
+# final_list now contains the reshaped data
+
+active_component_index <- 1:2
+active_index_m <- 1:5
+active_features <- paste0("V", active_index_m)
+
+list_of_plts <- vector("list", r*Np)
+
+k <- 1
+for (m in 1:Np) {
+
+  your_array <- final_list[[m]] %>% 
+    apply(MARGIN = c(1,2), FUN = cummean)
+  
+  # Assuming your array is called 'your_array'
+  N <- dim(your_array)[1]
+  r <- dim(your_array)[2]
+  Pm <- dim(your_array)[3]
+  
+  # Create a list to store the data frames
+  list_of_dfs <- vector("list", r)
+  
+  # Iterate over each r to create a data frame
+  for (l in 1:r) {
+    # Convert the array slice to a matrix and then to a data frame
+    slice_matrix <- your_array[, l, ]
+    df <- as.data.frame(slice_matrix)
+    
+    # Add a column for the N index
+    df$iteration <- rep(1:N)
+    
+    # Gather the P[m] columns into key-value pairs
+    df_long <- df %>%
+      gather(key = "feature", value = "MPP", -iteration) 
+    
+    if (l %in% active_component_index) {
+      df_long <- df_long %>% mutate(active = ifelse(feature %in% active_features, TRUE, FALSE))
+    } else {
+      df_long <- df_long %>% mutate(active = FALSE)
+    }
+    
+    list_of_plts[[k]] <- ggplot(df_long, aes(x = iteration, y = MPP, color = active, linetype = feature)) +
+      geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "black") +
+      labs(x = "iteration", y = "MPP")
+    
+    k <- k + 1
+  }
+}
+
+
+grid.arrange(grobs = list_of_plts, nrow = Np, ncol = r)
 */
