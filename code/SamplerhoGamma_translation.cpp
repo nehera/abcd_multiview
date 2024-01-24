@@ -515,7 +515,13 @@ Rcpp::List mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
   // Sample
   for (int t=0; t<N; t++){
     
-    for (int m=0; m<Np; m++) {
+    arma::mat gamma_t = arma::zeros(r, Np);
+    Rcpp::List Eta_t(Np);
+    
+    for (int m=0; m<Np; m++) { 
+      
+      arma::mat Eta_tm = arma::zeros(r, P[m]);
+      
         for (int j=0; j<P[m]; j++){
           logGausQuadForm(j, r, n, P[m], Tau[m], U, X1[m], s2[m][j], &quadForm[m][j], Gam[m][j], &loggauss[m][j]);
           if (t==0){
@@ -529,18 +535,21 @@ Rcpp::List mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
           // std::cout << "rhoest[" << m << "] = " << rhoest[m][0] << std::endl;
         }
         
-        arma::mat gamma_t = arma::zeros(r, Np);
-        arma::cube Eta_t(r, P[m], Np, arma::fill::zeros);
+
+
         for (int l=0;l<r;l++) { // TODO: Rather than loops, reassign vector-wise
           gamma_t(l,m) = rhoest[m][l];
           for (int j=0;j<P[m];j++) {
-            Eta_t(l, j, m) = Gam[m][j][l];
+            Eta_tm(l, j) = Gam[m][j][l];
           }
         }
-        gamma_chain[t] = gamma_t;
-        Eta_chain[t] = Eta_t;
         
+        Eta_t[m] = Eta_tm;
+
     }
+    
+    gamma_chain[t] = gamma_t;
+    Eta_chain[t] = Eta_t;
   }
   
 
@@ -557,6 +566,8 @@ Rcpp::List mainfunction(int r, int n, arma::vec IndVar, arma::vec P, int Np,
 
 
 /*** R
+library(tidyverse)
+library(gridExtra)
 source("00_simulate_simple_data.R")
 set.seed(1)
 simulation_results <- simulate_iid_data(prob_component_importance = 0.5)
@@ -586,10 +597,9 @@ for (t in 1:N) {
 }
 
 # reshaped_list now contains the reshaped matrices
-# Define custom functions
-get_gamma_df <- function(gamma_chain) {
-  n_iterations <- ncol(gamma_chain)
-  gamma_df <- gamma_chain[, 1:n_iterations] %>%
+get_gamma_df <- function(gamma_chain_reshaped_m) {
+  n_iterations <- ncol(gamma_chain_reshaped_m)
+  gamma_df <- gamma_chain_reshaped_m[, 1:n_iterations] %>%
     apply(MARGIN = 1, FUN = cummean) %>%
     as.data.frame() %>% mutate(iteration = 1:n_iterations) %>%
     gather(key = "gamma", value = "MPP", -iteration) %>%
@@ -597,10 +607,16 @@ get_gamma_df <- function(gamma_chain) {
   return(gamma_df)
 }
 
-# Start with m =1
-gamma_df <- get_gamma_df(reshaped_list[[3]])
-gamma_plot <- ggplot(gamma_df, aes(x = iteration, y = MPP, color = gamma)) +
-  geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "red") +
-  labs(x = "iteration", y = "MPP", title = "Trace plot for gamma")
-print(gamma_plot)
+get_gamma_plt <- function(gamma_chain_reshaped_m) {
+  gamma_df <- get_gamma_df(gamma_chain_reshaped_m)
+  gamma_plt <- ggplot(gamma_df, aes(x = iteration, y = MPP, color = gamma)) +
+    geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "red") +
+    labs(x = "iteration", y = "MPP", title = "Trace plot for gamma")
+  return(gamma_plt)
+}
+
+gamma_plt_list <- lapply(reshaped_list, get_gamma_plt)
+
+grid.arrange(grobs = gamma_plt_list, ncol = 3)
+
 */

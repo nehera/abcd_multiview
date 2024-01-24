@@ -5,9 +5,10 @@ data/*
 .Rhistory
 .Rapp.history
 
+
 # Session Data files
 .RData
-.RDataTmp
+.RDataTmp*
 
 # User-specific files
 .Ruserdata
