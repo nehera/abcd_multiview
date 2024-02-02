@@ -50,10 +50,55 @@ double calculate_log_dmvnorm_j(vec x_j, vec mu, mat U, vec eta_j, vec tau2_j, do
   if (n_active_components > 0) {
     uvec active_components = get_indices_of_ones(eta_j);
     
+    //mat D(n_active_components, n_active_components, fill::value(0));
+    U = U.cols(active_components);
+    // Get the dimensions of U_active
+    int numRows = U.n_rows;
+    int numCols = U.n_cols;
+    // Create a new matrix D of the same size
+    arma::mat D(numCols, numCols, arma::fill::zeros);
+    //D.diag() = tau2_j.elem(active_components);
+
+    // Assign selected elements from tau2_j to the diagonal of D
+    for (int i = 0; i < numCols; ++i) {
+      D(i, i) = tau2_j(active_components(i));
+    }
+    
+    //Sigma_det = pow(sigma2_j, n_obs)*det(inv(D) + U.t()*U)*det(D);
+    
+    //mat Sigma_j = U*D*U.t() + eye(n_obs, n_obs);
+    //Sigma_det = pow(sigma2_j, n_obs)*det(Sigma_j);
+    
+    Sigma_inv = (1.0/sigma2_j)*get_woodbury_inv(U, D);
+    Sigma_det = pow(sigma2_j, n_obs)/ det(Sigma_inv);
+    
+  } else {
+    // Sigma2_j = I, an n-by-n identity matrix
+    Sigma_det = pow(sigma2_j, n_obs);
+    Sigma_inv = (1.0/sigma2_j)*eye(n_obs, n_obs);
+  }
+  
+  std::cout << "Sigma_det: " << Sigma_det << endl;
+  
+  double log_dens = -0.5*n_obs*log(2*datum::pi) - 0.5*log(Sigma_det) - 0.5*as_scalar(trans(x_j-mu)*Sigma_inv*(x_j-mu));
+  
+  return log_dens;
+}
+
+// calculate_quad_form_and_log_dmvnorm_j returns a vec 
+// 0th index: quadratic form t(x_j)*Sigma_j_inv*x_j
+// 1st index: log_dmvnorm_j
+
+// [[Rcpp::export]]
+vec calculate_quad_form_and_log_dmvnorm_j(vec x_j, vec mu, mat U, vec eta_j, vec tau2_j, double sigma2_j, int n_obs) {
+  int n_active_components = sum(eta_j);
+  double Sigma_det = 0;
+  mat Sigma_inv(n_obs, n_obs, fill::value(datum::nan));
+  if (n_active_components > 0) {
+    uvec active_components = get_indices_of_ones(eta_j);
     mat D(n_active_components, n_active_components, fill::value(0));
     D.diag() = tau2_j.elem(active_components);
     U = U.cols(active_components);
-    
     Sigma_det = pow(sigma2_j, n_obs)*det(inv(D) + U.t()*U)*det(D);
     Sigma_inv = (1.0/sigma2_j)*get_woodbury_inv(U, D);
   } else {
@@ -61,10 +106,10 @@ double calculate_log_dmvnorm_j(vec x_j, vec mu, mat U, vec eta_j, vec tau2_j, do
     Sigma_det = pow(sigma2_j, n_obs);
     Sigma_inv = (1.0/sigma2_j)*eye(n_obs, n_obs);
   }
-  
-  double log_dens = -0.5*n_obs*log(2*datum::pi) - 0.5*log(Sigma_det) - 0.5*as_scalar(trans(x_j-mu)*Sigma_inv*(x_j-mu));
-  
-  return log_dens;
+  double quad_form = as_scalar(trans(x_j-mu)*Sigma_inv*(x_j-mu)); 
+  double log_dens = -0.5*n_obs*log(2*datum::pi) - 0.5*log(Sigma_det) - 0.5*quad_form;
+  vec quad_form_and_log_dmvnorm_j = join_cols(vec{quad_form}, vec{log_dens});
+  return quad_form_and_log_dmvnorm_j;
 }
 
 // [[Rcpp::export]]
@@ -153,6 +198,51 @@ double log_target_density_l(int l, vec mu, vec gamma, mat Eta, vec sigma2, mat T
   double log_target_density_l = gamma(l)*log(prob_component_selection) + 
     (1-gamma(l))*log(1-prob_component_selection) + sum_log_target_density_lj;
   return log_target_density_l;
+}
+
+// [[Rcpp::export]]
+double diff_target_density_l(int l, vec mu, 
+                             vec gamma_prime, mat Eta_prime, 
+                             vec gamma, mat Eta, 
+                             vec sigma2, mat Tau, mat U, int n_obs, int p_m, 
+                             mat X, double prob_component_selection, 
+                             double prob_feature_selection) {
+  
+  double diff_log_prob_component = log(1-prob_component_selection)-log(prob_component_selection);
+  if (gamma_prime(l)==1) {
+    double diff_log_prob_component = -diff_log_prob_component;
+  }
+  
+  // std::cout << "diff_log_prob_component: " << diff_log_prob_component << std::endl;
+  
+  double diff_log_dmvnorm = 0;
+  
+  int n_active = 0;
+  
+  for (int j=0; j<p_m; j++) {
+    double log_dmvnorm_prime_j = calculate_log_dmvnorm_j(X.col(j), mu, U, Eta_prime.col(j), Tau.col(j), sigma2(j), n_obs);
+    double log_dmvnorm_j = calculate_log_dmvnorm_j(X.col(j), mu, U, Eta.col(j), Tau.col(j), sigma2(j), n_obs);
+    diff_log_dmvnorm = diff_log_dmvnorm + log_dmvnorm_prime_j - log_dmvnorm_j;
+    if (gamma_prime(l)==0) {
+      n_active = n_active + Eta.col(j)[l];
+    } else {
+      n_active = n_active + Eta_prime.col(j)[l];
+    }
+  }
+  
+  // std::cout << "diff_log_dmvnorm: " << diff_log_dmvnorm << std::endl;
+  // std::cout << "n_active: " << n_active << std::endl;
+  
+  double diff_log_prob_feature = -log(prob_feature_selection)*n_active -log(1-prob_feature_selection)*(p_m-n_active);
+  
+  if (gamma_prime(l)==1) {
+    diff_log_prob_feature = -diff_log_prob_feature;
+    }
+  
+  // std::cout << "diff_log_prob_feature: " << diff_log_prob_feature << std::endl;
+  
+  double diff_log_target_density_l = diff_log_prob_component + diff_log_dmvnorm + diff_log_prob_feature;
+  return diff_log_target_density_l;
 }
 
 // [[Rcpp::export]]
@@ -466,16 +556,35 @@ void main_sample_gamma_Eta(int iter, int n_burnin,
     // double log_target = 1.6931472;
     // double log_proposal_backward = 1.0;
     // double log_proposal_forward = 1.0;
-    double log_target_new = log_target_density_l(l, mu, gamma_new, Eta_new, sigma2, Tau, U, 
-                                                 n_obs, p_m, X, prob_component_selection, prob_feature_selection);
-    double log_target = log_target_density_l(l, mu, gamma_new, Eta_new, sigma2, Tau, U, 
-                                             n_obs, p_m, X, prob_component_selection, prob_feature_selection);
-    // double log_proposal_backward = log_proposal_l_density(l, mu, gamma, Eta, gamma_new, Eta_new, sigma2, Tau, U, 
-    //                                                       n_obs, p_m, X, prob_feature_selection);
+    // double log_target_new = log_target_density_l(l, mu, gamma_new, Eta_new, sigma2, Tau, U, 
+    //                                              n_obs, p_m, X, prob_component_selection, prob_feature_selection);
+    // 
+    // std::cout << "log_target_new: " << log_target_new << std::endl;
+    // 
+    // double log_target = log_target_density_l(l, mu, gamma, Eta, sigma2, Tau, U, 
+    //                                          n_obs, p_m, X, prob_component_selection, prob_feature_selection);
+    // 
+    // std::cout << "log_target: " << log_target << std::endl;
+    // 
+    // std::cout << "diff_log_target_0: " << log_target_new - log_target << std::endl;
+    
+    double diff_log_target = diff_target_density_l(l, mu, gamma_new, Eta_new, 
+                                                   gamma, Eta, 
+                                                   sigma2, Tau, U, n_obs, p_m, 
+                                                   X, prob_component_selection, 
+                                                   prob_feature_selection);
+    
+    std::cout << "diff_log_target: " << diff_log_target << std::endl;
+
     double diff_log_proposal = diff_log_proposal_l(l, mu, gamma_new, Eta_new, gamma, Eta, sigma2, Tau, U, 
                                                    n_obs, p_m, X, prob_feature_selection);
     
-    double log_acceptance_ratio = log_target_new - log_target + diff_log_proposal;
+    std::cout << "diff_log_proposal: " << diff_log_proposal << std::endl;
+    
+    //double log_acceptance_ratio = log_target_new - log_target + diff_log_proposal;
+    double log_acceptance_ratio = diff_log_target + diff_log_proposal;
+    
+    std::cout << "log_acceptance_ratio: " << log_acceptance_ratio << std::endl;
     
     // Accept/ reject proposed gamma and eta
     double random_u = arma::randu();
@@ -568,8 +677,8 @@ Rcpp::List BIP(int n_iterations, int n_burnin, int r, int n_obs, int p_m,
   mat sigma2_chain = arma::zeros(p_m, n_iterations);
   arma::cube U_chain(n_obs, r, n_iterations, arma::fill::zeros);
   
-  int a_0 = 1;
-  int b_0 = 1;
+  //int a_0 = 1;
+  //int b_0 = 1;
   
   //List sigma2_views = List::create();
   //List Tau_views = List::create();
@@ -584,7 +693,7 @@ Rcpp::List BIP(int n_iterations, int n_burnin, int r, int n_obs, int p_m,
     // }
     
     //Tau = Tau_views[1];
-    main_sample_gamma_Eta(iter, n_burnin = n_burnin,
+    main_sample_gamma_Eta(iter, n_burnin,
                           r=4, n_obs, p_m,
                           prob_component_selection,
                           prob_feature_selection,
@@ -601,7 +710,7 @@ Rcpp::List BIP(int n_iterations, int n_burnin, int r, int n_obs, int p_m,
     //sigma2 = sample_sigma2(a_0, b_0, X, U, Tau, Eta, n_obs, p_m);
     sigma2_chain.col(iter) = sigma2;
     
-    U = sample_U(n_obs, p, r, X_combined, A_combined, sigma2_combined, U);
+    //U = sample_U(n_obs, p, r, X_combined, A_combined, sigma2_combined, U);
     U_chain.slice(iter) = U;
   }
   
@@ -749,9 +858,9 @@ trace_plot <- function(df, parameter, prob_component_selection, prob_feature_sel
 ############################################
 
 # Generating data
-source("simulate_simple_data.R")
+source("00_simulate_simple_data.R")
 job <- 1
-simulation_results <- simulate_iid_data(seed=job)
+simulation_results <- simulate_iid_data()
 
 attach(simulation_results)
 M <- length(X_list)
@@ -806,7 +915,7 @@ for(m in 1:(M+1)) {
   p_m <- P[m]
   # sigma2_j < 0.0245 causes issues
   sigma2_views[[m]] <- rep(1, p_m)
-  Tau_views[[m]] <- matrix(rep(0.1, r*p_m), nrow = r, ncol = p_m)
+  Tau_views[[m]] <- matrix(rep(1, r*p_m), nrow = r, ncol = p_m)
 }
 
 sigma2_combined <- unlist(sigma2_views)
@@ -845,29 +954,29 @@ if (gamma_new[l] == 0) {
 
 #which(round(Var_j, 6) != round(Var_j_R, 6))
 
-calculate_log_dmvnorm_j(X[,j], mu, U, Eta[,j], Tau[,j], sigma2[j], n_obs)
-calculate_log_dmvnorm_j_R(Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j])
-
-calculate_log_G_j(mu, gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j], 
-                  prob_feature_selection)
-calculate_log_G_j_R(gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j], prob_feature_selection)
-
-calculate_log_PQ_lj(reindex_r_cpp(l), mu,  gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, 
-                    X[,j], prob_feature_selection)
-calculate_log_PQ_lj_R(l, gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j], prob_feature_selection)
-
-calculate_eta_lj_threshold(reindex_r_cpp(l), mu,  gamma, Eta[,j], sigma2[j], Tau[,j], U, 
-                           n_obs, X[,j], prob_feature_selection)
-calculate_eta_lj_threshold_R(l, gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j], prob_feature_selection)
-
-log_target_density_l(reindex_r_cpp(l), mu, gamma, Eta, sigma2, Tau, U, n_obs, p_m, 
-                     X, prob_component_selection, prob_feature_selection)
-log_target_density_l_R(l, gamma, Eta, sigma2, Tau, U, n_obs, p_m, 
-                       X, prob_component_selection, prob_feature_selection)
-
-log_proposal_l_density(reindex_r_cpp(l), mu, gamma_new, Eta_new, gamma, Eta, sigma2, Tau, 
-                       U, n_obs, p_m, X, prob_feature_selection)
-log_proposal_l_density_R(l, gamma_new, Eta_new, gamma, eta, sigma2, Tau, U, n_obs, p_m, X, prob_feature_selection)
+# calculate_log_dmvnorm_j(X[,j], mu, U, Eta[,j], Tau[,j], sigma2[j], n_obs)
+# calculate_log_dmvnorm_j_R(Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j])
+# 
+# calculate_log_G_j(mu, gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j], 
+#                   prob_feature_selection)
+# calculate_log_G_j_R(gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j], prob_feature_selection)
+# 
+# calculate_log_PQ_lj(reindex_r_cpp(l), mu,  gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, 
+#                     X[,j], prob_feature_selection)
+# calculate_log_PQ_lj_R(l, gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j], prob_feature_selection)
+# 
+# calculate_eta_lj_threshold(reindex_r_cpp(l), mu,  gamma, Eta[,j], sigma2[j], Tau[,j], U, 
+#                            n_obs, X[,j], prob_feature_selection)
+# calculate_eta_lj_threshold_R(l, gamma, Eta[,j], sigma2[j], Tau[,j], U, n_obs, X[,j], prob_feature_selection)
+# 
+# log_target_density_l(reindex_r_cpp(l), mu, gamma, Eta, sigma2, Tau, U, n_obs, p_m, 
+#                      X, prob_component_selection, prob_feature_selection)
+# log_target_density_l_R(l, gamma, Eta, sigma2, Tau, U, n_obs, p_m, 
+#                        X, prob_component_selection, prob_feature_selection)
+# 
+# log_proposal_l_density(reindex_r_cpp(l), mu, gamma_new, Eta_new, gamma, Eta, sigma2, Tau, 
+#                        U, n_obs, p_m, X, prob_feature_selection)
+# log_proposal_l_density_R(l, gamma_new, Eta_new, gamma, eta, sigma2, Tau, U, n_obs, p_m, X, prob_feature_selection)
 
 ##################################################################
 
