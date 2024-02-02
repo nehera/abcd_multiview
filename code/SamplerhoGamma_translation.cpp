@@ -582,6 +582,7 @@ results <- mainfunction(r=4, n=200, IndVar = c(0,0,1),
 N <- length(results$gamma_chain)     # Number of matrices in the list
 r <- nrow(results$gamma_chain[[1]])  # Number of rows in each matrix (assuming consistent size)
 Np <- ncol(results$gamma_chain[[1]]) # Number of columns in each matrix (assuming consistent size)
+P <- sapply(data_list, ncol) # Number of features in each view
 
 # Initialize a new list to store reshaped matrices
 reshaped_list <- vector("list", Np)
