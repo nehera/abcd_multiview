@@ -123,7 +123,7 @@ int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
   
 }
 
-void findc(int n,bool R[n],int a,int * IDX, int *nx)
+void findc(int n, bool *R,int a,int * IDX, int *nx)
 {
   int ii_data[n];
   int idx = 0;
@@ -685,6 +685,7 @@ for (m in 1:Np) {
       df_long <- df_long %>% mutate(active = FALSE)
     }
     
+    gc() # https://community.rstudio.com/t/reached-elapsed-time-limit-warnings-rstudio/36647/4
     list_of_plts[[k]] <- ggplot(df_long, aes(x = iteration, y = MPP, color = active, linetype = feature)) +
       geom_line() + geom_vline(xintercept = n_burnin, linetype = "dashed", color = "black") +
       labs(x = "iteration", y = "MPP")
