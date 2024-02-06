@@ -24,7 +24,7 @@
 			       me+=x[i];
 		     return me/n;
 		      }
-_Bool compar(int n,_Bool *u,_Bool *v){
+bool compar(int n,bool *u,bool *v){
 	   int i;
 	      for (i=0;i<n;i++){
 		           if (u[i]!=v[i])
@@ -33,14 +33,14 @@ _Bool compar(int n,_Bool *u,_Bool *v){
 	         return 1;
 		  }
 
- _Bool **  UniqueModel(int nbrsample, int p, _Bool ** rhosample,int * modelidx,int *countd1){
+ bool **  UniqueModel(int nbrsample, int p, bool ** rhosample,int * modelidx,int *countd1){
 
 	 int i;int j=0;
 	    int countd=0;
 	       modelidx[countd]=0;
 	          for (i=0;i<nbrsample;i++){
 			       for (j=0;j<countd;j++){
-				            _Bool resultX =compar(p,rhosample[i], rhosample[modelidx[j]]);
+				            bool resultX =compar(p,rhosample[i], rhosample[modelidx[j]]);
 					           if (resultX==1)
 							                break;
 						        }
@@ -52,9 +52,9 @@ _Bool compar(int n,_Bool *u,_Bool *v){
 		     *countd1=countd;
 
 
-		        _Bool ** UniqModel=malloc(countd*sizeof(_Bool*));
+		        bool ** UniqModel=malloc(countd*sizeof(bool*));
 			   for (i=0;i<countd;i++){
-				        UniqModel[i]=malloc(p*sizeof(_Bool));
+				        UniqModel[i]=malloc(p*sizeof(bool));
 					     for (j=0;j<p;j++){
 						            UniqModel[i][j]=rhosample[modelidx[i]][j];
 							         }
@@ -252,7 +252,7 @@ double test=gsl_ran_flat (r, 0, 1);    // sample from a uniform distribution bet
         else
                return (mu*mu)/x;
 }
-void readBoolVector(char *filename, int nRows,  _Bool * data )
+void readBoolVector(char *filename, int nRows,  bool * data )
 {
 
    FILE *fp = fopen (filename, "r");
@@ -267,7 +267,7 @@ void readBoolVector(char *filename, int nRows,  _Bool * data )
       {
 int x;
           fscanf(fp, "%d" , &x );
-_Bool bb=(x!=0);
+bool bb=(x!=0);
 data[iR]=bb;
                       }
 
@@ -303,7 +303,7 @@ for (i = 0; i < n; ++i)
 
 
 
-double auc(int n, double * esti,_Bool class[n]){
+double auc(int n, double * esti,bool class[n]){
 double fpr[n+2],tpr[n+2];
 double auc1=0;
 int P=0;//P=positive instances
@@ -340,7 +340,7 @@ return auc1;
 
 
 
-void readBoolArray(char *filename, int nRows, int nCols, _Bool ** data )
+void readBoolArray(char *filename, int nRows, int nCols, bool ** data )
 {
 
    FILE *fp = fopen (filename, "r");
@@ -357,7 +357,7 @@ void readBoolArray(char *filename, int nRows, int nCols, _Bool ** data )
          {
 int x;
           fscanf(fp, "%d" , &x );
-_Bool bb=(x!=0);
+bool bb=(x!=0);
 data[iR][iC]=bb;
                      }
                       }
@@ -422,13 +422,13 @@ void free_dmatrix(double **m, int nrl, int nrh, int ncl, int nch)
 
         free((char*) (m+nrl));
 }
-void findc(int n,_Bool R[n],int a,int * IDX, int *nx)
+void findc(int n,bool R[n],int a,int * IDX, int *nx)
 {
 int ii_data[n];
 int idx = 0;
 int  ii = 0;
-_Bool  exitg2 = 0;
-_Bool guard2=0;
+bool  exitg2 = 0;
+bool guard2=0;
   while ((exitg2 == 0) && (ii < n)) {
     guard2 = 0;
     if (R[ii]!= a) {
@@ -456,29 +456,29 @@ int loop_ub=idx;
 
 }
 
-_Bool **bmatrix(int nrl, int nrh, int ncl, int nch)
+bool **bmatrix(int nrl, int nrh, int ncl, int nch)
 {
         int i;
-        _Bool **m;
+        bool **m;
 
-        m=(_Bool **) malloc( (nrh-nrl+1)*sizeof(_Bool*));
+        m=(bool **) malloc( (nrh-nrl+1)*sizeof(bool*));
         if (!m) nrerror("allocation failure 1 in dmatrix()");
         m -= nrl;
 
         for(i=nrl;i<=nrh;i++)
    {
-                m[i]=(_Bool *) malloc((nch-ncl+1)*sizeof(_Bool));
+                m[i]=(bool *) malloc((nch-ncl+1)*sizeof(bool));
                 if (!m[i]) nrerror("allocation failure 2 in dmatrix()");
                 m[i] -= ncl;
         }
         return m;
 }
-void free_bmatrix(_Bool **m, int nrl, int nrh, int ncl, int nch)
+void free_bmatrix(bool **m, int nrl, int nrh, int ncl, int nch)
 {
         int i;
 
-        for(i=nrh;i>=nrl;i--) free((_Bool*) (m[i]+ncl));
+        for(i=nrh;i>=nrl;i--) free((bool*) (m[i]+ncl));
 
-        free((_Bool*) (m+nrl));
+        free((bool*) (m+nrl));
 }
 

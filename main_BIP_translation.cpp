@@ -14,7 +14,9 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_math.h>
 #include <time.h>
-#include "header.h"
+
+#include "code/header.h"
+#include "code/utils.h"
 
 #include <RcppArmadillo.h>
 // [[Rcpp::depends(RcppArmadillo)]]
@@ -23,10 +25,6 @@ using namespace Rcpp;
 
 #include <RcppGSL.h>
 // [[Rcpp::depends(RcppGSL)]]
-
-////// Utils //////
-
-////// Sampling subroutines //////
 
 ////// Main BIP function //////
 void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets,int * IndVar,int *K,int * Paths,int* maxmodel1, int *nbrsample1,int *burninsample1,double *CompoSelMean,double *VarSelMean,double * VarSelMeanGlobal,double * GrpSelMean,double *GrpEffectMean,double * IntGrpMean,double * EstU, double * EstSig2,double *InterceptMean,double *EstLoadMod,double *EstLoad,int *nbrmodel1,double *postgam,double* priorcompsel,double * priorcompselo,double* priorb0,double* priorb,double *priorgrpsel,double *probvarsel){
@@ -80,8 +78,8 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
    else printf("Number of groups for outcome is 1");
    }
    */
-  _Bool *** Path=malloc(Np*sizeof(_Bool **));
-  int m1=0; //_Bool pp=0;
+  bool *** Path=malloc(Np*sizeof(bool **));
+  int m1=0; //bool pp=0;
   int kk=0;
   for (m=0;m<Np;m++){
     Path[m]=bmatrix(0,P[m]-1,0,K[m]-1);
@@ -153,12 +151,12 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   double alpha=1;
   
   //Initialization
-  _Bool ** rhoest=malloc(Np*sizeof(_Bool*));
+  bool ** rhoest=malloc(Np*sizeof(bool*));
   double ** rhomean=malloc(Np*sizeof(double*));
   double ** Gamvs=malloc(Np*sizeof(double*));
-  //_Bool ** GamvsK=malloc(Np*sizeof(_Bool*));
-  _Bool *** R=malloc(Np*sizeof(_Bool**));
-  _Bool *** Gam=malloc(Np*sizeof(_Bool**));
+  //bool ** GamvsK=malloc(Np*sizeof(bool*));
+  bool *** R=malloc(Np*sizeof(bool**));
+  bool *** Gam=malloc(Np*sizeof(bool**));
   double *** Gammean=malloc(Np*sizeof(double**));
   double *** AcceptR=malloc(Np*sizeof(double**));
   double *** Bmean=malloc(Np*sizeof(double**));
@@ -178,10 +176,10 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   
   for (m=0;m<Np;m++){
     Gamvs[m]=malloc(P[m]*sizeof(double));
-    //GamvsK[m]=malloc(P[m]*sizeof(_Bool));
+    //GamvsK[m]=malloc(P[m]*sizeof(bool));
     Gam[m]=bmatrix(0,P[m]-1,0,r-1);
     Gammean[m]=dmatrix(0,P[m]-1,0,r-1);
-    rhoest[m]=malloc(r*sizeof(_Bool));
+    rhoest[m]=malloc(r*sizeof(bool));
     rhomean[m]=malloc(r*sizeof(double));
     R[m]=bmatrix(0,r-1,0,K[m]-1);
     AcceptR[m]=dmatrix(0,r-1,0,K[m]-1);
@@ -286,9 +284,9 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   int t;
   int N=nbrsample+burninsample;
   double intercp;
-  _Bool ** rhomodel=malloc(nbrsample*sizeof(_Bool*));
+  bool ** rhomodel=malloc(nbrsample*sizeof(bool*));
   for (t=0;t<nbrsample;t++){
-    rhomodel[t]=malloc(dim*sizeof(_Bool));
+    rhomodel[t]=malloc(dim*sizeof(bool));
   }
   
   //double AUC=0;
@@ -561,7 +559,7 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   }
   
   int countmodel=0;int *modelidx=malloc(nbrsample*sizeof(double));
-  _Bool **UniqModel=  UniqueModel(nbrsample, dim, rhomodel,modelidx,&countmodel);
+  bool **UniqModel=  UniqueModel(nbrsample, dim, rhomodel,modelidx,&countmodel);
   free_bmatrix(rhomodel,0,nbrsample-1,0,dim-1);
   double * logpo=malloc(countmodel*sizeof(double));
   for (t=0;t<countmodel;t++){
