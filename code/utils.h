@@ -52,9 +52,9 @@ bool compar(int n,bool *u,bool *v){
 		     *countd1=countd;
 
 
-		        bool ** UniqModel=malloc(countd*sizeof(bool*));
+		        bool ** UniqModel= static_cast<bool**>(malloc(countd*sizeof(bool*)));
 			   for (i=0;i<countd;i++){
-				        UniqModel[i]=malloc(p*sizeof(bool));
+				        UniqModel[i]= static_cast<bool*>(malloc(p*sizeof(bool)));
 					     for (j=0;j<p;j++){
 						            UniqModel[i][j]=rhosample[modelidx[i]][j];
 							         }
@@ -133,7 +133,7 @@ int multivariate_gaussian (const gsl_rng * r,
         gsl_vector_set(result, i, gsl_ran_ugaussian(r));
 
 gsl_blas_dtrsv(CblasLower, CblasTrans, CblasNonUnit, L, result);     
- //gsl_blas_dtrmv(CblasLower, CblasNoTrans, CblasNonUnit, L, result);
+
       gsl_vector_add(result, mu);
 
       return GSL_SUCCESS;
@@ -158,10 +158,9 @@ int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
       for (i = 0; i < M; ++i)
         {
           double xi = gsl_vector_get(y, i);
-          //double mui = gsl_vector_get(mu, i);
+
           gsl_vector_set(work, i, xi);
         }
-
 
       /* compute: work = L^{-1} * (x - mu) */
       gsl_blas_dtrsv(CblasLower, CblasNoTrans, CblasNonUnit, L, work);
@@ -394,13 +393,13 @@ double **dmatrix(int nrl, int nrh, int ncl, int nch)
         int i;
         double **m;
 
-        m=(double **) malloc((unsigned) (nrh-nrl+1)*sizeof(double*));
+        m=(double **) static_cast<double**>(malloc((unsigned) (nrh-nrl+1)*sizeof(double*)));
         if (!m) nrerror("allocation failure 1 in dmatrix()");
         m -= nrl;
 
         for(i=nrl;i<=nrh;i++)
    {
-                m[i]=(double *) malloc((unsigned) (nch-ncl+1)*sizeof(double));
+                m[i]=(double *) static_cast<double*>(malloc((unsigned) (nch-ncl+1)*sizeof(double)));
                 if (!m[i]) nrerror("allocation failure 2 in dmatrix()");
                 m[i] -= ncl;
         }
@@ -422,7 +421,7 @@ void free_dmatrix(double **m, int nrl, int nrh, int ncl, int nch)
 
         free((char*) (m+nrl));
 }
-void findc(int n,bool R[n],int a,int * IDX, int *nx)
+void findc(int n, bool *R,int a,int * IDX, int *nx)
 {
 int ii_data[n];
 int idx = 0;
@@ -461,13 +460,13 @@ bool **bmatrix(int nrl, int nrh, int ncl, int nch)
         int i;
         bool **m;
 
-        m=(bool **) malloc( (nrh-nrl+1)*sizeof(bool*));
+        m=(bool **) static_cast<bool**>(malloc( (nrh-nrl+1)*sizeof(bool*)));
         if (!m) nrerror("allocation failure 1 in dmatrix()");
         m -= nrl;
 
         for(i=nrl;i<=nrh;i++)
    {
-                m[i]=(bool *) malloc((nch-ncl+1)*sizeof(bool));
+                m[i]=(bool *) static_cast<bool*>(malloc((nch-ncl+1)*sizeof(bool)));
                 if (!m[i]) nrerror("allocation failure 2 in dmatrix()");
                 m[i] -= ncl;
         }

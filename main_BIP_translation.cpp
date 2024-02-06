@@ -53,10 +53,10 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   
   int r=r1[0];
   printf("Number of components is %d\n",r);
-  //int P[Np];P[0]=p0;P[1]=p1;;P[2]=p2;
-  double *** X=malloc(Np*sizeof(double **));
-  double *** X1=malloc(Np*sizeof(double **));
-  //double dat=0;
+
+  double *** X= static_cast<double***>(malloc(Np*sizeof(double **)));
+  double *** X1= static_cast<double***>(malloc(Np*sizeof(double **)));
+
   k=0;
   
   for (m=0;m<Np;m++){
@@ -70,15 +70,7 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     }
   }
   
-  //int K0=K[0];int K1=K[1];int K2=K[2];
-  /*
-   for (m=0;m<Np;m++){
-   if (IndVar[m]!=1)
-   printf("Number of groups for platform %d is %d\n",m,K[m]);
-   else printf("Number of groups for outcome is 1");
-   }
-   */
-  bool *** Path=malloc(Np*sizeof(bool **));
+  bool *** Path= static_cast<bool***>(malloc(Np*sizeof(bool **)));
   int m1=0; //bool pp=0;
   int kk=0;
   for (m=0;m<Np;m++){
@@ -90,8 +82,6 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         for (k=0;k<K[m];k++){
           Path[m][j][k]=Paths[kk];
           kk++;
-          //if (m==0) pp=path0[j*K[m]+k]; else if (m==1) pp=path1[j*K[m]+k];
-          //Path[m][j][k]=pp;
         }
       }
       m1+=1;
@@ -116,80 +106,70 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     }
   }
   
-  double ***A=malloc(Np*sizeof(double **));
+  double ***A= static_cast<double***>(malloc(Np*sizeof(double **)));
   for (m=0;m<Np;m++){
     A[m]=dmatrix(0,r-1,0,P[m]-1);
   }
   
   /* Hyperparameter*/
-  double * q=malloc(Np*sizeof(double));
-  double ** qv=malloc(Np*sizeof(double*));
-  double ** wg=malloc(Np*sizeof(double*));
+  double * q= static_cast<double*>(malloc(Np*sizeof(double)));
+  double ** qv= static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** wg= static_cast<double**>(malloc(Np*sizeof(double*)));
   for (m=0;m<Np;m++){
     q[m]=0.5;
-    qv[m]=malloc(r*sizeof(double));//
-    wg[m]=malloc(r*sizeof(double));//proba. for group selection
+    qv[m]= static_cast<double*>(malloc(r*sizeof(double)));
+    wg[m]= static_cast<double*>(malloc(r*sizeof(double))); //proba. for group selection
   }
   
-  //double q=0.5;
-  //double qv=0.5;
-  //double a0=0.01;double b0=0.01;
-  double a0=1;double b0=1;
-  //double alphab=1;double betab=1; 
+
+  // Define hyperparameters
+  double a0=1; double b0=1;
   double alphab=priorb[0]; double betab=priorb[1];
-  //double al=1;double bl=1;// Hyper for q
-  double al=priorcompsel[0]; double bl=priorcompsel[1];// Hyper for q
-  //double al0=1;double bl0=1;// Hyper for q in the outcome
-  double al0=priorcompselo[0]; double bl0=priorcompselo[1];// Hyper for q in the outcome
-  //double alv=1;double blv=1;// Hyper for qv
-  //double alphab0=2; double betab0=2;
-  //double alv=priorselv[0];double blv=priorselv[1];
-  double alphab0=priorb0[0]; double betab0=priorb0[1];//Hyper for b0
-  //double w=0.5;//priors for group selection
-  //double alg=1;double blg=1;
+  double al=priorcompsel[0]; double bl=priorcompsel[1]; // Hyper for q
+  double al0=priorcompselo[0]; double bl0=priorcompselo[1]; // Hyper for q in the outcome
+  double alphab0=priorb0[0]; double betab0=priorb0[1]; //Hyper for b0
   double alg=priorgrpsel[0]; double blg=priorgrpsel[1];
   double alpha=1;
   
-  //Initialization
-  bool ** rhoest=malloc(Np*sizeof(bool*));
-  double ** rhomean=malloc(Np*sizeof(double*));
-  double ** Gamvs=malloc(Np*sizeof(double*));
-  //bool ** GamvsK=malloc(Np*sizeof(bool*));
-  bool *** R=malloc(Np*sizeof(bool**));
-  bool *** Gam=malloc(Np*sizeof(bool**));
-  double *** Gammean=malloc(Np*sizeof(double**));
-  double *** AcceptR=malloc(Np*sizeof(double**));
-  double *** Bmean=malloc(Np*sizeof(double**));
-  double *** Rmean=malloc(Np*sizeof(double**));
-  double *** B=malloc(Np*sizeof(double**));
-  double *** lambda2=malloc(Np*sizeof(double**));
-  double *** Tau=malloc(Np*sizeof(double**));
-  double *** Taumean=malloc(Np*sizeof(double**));
-  double **B0=malloc(Np*sizeof(double*));
-  double **B0mean=malloc(Np*sizeof(double*));
-  double **AcceptB0=malloc(Np*sizeof(double*));
-  double ** quadForm=malloc(Np*sizeof(double*));
-  double ** loggauss=malloc(Np*sizeof(double*));
-  double ** s2=malloc(Np*sizeof(double*));
-  double ** s2Mean=malloc(Np*sizeof(double*));
-  int mj=0;
+  // Initialize parameters to estimate
+  bool ** rhoest= static_cast<bool**>(malloc(Np*sizeof(bool*)));
+  double ** rhomean= static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** Gamvs= static_cast<double**>(malloc(Np*sizeof(double*)));
+  bool *** R= static_cast<bool***>(malloc(Np*sizeof(bool**)));
+  bool *** Gam= static_cast<bool***>(malloc(Np*sizeof(bool**)));
+  double *** Gammean= static_cast<double***>(malloc(Np*sizeof(double**)));
+  double *** AcceptR= static_cast<double***>(malloc(Np*sizeof(double**)));
+  double *** Bmean= static_cast<double***>(malloc(Np*sizeof(double**)));
+  double *** Rmean= static_cast<double***>(malloc(Np*sizeof(double**)));
+  double *** B= static_cast<double***>(malloc(Np*sizeof(double**)));
+  double *** lambda2= static_cast<double***>(malloc(Np*sizeof(double**)));
+  double *** Tau= static_cast<double***>(malloc(Np*sizeof(double**)));
+  double *** Taumean= static_cast<double***>(malloc(Np*sizeof(double**)));
+  double ** B0= static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** B0mean= static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** AcceptB0= static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** quadForm= static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** loggauss= static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** s2= static_cast<double**>(malloc(Np*sizeof(double*)));
+  double ** s2Mean= static_cast<double**>(malloc(Np*sizeof(double*)));
   
+  int mj=0;
   for (m=0;m<Np;m++){
-    Gamvs[m]=malloc(P[m]*sizeof(double));
-    //GamvsK[m]=malloc(P[m]*sizeof(bool));
+    
+    Gamvs[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
     Gam[m]=bmatrix(0,P[m]-1,0,r-1);
     Gammean[m]=dmatrix(0,P[m]-1,0,r-1);
-    rhoest[m]=malloc(r*sizeof(bool));
-    rhomean[m]=malloc(r*sizeof(double));
+    rhoest[m]= static_cast<bool*>(malloc(r*sizeof(bool)));
+    rhomean[m]= static_cast<double*>(malloc(r*sizeof(double)));
     R[m]=bmatrix(0,r-1,0,K[m]-1);
     AcceptR[m]=dmatrix(0,r-1,0,K[m]-1);
     Bmean[m]=dmatrix(0,r-1,0,K[m]-1);
     Rmean[m]=dmatrix(0,r-1,0,K[m]-1);
     B[m]=dmatrix(0,r-1,0,K[m]-1);
     lambda2[m]=dmatrix(0,r-1,0,P[m]-1);
-    B0[m]=malloc(r*sizeof(double));
-    B0mean[m]=malloc(r*sizeof(double));
-    AcceptB0[m] =malloc(r*sizeof(double));
+    B0[m]= static_cast<double*>(malloc(r*sizeof(double)));
+    B0mean[m]= static_cast<double*>(malloc(r*sizeof(double)));
+    AcceptB0[m]= static_cast<double*>(malloc(r*sizeof(double)));
     Tau[m]=dmatrix(0,r-1,0,P[m]-1);
     Taumean[m]=dmatrix(0,r-1,0,P[m]-1);
     
@@ -199,8 +179,8 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
       
       double  uni=gsl_ran_flat (rr, 0, 1);
       qv[m][l]=probvarsel[0];
-      wg[m][l]=0.5;//Prior prob group selection
-      if (IndVar[m]==1)//Response
+      wg[m][l]=0.5; //Prior prob group selection
+      if (IndVar[m]==1) //Response
         qv[m][l]=0.5;
       else if (IndVar[m]==2) qv[m][l]=1;
       
@@ -220,9 +200,9 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         }
       }
       
-      if (IndVar[m]==1){//Response
+      if (IndVar[m]==1){ //Response
         Gam[m][0][l]=rhoest[m][l];
-      } else if (IndVar[m]==2){//Clinical factors
+      } else if (IndVar[m]==2){ //Clinical factors
         rhoest[m][l]=1;
         for (j=0;j<P[m];j++) {
           Gam[m][j][l]=1; A[m][l][j]=0.01;
@@ -232,7 +212,7 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
       for (k=0;k<K[m];k++){
         Rmean[m][l][k]=0;Bmean[m][l][k]=0;AcceptR[m][l][k]=0;
         R[m][l][k]=0;B[m][l][k]=0;
-        //if ((strcmp(Method,"GroupInfo")==0)&& (P[m]!=1)){
+
         if ((Method==1)&& (IndVar[m]==0)){
           if (rhoest[m][l]==1){
             double  ui=gsl_ran_flat (rr, 0, 1);
@@ -251,14 +231,16 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         }
       }
     }
-    s2[m]=malloc(P[m]*sizeof(double));
-    s2Mean[m]=malloc(P[m]*sizeof(double)); 
-    quadForm[m]=malloc(P[m]*sizeof(double));
-    loggauss[m]=malloc(P[m]*sizeof(double));
+    
+    s2[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
+    s2Mean[m]= static_cast<double*>(malloc(P[m]*sizeof(double))); 
+    quadForm[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
+    loggauss[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
+    
     for (j=0;j<P[m];j++) {
       loggauss[m][j]=0;
       s2[m][j]=0.1; s2Mean[m][j]=0;
-      quadForm[m][j]=Gamvs[m][j]=0; //GamvsK[m][j]=0;
+      quadForm[m][j]=Gamvs[m][j]=0; 
       mj+=1;
     }
   }
@@ -271,25 +253,15 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     }
   }
   dim+=(Np-1)*r;
-  
-  /*
-   for (m=0;m<Np;m++){
-   if (IndVar[m]==2){
-   for (j=0;j<P[m];j++) {
-   printf("Gam==%d ",Gam[m][j][0]);
-   }
-   }
-   }
-   */
+
   int t;
   int N=nbrsample+burninsample;
   double intercp;
-  bool ** rhomodel=malloc(nbrsample*sizeof(bool*));
+  bool ** rhomodel= static_cast<bool**>(malloc(nbrsample*sizeof(bool*)));
   for (t=0;t<nbrsample;t++){
-    rhomodel[t]=malloc(dim*sizeof(bool));
+    rhomodel[t]= static_cast<bool*>(malloc(dim*sizeof(bool)));
   }
   
-  //double AUC=0;
   for (t=0;t<N;t++){
     for (m=0;m<Np;m++){
       if (IndVar[m]==1){
@@ -308,7 +280,6 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         for (j=0;j<P[m];j++){
           sumeta+=Gam[m][j][l];
         }
-        //qv[m][l]=gsl_ran_beta (rr, alv+rhoest[m][l]*sumeta, blv+rhoest[m][l]*(P[m]-sumeta));
         if (IndVar[m]==2) qv[m][l]=1;
       }
       
@@ -342,7 +313,6 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         if ((Method==1)&&(IndVar[m]==0)){
           sumrho=0;
           for (k=0;k<K[m];k++) sumrho+=R[m][l][k];
-          //if ((strcmp(Method,"GroupInfo")==0)&&(P[m]!=1))
           wg[m][l]=gsl_ran_beta(rr,alg+rhoest[m][l]*sumrho,blg+rhoest[m][l]*(K[m]-sumrho));
           GroupEffect(l,rr,rhoest[m][l],K[m],P[m], R[m][l],A[m][l],B[m][l],B0[m][l],Tau[m][l],Path[m],alphab, betab,wg[m][l],alpha, lambda2[m][l],s2[m],AcceptR[m][l],Gam[m]);
         }
@@ -350,9 +320,8 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
       }
       
     }
-    //SampleU(rr,r,n,p0,p1,p2,A,U,X1,s2);
+
     SampleUU(rr,r,n,Np,P,A,U,X1,s2);
-    
     
     if (t>=burninsample){
       *InterceptMean+=intercp/nbrsample;
@@ -403,122 +372,17 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
           }
         }
       }
-      
-      //if (t%(N/20)==1){
+
       if (t%((N+5)/5)==1){
-        //R_CheckUserInterrupt();
-        //printf("Intercept for outcome is  %.3lf is =\n",intercp);
-        /*
-         for (m=0;m<Np;m++){
-         //printf("q is %lf \n",q[m]);
-         //printf("B0 for platform %d is =\n",m);
-         for (l=0;l<r;l++){
-         printf("%lf ",B0[m][l]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         for (m=0;m<Np;m++){
-         printf("qv for platform %d is =\n",m);
-         for (l=0;l<r;l++){
-         printf("%lf ",qv[m][l]);
-         }
-         printf("\n");
-         }
-         */
+
         printf("\n");
-        /*
-         for (m=0;m<Np;m++){
-         if (IndVar[m]==0)//if (P[m]!=1)
-         //printf("Sigma2 for platform %d is=\n",m);
-         //else if  (IndVar[m]==1) printf("Sigma2 for outcome is=\n");
-         //else if  (IndVar[m]==2) printf("Sigma2 for clin. factor is=\n");
-         for (j=0;j<MIN(10,P[m]);j++){
-         printf("%lf ",s2[m][j]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         */
-        /*
-         if (Method==1){
-         //if (strcmp(Method,"GroupInfo")==0){
-         for (m=0;m<Np;m++){
-         if (IndVar[m]==0)//if (P[m]!=1)
-         printf("Group selection for platform %d is=\n",m);
-         else if  (IndVar[m]==1)  printf("Group selection for outcome  is==\n");
-         for (l=0;l<r;l++){
-         for (k=0;k<K[m];k++){
-         printf("%d ",R[m][l][k]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         }
-         }
-         */
-        /*
-         for (m=0;m<Np;m++){
-         if  (IndVar[m]==0)
-         //if (P[m]!=1)
-         printf("Component selection for platform %d is=\n",m);
-         else if  (IndVar[m]==1) printf("Component selection for outcome\n");
-         for (l=0;l<r;l++){
-         printf("%d ",rhoest[m][l]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         
-         for (m=0;m<Np;m++){
-         if  (IndVar[m]==0)
-         //	if (P[m]!=1)
-         printf("Variable selection for platform %d \n",m);
-         else if  (IndVar[m]==1) printf("Variable selection for outcome\n");
-         for (l=0;l<r;l++){
-         for (j=0;j<MIN(10,P[m]);j++){
-         printf("%d ",Gam[m][j][l]);
-         }
-         printf("\n");
-         }
-         printf("\n");
-         }
-         printf("\n");
-         */
+  
         printf("The number of iterations is  %d\n",t);
       }
     }
   }
   printf("\n");
-  /*
-   
-   for (m=0;m<Np;m++){
-   if (P[m]!=1)
-   printf("AcceptR for platform %d is=\n",m);
-   else printf("AcceptR for outcome is=\n");
-   for (l=0;l<r;l++){
-   for (k=0;k<MIN(K[m],10);k++){
-   printf("%.2lf ",AcceptR[m][l][k]/N);
-   }
-   printf("\n");
-   }
-   printf("\n");
-   }
-         }
-   for (m=0;m<Np;m++){
-   if (P[m]!=1)
-   printf("AcceptB0 for platform %d is=\n",m);
-   else printf("AcceptB0 for outcome is=\n");
-   for (l=0;l<r;l++){
-   printf("%.2lf ",AcceptB0[m][l]/N);
-   }
-   printf("\n");
-   }
-   printf("\n");
-   
-   
-   
-   */
+
   int sumP=0;int sumK=0;
   for (m=0;m<Np;m++){
     for (l=0;l<r;l++){
@@ -548,7 +412,6 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     sumP+=P[m]; sumK+=K[m];
   }
   
-  
   /* Loading estimate for prediction using multiple models*/
   int u=0;
   for (i=0;i<n;i++){
@@ -558,16 +421,16 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     }
   }
   
-  int countmodel=0;int *modelidx=malloc(nbrsample*sizeof(double));
+  int countmodel=0;
+  int *modelidx= static_cast<int*>(malloc(nbrsample*sizeof(double)));
   bool **UniqModel=  UniqueModel(nbrsample, dim, rhomodel,modelidx,&countmodel);
   free_bmatrix(rhomodel,0,nbrsample-1,0,dim-1);
-  double * logpo=malloc(countmodel*sizeof(double));
+  double * logpo= static_cast<double*>(malloc(countmodel*sizeof(double)));
   for (t=0;t<countmodel;t++){
     int rm=0;
     int sumg=0;
     for (m=0;m<Np;m++){
       if (IndVar[m]==1){
-        // SampleIntercept(rr,n, r, &intercp, s2[m], 100.0,U, A[m], X[m]);
         for (i=0;i<n;i++){
           for (j=0;j<P[m];j++){
             X1[m][i][j]=X[m][i][j]-*InterceptMean;
@@ -597,11 +460,11 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     
     logPostGam(&logpo[t],IndVar,Np,r, n,P,Tau, meanU,X1,s2Mean,rhoest,Gam,qv,q);
   }
-  int * highmodelidx=malloc(countmodel*sizeof(int));
+  int * highmodelidx= static_cast<int*>(malloc(countmodel*sizeof(int)));
   sort(countmodel,logpo,highmodelidx);
   double maxlogpost=logpo[0];
   int maxmodel=maxmodel1[0];
-  int nbrmax=MIN(maxmodel,countmodel);
+  int nbrmax=std::min(maxmodel,countmodel);
   *nbrmodel1=nbrmax;
   for (l=0;l<nbrmax;l++){
     logpo[l]=exp(logpo[l]-maxlogpost);
@@ -637,7 +500,7 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
         }
       }
     }
-    //for (l=0;l<r;l++){ rhoest[Np-1][l]=Gam[Np-1][0][l];}
+
     for (m=0;m<Np;m++){
       EstimateLoad(rr,r, n,P[m],rhoest[m],Taumean[m],A[m],meanU,X1[m],s2Mean[m],Gam[m]);
       for (l=0;l<r;l++){
@@ -695,12 +558,12 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
     free_dmatrix(A[m],0,r-1,0,P[m]-1);free_dmatrix(X[m],0,n-1,0,P[m]-1);
     free_dmatrix(X1[m],0,n-1,0,P[m]-1);
     free(s2[m]);free(s2Mean[m]);
-    free(rhoest[m]);free(Gamvs[m]);//free(GamvsK[m]);
+    free(rhoest[m]);free(Gamvs[m]);
     free(quadForm[m]);free(loggauss[m]);free(AcceptB0[m]);
     free(qv[m]);free(wg[m]);
   }
   
-  free(Gam);free(Gamvs);//free(GamvsK);
+  free(Gam);free(Gamvs);
   free(Tau);free(Taumean);
   free(A);free(X);free(X1);free(Gammean);free(R);
   free_dmatrix(U,0,n-1,0,r-1);
@@ -715,7 +578,6 @@ void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets
   double  time_taken = ((double)t1)/CLOCKS_PER_SEC; // in seconds
   printf("\n\nTime taken in seconds is %f\n",time_taken);
   printf("\nTime taken in minutes is %f\n",time_taken/60);
-  // printf("\nTime taken in hours is %f\n",time_taken/3600);
   
 }
 
