@@ -26,8 +26,14 @@ using namespace Rcpp;
 #include <RcppGSL.h>
 // [[Rcpp::depends(RcppGSL)]]
 
-////// Main BIP function //////
-void mainfunction(int *Method1,int * n1,int *P,int *r1,int *Np1,double *datasets,int * IndVar,int *K,int * Paths,int* maxmodel1, int *nbrsample1,int *burninsample1,double *CompoSelMean,double *VarSelMean,double * VarSelMeanGlobal,double * GrpSelMean,double *GrpEffectMean,double * IntGrpMean,double * EstU, double * EstSig2,double *InterceptMean,double *EstLoadMod,double *EstLoad,int *nbrmodel1,double *postgam,double* priorcompsel,double * priorcompselo,double* priorb0,double* priorb,double *priorgrpsel,double *probvarsel){
+// [[Rcpp::export]]
+void mainfunction(int *Method1, int *n1, int *P, int *r1, int *Np1, double *datasets, 
+                  int *IndVar, int *K, int *Paths,int *maxmodel1, int *nbrsample1,
+                  int *burninsample1, double *CompoSelMean,double *VarSelMean,
+                  double *VarSelMeanGlobal, double *GrpSelMean, double *GrpEffectMean, 
+                  double *IntGrpMean, double *EstU, double *EstSig2, double *InterceptMean, double *EstLoadMod,
+                  double *EstLoad, int *nbrmodel1, double *postgam, double *priorcompsel, double *priorcompselo,
+                  double *priorb0, double *priorb, double *priorgrpsel,double *probvarsel) {
   setvbuf(stdout, NULL, _IONBF, 0);
   int  Method=Method1[0];
   if (Method==1)
