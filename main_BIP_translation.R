@@ -2,7 +2,6 @@
 # https://github.com/chekouo/BIPnet/blob/master/R/BIP.R 
 
 library(MASS)
-#dyn.load("~/projects/def-chekouo/chekouo/BayesianFA/CallfromR/BayesianFA.so")
 
 BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Method,nbrcomp=4, sample=5000, burnin=1000,nbrmaxmodels=50,
                 priorcompselv=c(1,1),priorcompselo=c(1,1),priorb0=c(2,2),priorb=c(1,1),priorgrpsel=c(1,1),probvarsel=0.05) {

@@ -27,15 +27,15 @@ using namespace Rcpp;
 // [[Rcpp::depends(RcppGSL)]]
 
 // [[Rcpp::export]]
-void mainfunction(int *Method1, int *n1, int *P, int *r1, int *Np1, double *datasets, 
-                  int *IndVar, int *K, int *Paths,int *maxmodel1, int *nbrsample1,
-                  int *burninsample1, double *CompoSelMean,double *VarSelMean,
-                  double *VarSelMeanGlobal, double *GrpSelMean, double *GrpEffectMean, 
-                  double *IntGrpMean, double *EstU, double *EstSig2, double *InterceptMean, double *EstLoadMod,
-                  double *EstLoad, int *nbrmodel1, double *postgam, double *priorcompsel, double *priorcompselo,
-                  double *priorb0, double *priorb, double *priorgrpsel,double *probvarsel) {
+void mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec datasets,
+                  arma::vec IndVar, arma::vec K, arma::vec Paths, int maxmodel, int nbrsample, // nbrsample=n_iter-n_burnin
+                  int burninsample, arma::vec CompoSelMean, arma::vec VarSelMean,
+                  arma::vec VarSelMeanGlobal, arma::vec GrpSelMean, arma::vec GrpEffectMean,
+                  arma::vec IntGrpMean, arma::vec EstU, arma::vec EstSig2, double InterceptMean, arma::vec EstLoadMod,
+                  arma::vec EstLoad, int nbrmodel1, arma::vec postgam, arma::vec priorcompsel, arma::vec priorcompselo,
+                  arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel) {
   setvbuf(stdout, NULL, _IONBF, 0);
-  int  Method=Method1[0];
+
   if (Method==1)
     printf("\nThe Method is GroupInfo\n");
   else if (Method==0) {
@@ -45,20 +45,21 @@ void mainfunction(int *Method1, int *n1, int *P, int *r1, int *Np1, double *data
   int i,l,j,k;
   int m;
   clock_t t1 = clock();
-  int Np=Np1[0]; //Nber of platforms; Np=M+1
-  int nbrsample=nbrsample1[0]; // nbrsample=n_iter-n_burnin
+
+
   printf("Number of MCMC samples after burn-in is %d\n",nbrsample);
-  int burninsample=burninsample1[0]; // burninsample=n_burnin
+
   printf("Number of burn-in is %d\n",burninsample);
-  int n=n1[0]; // n=n_obs
+
   printf("Number of samples is %d\n",n);
-  //int p0=P[0];
+
   for (m=0;m<Np;m++){
-    printf("Number of markers in platform %d is %d\n",m,P[m]);
+    int n_markers = P[m];
+    printf("Number of markers in platform %d is %d\n", m, n_markers);
   }
   
-  int r=r1[0];
-  printf("Number of components is %d\n",r);
+
+  printf("Number of components is %d\n", r);
 
   double *** X= static_cast<double***>(malloc(Np*sizeof(double **)));
   double *** X1= static_cast<double***>(malloc(Np*sizeof(double **)));
@@ -184,7 +185,7 @@ void mainfunction(int *Method1, int *n1, int *P, int *r1, int *Np1, double *data
       for (j=0;j<P[m];j++) Gammean[m][j][l]=0;
       
       double  uni=gsl_ran_flat (rr, 0, 1);
-      qv[m][l]=probvarsel[0];
+      qv[m][l]=probvarsel;
       wg[m][l]=0.5; //Prior prob group selection
       if (IndVar[m]==1) //Response
         qv[m][l]=0.5;
@@ -469,9 +470,9 @@ void mainfunction(int *Method1, int *n1, int *P, int *r1, int *Np1, double *data
   int * highmodelidx= static_cast<int*>(malloc(countmodel*sizeof(int)));
   sort(countmodel,logpo,highmodelidx);
   double maxlogpost=logpo[0];
-  int maxmodel=maxmodel1[0];
+
   int nbrmax=std::min(maxmodel,countmodel);
-  *nbrmodel1=nbrmax;
+  nbrmodel1 = nbrmax;
   for (l=0;l<nbrmax;l++){
     logpo[l]=exp(logpo[l]-maxlogpost);
   }
