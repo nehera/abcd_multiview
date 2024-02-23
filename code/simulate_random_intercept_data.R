@@ -22,25 +22,40 @@ A[index_important_components, p_m] <- nonzero_a
 
 n_covars <- 1 # Assume 1 clinical covariate for now
 W <- matrix(rnorm(n), nrow = n, ncol = n_covars)
-beta <- rnorm(n_covars)
+beta <- rnorm(n_covars) %>%
+  matrix(ncol = 1) # Ensure column vector
 
-epsilon <- rnorm(n)
+epsilon <- rnorm(n) %>%
+  matrix(ncol = 1) # Ensure column vector
 
-nu2_1 <- nu2_2 <- 1
-n_sites <- 30
-n_families_per_site <- 5
-xi_s <- rnorm(n_sites, sd = sqrt(nu2_2))
-xi_fs <- matrix(rnorm(n_sites*n_families_per_site, sd = sqrt(nu2_1)), nrow = n_sites, ncol = n_families_per_site)
-for (s in 1:n_sites) {
-  # Center family:site effects at corresponding site effects
-  xi_fs[s, ] <- xi_fs[s, ] + xi_s[s]
+nu2 <- 1
+n_sites <- 22
+xi_s <- rnorm(n_sites, sd = sqrt(nu2)) %>% matrix(ncol = 1) # make into column vector
+
+# Sample random intercept design matrix
+Z <- rmultinom(n, size = 1, prob = rep(1/ n_sites, n_sites)) %>% t() # convert into n x n_sites design matrix
+n_per_site <- colSums(Z)
+
+# Calculate outcome
+y <- alpha_0 + Z%*%xi_s + U%*%A + W%*%beta + epsilon
+y_tilde <- y - alpha_0 - U%*%A + W%*%beta # Essentially Z%*%xi_s + epsilon
+
+est_conditional_params <- function(prior_mu, prior_var, post_var, x) {
+  n <- nrow(x)
+  conditional_var <- (1/ prior_var + n/ post_var)^(-1)
+  conditional_mu <- conditional_var * (prior_mu/ prior_var + sum(x)/ post_var)
+  return(c(conditional_mu, conditional_var))
 }
 
-# TODO draft random intercept design matrix simulation
+# Get conditional distribution paramters for each site
+conditional_params <- matrix(NA, nrow = n_sites, ncol = 2)
+for (s in 1:n_sites) {
+  site_index <- which(Z[, s]==1)
+  x_site <- y_tilde[site_index, , drop = FALSE]
+  conditional_params[s, ] <- est_conditional_params(prior_mu = 0, prior_var = 1, post_var = 1, x = x_site)
+}
 
-# TODO calculate outcome
+apply(conditional_params, 2, mean)
 
-# TODO sample random intercepts from full conditionals
-
-# TODO evaluate diff between sampled and true intercepts
+# TODO Visualize results
 
