@@ -4,7 +4,7 @@ set.seed(1)
 
 alpha_0 <- rnorm(1)
 r <- 4
-n <- 200
+n <- 2000
 U <-  matrix(data = rnorm(n*r), nrow = n, ncol = r)
 
 prob_component_importance <- 0.5
@@ -38,7 +38,7 @@ n_per_site <- colSums(Z)
 
 # Calculate outcome
 y <- alpha_0 + Z%*%xi_s + U%*%A + W%*%beta + epsilon
-y_tilde <- y - alpha_0 - U%*%A + W%*%beta # Essentially Z%*%xi_s + epsilon
+y_tilde <- y - alpha_0 - U%*%A - W%*%beta # Essentially Z%*%xi_s + epsilon
 
 est_conditional_params <- function(prior_mu, prior_var, post_var, x) {
   n <- nrow(x)
