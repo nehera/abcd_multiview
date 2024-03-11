@@ -45,10 +45,10 @@ simulate_omics_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
   return(omics_results)
 }
 
-# TODO update arguments to reflect hardcoded random intercept elements in function
-simulate_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
+simulate_re_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
                           prob_feature_importance=0.5, 
-                          prob_component_importance=0.5) {
+                          prob_component_importance=0.5,
+                          nu2=1, n_sites=5, n_covars=1) {
   
   omics_data <- simulate_omics_data(n_views, n_obs, p_m, r, prob_feature_importance, prob_component_importance)
   
@@ -58,13 +58,9 @@ simulate_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
   alpha[index_important_components, ] <- rnorm(length(index_important_components))
   
   # Covariates
-  n_covars <- 1 # Assume 1 clinical covariate for now
   W <- matrix(rnorm(n_obs), nrow = n_obs, ncol = n_covars)
   beta <- rnorm(n_covars) %>% matrix(ncol = 1)
   
-  # Random intercepts
-  nu2 <- 1 # Variance fixed to 1 at truth
-  n_sites <- 5
   # Sample random intercept design matrix
   Z <- rmultinom(n_obs, size = 1, prob = rep(1/ n_sites, n_sites)) %>% t() # convert into n x n_sites design matrix
   n_per_site <- colSums(Z)
