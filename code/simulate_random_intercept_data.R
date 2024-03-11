@@ -53,7 +53,7 @@ simulate_re_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
   omics_data <- simulate_omics_data(n_views, n_obs, p_m, r, prob_feature_importance, prob_component_importance)
   
   # Outcome model
-  alpha_0 <- rnorm(1)
+  alpha_0 <- 1 # Grand intercept fixed
   alpha <- matrix(0, nrow = r, ncol = 1)
   alpha[index_important_components, ] <- rnorm(length(index_important_components))
   
@@ -80,7 +80,7 @@ simulate_re_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
 
 ## -- Simulate data
 set.seed(473)
-data <- simulate_data()
+data <- simulate_re_data(n_sites=30)
 
 # # Calculate outcome
 # y_tilde <- y - alpha_0 - U%*%A - W%*%beta # Essentially Z%*%xi_s + epsilon

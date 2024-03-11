@@ -28,7 +28,7 @@ using namespace Rcpp;
 
 ///// myfunction.c subroutines
 
-void SampleIntercept(gsl_rng * rr,int n, int r, double * intercept, double* sigma2, double sigma20,double ** U, double ** A, double **y){
+void SampleIntercept(gsl_rng * rr, int n, int r, double * intercept, double* sigma2, double sigma20, double ** U, double ** A, double **y){
   int i,l;
   double meany=0;
   for (i = 0; i < n; i++){
@@ -41,6 +41,75 @@ void SampleIntercept(gsl_rng * rr,int n, int r, double * intercept, double* sigm
   meany=meany/n;
   double invsig2=n/sigma2[0]+1/sigma20;
   *intercept=(n/(invsig2*sigma2[0]))*meany+sqrt(1/invsig2)*gsl_ran_ugaussian(rr);
+}
+
+// The following calculates the n observations specific to the sth site i.e. the colsums of the design matrix Z and only needs to be calculated once:
+// arma::vec n_s = arma::sum(Z, 0); // n observations specific to the sth site
+
+// [[Rcpp::export]]
+arma::vec sample_xi(gsl_rng * rr, int n, int r, double * intercept, double* sigma2, double ** U, double ** A, double **y,
+                      int n_sites, arma::mat W, arma::vec beta, arma::vec n_per_site_vec, arma::mat Z) {
+  
+  // Init output data structure
+  arma::vec xi(n_sites);
+  
+  // Convert U, A, y to Armadillo matrices/vectors
+  arma::mat U_mat(n, r); // Adjusted for n x r
+  arma::vec A_vec(r); // Now a vector, not a matrix
+  arma::vec y_vec(n); // Adjusted for n x 1
+  // Fill U_mat from U
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < r; ++j) {
+      U_mat(i, j) = U[i][j];
+    }
+  }
+  // Fill A_vec from A
+  for (int i = 0; i < r; ++i) {
+    A_vec(i) = A[i][0]; // Assuming A is a double pointer to arrays of length 1
+  }
+  // Fill y_vec from y
+  for (int i = 0; i < n; ++i) {
+    y_vec(i) = y[i][0]; // Assuming y is a double pointer to arrays of length 1
+  }
+  
+  // Residualize outcome variable
+  arma::vec intercept_vec(n, arma::fill::value(*intercept)); // Fill a vector with the intercept value
+  arma::vec UA = U_mat * A_vec;
+  arma::vec y_tilde = y_vec - intercept_vec - UA - W * beta; // Note: Ensure dimensions match
+  
+  arma::vec Sigma_vec(n_sites); // Sum specific to the sth site
+  arma::vec mu_vec(n_sites);
+  arma::vec var_vec(n_sites);
+  
+  for (int s=0; s<n_sites; s++) {
+    // TODO: SPECIFY THESE INDICES ONCE
+    // Z is your matrix, and s is the column index
+    arma::uvec indices = arma::find(Z.col(s) == 1); // Find indices of elements that are 1
+    // Use the indices to select elements from y_tilde
+    arma::vec selected_elements = y_tilde.elem(indices);
+    Sigma_vec(s) = arma::sum(selected_elements);
+    
+    // Calculate conditional mean
+    mu_vec(s) = *sigma2 / (*sigma2 + n_per_site_vec(s)); // Note, here we de-reference sigma2 to get its value
+    
+    // Calculate conditional variance
+    var_vec(s) = Sigma_vec(s) / (*sigma2 + n_per_site_vec(s)); 
+    
+    // Sample xi_s
+
+    // Generate a normally distributed random number with mean 0 and standard deviation sigma
+    double sigma = std::sqrt(var_vec(s)); // Standard deviation is the square root of variance
+    double random_normal = gsl_ran_gaussian(rr, sigma);
+    
+    // Adjust the generated number to have mean mu
+    double random_value = mu_vec(s) + random_normal;
+    
+    xi(s) = random_value;
+    
+  }
+  
+  return xi;
+  
 }
 
 void logPostGam(double *logpo, arma::vec IndVar, int Np, int r, int n, arma::vec P, 
@@ -68,7 +137,7 @@ void logPostGam(double *logpo, arma::vec IndVar, int Np, int r, int n, arma::vec
   *logpo=logpost;
 }
 
-void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double ** X,double s2,double* quadForm,bool * Gam,double * loggauss){
+void logGausQuadForm(int j, int r, int n,int p,double ** Tau, double ** U, double ** X, double s2, double* quadForm, bool * Gam, double * loggauss){
   int i,s,s1;
   int NZ1[r];
   int nx1=0;
@@ -129,7 +198,7 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
   
 }
 
-void sampleGam(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau, double ** U,double ** X,double *s2,double* quadForm,bool ** Gam,double * loggauss,double q){
+void sampleGam(gsl_rng * rr, int r, int n,int p, bool * rho,double ** Tau, double ** U,double ** X,double *s2,double* quadForm,bool ** Gam,double * loggauss,double q){
   int j,s,l;
   for (j=0;j<p;j++){
     for (l=0;l<r;l++) Gam[j][l]=rho[l]*Gam[j][l];
@@ -185,7 +254,6 @@ double  logpost(int r, int n,int p, bool * rho,double ** Tau, double ** U,double
   }
   return logpostrho;
 }
-
 
 void rho1(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau, double ** U,double ** X, double q,double* s2,double* quadForm,bool** Gam,double *loggauss){
   int l,j;
@@ -409,7 +477,6 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
   free(rhonew); 
 }
 
-
 void sigma2(gsl_rng * rr, int p,int n,double a0, double b0, double* quadForm,double * s2){
   int j;
   for (j=0;j<p;j++){
@@ -449,7 +516,6 @@ void EffectZero(int l,gsl_rng * rr,int K,int p,bool rho, bool * R,double* B,doub
   
 }
 
-
 void TauLambda(int l,gsl_rng * rr,int K,int p,double *A,double* B,double B0,double * Tau,bool ** Path,double alpha, double * lambda2,double *s2,bool ** Gam){
   /* K is the number of pathways
    *  * R is the binary vector for pathway effect
@@ -480,7 +546,6 @@ void TauLambda(int l,gsl_rng * rr,int K,int p,double *A,double* B,double B0,doub
     }
   }
 }
-
 
 void GroupEffect(int l,gsl_rng * rr,bool rho,int K,int p, bool * R,double *A,double* B,double B0,double * Tau,bool ** Path,double alphab, double betab,double w,double alpha, double * lambda2,double *s2,double * AcceptR,bool **Gam){
   /* K is the number of pathways
@@ -668,8 +733,6 @@ void EstimateLoad(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau,doub
   }
 }
 
-
-
 void proposal(int n,bool R[n],bool R1[n],float phi, gsl_rng * r) {
   int i;
   for (i=0; i<n;i++) R1[i]=R[i];
@@ -757,7 +820,6 @@ void SampleUU(gsl_rng * rr,int r, int n, int Np, arma::vec P, double *** A,
   free(SigmaInv);
 }
 
-
 void SampleU(gsl_rng * rr,int r, int n,int p0,int p1,int p2,double *** A, double ** U,double *** X,double** s2){
   int s,s1,j,i;
   double * SigmaInv= static_cast<double*>(malloc(r*r*sizeof(double)));
@@ -831,7 +893,6 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   int m;
   clock_t t1 = clock();
 
-
   printf("Number of MCMC samples after burn-in is %d\n",nbrsample);
 
   printf("Number of burn-in is %d\n",burninsample);
@@ -843,7 +904,6 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     printf("Number of markers in platform %d is %d\n", m, n_markers);
   }
   
-
   printf("Number of components is %d\n", r);
 
   double *** X= static_cast<double***>(malloc(Np*sizeof(double **)));
@@ -912,7 +972,6 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     qv[m]= static_cast<double*>(malloc(r*sizeof(double)));
     wg[m]= static_cast<double*>(malloc(r*sizeof(double))); //proba. for group selection
   }
-  
 
   // Define hyperparameters
   double a0=1; double b0=1;
