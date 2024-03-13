@@ -28,7 +28,7 @@ using namespace Rcpp;
 
 ///// myfunction.c subroutines
 
-void SampleIntercept(gsl_rng * rr, int n, int r, double * intercept, double* sigma2, double sigma20, double ** U, double ** A, double **y){
+void SampleIntercept(gsl_rng * rr, int n, int r, double * intercept, double * sigma2, double sigma20, double ** U, double ** A, double **y){
   int i,l;
   double meany=0;
   for (i = 0; i < n; i++){
@@ -47,65 +47,58 @@ void SampleIntercept(gsl_rng * rr, int n, int r, double * intercept, double* sig
 // arma::vec n_s = arma::sum(Z, 0); // n observations specific to the sth site
 
 // [[Rcpp::export]]
-arma::vec sample_xi(gsl_rng * rr, int n, int r, double * intercept, double* sigma2, double ** U, double ** A, double **y,
-                      int n_sites, arma::mat W, arma::vec beta, arma::vec n_per_site_vec, arma::mat Z) {
+arma::vec sample_xi(gsl_rng * rr, int n, int r, double * intercept, double * sigma2, double ** U, double ** A, double **y,
+                      int n_sites, arma::mat W, arma::vec beta, arma::vec n_per_site, arma::mat Z) {
   
-  // Init output data structure
-  arma::vec xi(n_sites);
-  
-  // Convert U, A, y to Armadillo matrices/vectors
-  arma::mat U_mat(n, r); // Adjusted for n x r
-  arma::vec A_vec(r); // Now a vector, not a matrix
-  arma::vec y_vec(n); // Adjusted for n x 1
-  // Fill U_mat from U
-  for (int i = 0; i < n; ++i) {
-    for (int j = 0; j < r; ++j) {
-      U_mat(i, j) = U[i][j];
-    }
-  }
-  // Fill A_vec from A
-  for (int i = 0; i < r; ++i) {
-    A_vec(i) = A[i][0]; // Assuming A is a double pointer to arrays of length 1
-  }
-  // Fill y_vec from y
-  for (int i = 0; i < n; ++i) {
-    y_vec(i) = y[i][0]; // Assuming y is a double pointer to arrays of length 1
-  }
+  // // Convert U, A, y to Armadillo matrices/vectors
+  // arma::mat U_mat(n, r); // Adjusted for n x r
+  // arma::vec A_vec(r); // Now a vector, not a matrix
+  // arma::vec y_vec(n); // Adjusted for n x 1
+  // // Fill U_mat from U
+  // for (int i = 0; i < n; ++i) {
+  //   for (int j = 0; j < r; ++j) {
+  //     U_mat(i, j) = U[i][j];
+  //   }
+  // }
+  // // Fill A_vec from A
+  // for (int i = 0; i < r; ++i) {
+  //   A_vec(i) = A[i][0]; // Assuming A is a double pointer to arrays of length 1
+  // }
+  // // Fill y_vec from y
+  // for (int i = 0; i < n; ++i) {
+  //   y_vec(i) = y[i][0]; // Assuming y is a double pointer to arrays of length 1
+  // }
   
   // Residualize outcome variable
-  arma::vec intercept_vec(n, arma::fill::value(*intercept)); // Fill a vector with the intercept value
-  arma::vec UA = U_mat * A_vec;
-  arma::vec y_tilde = y_vec - intercept_vec - UA - W * beta; // Note: Ensure dimensions match
+  arma::vec sum_y(n_sites);
+  arma::vec conditional_mu(n_sites);
+  arma::vec conditional_var(n_sites);
+  arma::vec xi(n_sites);
   
-  arma::vec Sigma_vec(n_sites); // Sum specific to the sth site
-  arma::vec mu_vec(n_sites);
-  arma::vec var_vec(n_sites);
-  
-  for (int s=0; s<n_sites; s++) {
-    // TODO: SPECIFY THESE INDICES ONCE
-    // Z is your matrix, and s is the column index
-    arma::uvec indices = arma::find(Z.col(s) == 1); // Find indices of elements that are 1
-    // Use the indices to select elements from y_tilde
-    arma::vec selected_elements = y_tilde.elem(indices);
-    Sigma_vec(s) = arma::sum(selected_elements);
+  for (int s = 0; s < n_sites; s++) {
+    arma::uvec indices = arma::find(Z.col(s) == 1); // Get indices of observations that belong to a given site
+    // Loop over observations in the given site
+    for (int i : indices) {
+      double ua_i = 0;
+      for (int l = 0; l < r; l++) {
+        ua_i += U[i][l] * A[l][0];
+      }
+      sum_y(s) += y[i][0] - *intercept - ua_i;  // TODO also residualize covariate effects
+    }
     
     // Calculate conditional mean
-    mu_vec(s) = *sigma2 / (*sigma2 + n_per_site_vec(s)); // Note, here we de-reference sigma2 to get its value
+    conditional_mu(s) = *sigma2 / (*sigma2 + n_per_site(s)); // Note, here we de-reference sigma2 to get its value
     
     // Calculate conditional variance
-    var_vec(s) = Sigma_vec(s) / (*sigma2 + n_per_site_vec(s)); 
-    
-    // Sample xi_s
+    conditional_var(s) = sum_y(s) / (*sigma2 + n_per_site(s)); 
 
     // Generate a normally distributed random number with mean 0 and standard deviation sigma
-    double sigma = std::sqrt(var_vec(s)); // Standard deviation is the square root of variance
+    double sigma = std::sqrt(conditional_var(s)); // Standard deviation is the square root of variance
     double random_normal = gsl_ran_gaussian(rr, sigma);
     
     // Adjust the generated number to have mean mu
-    double random_value = mu_vec(s) + random_normal;
-    
-    xi(s) = random_value;
-    
+    xi(s) = conditional_mu(s) + random_normal;
+
   }
   
   return xi;
