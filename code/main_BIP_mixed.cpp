@@ -43,66 +43,37 @@ void SampleIntercept(gsl_rng * rr, int n, int r, double * intercept, double * si
   *intercept=(n/(invsig2*sigma2[0]))*meany+sqrt(1/invsig2)*gsl_ran_ugaussian(rr);
 }
 
-// The following calculates the n observations specific to the sth site i.e. the colsums of the design matrix Z and only needs to be calculated once:
-// arma::vec n_s = arma::sum(Z, 0); // n observations specific to the sth site
-
-// [[Rcpp::export]]
-arma::vec sample_xi(gsl_rng * rr, int n, int r, double * intercept, double * sigma2, double ** U, double ** A, double **y,
-                      int n_sites, arma::mat W, arma::vec beta, arma::vec n_per_site, arma::mat Z) {
-  
-  // // Convert U, A, y to Armadillo matrices/vectors
-  // arma::mat U_mat(n, r); // Adjusted for n x r
-  // arma::vec A_vec(r); // Now a vector, not a matrix
-  // arma::vec y_vec(n); // Adjusted for n x 1
-  // // Fill U_mat from U
-  // for (int i = 0; i < n; ++i) {
-  //   for (int j = 0; j < r; ++j) {
-  //     U_mat(i, j) = U[i][j];
-  //   }
-  // }
-  // // Fill A_vec from A
-  // for (int i = 0; i < r; ++i) {
-  //   A_vec(i) = A[i][0]; // Assuming A is a double pointer to arrays of length 1
-  // }
-  // // Fill y_vec from y
-  // for (int i = 0; i < n; ++i) {
-  //   y_vec(i) = y[i][0]; // Assuming y is a double pointer to arrays of length 1
-  // }
-  
+// Samples random intercepts at a given level of the hierarchy, modifying a double-pointer that stores nested random intercepts
+arma::vec sample_ksi(gsl_rng * rr, int n, int r, int n_clusters, double * intercept, 
+                     double * sigma2, double ** U, double ** A, double ** y,
+                    arma::mat Z, double mu_0, double nu2) {
   // Residualize outcome variable
-  arma::vec sum_y(n_sites);
-  arma::vec conditional_mu(n_sites);
-  arma::vec conditional_var(n_sites);
-  arma::vec xi(n_sites);
-  
-  for (int s = 0; s < n_sites; s++) {
-    arma::uvec indices = arma::find(Z.col(s) == 1); // Get indices of observations that belong to a given site
+  arma::vec sum_y(n_clusters);
+  arma::vec conditional_mu(n_clusters);
+  arma::vec conditional_var(n_clusters);
+  arma::vec ksi(n_clusters);
+  for (int c = 0; c < n_clusters; c++) {
+    arma::uvec indices = arma::find(Z.col(c) == 1); // Get indices of observations that belong to a given site
     // Loop over observations in the given site
     for (int i : indices) {
       double ua_i = 0;
       for (int l = 0; l < r; l++) {
         ua_i += U[i][l] * A[l][0];
       }
-      sum_y(s) += y[i][0] - *intercept - ua_i;  // TODO also residualize covariate effects
+      sum_y(c) += y[i][0] - *intercept - ua_i;  // TODO also residualize covariate effects
     }
-    
+    int cluster_size = indices.n_elem;
+    // Calculate conditional variance where nu2 is the prior variance
+    conditional_var(c) = (nu2 * (*sigma2)) / (*sigma2 + nu2 * cluster_size); // Note, here we de-reference sigma2 to get its value
     // Calculate conditional mean
-    conditional_mu(s) = *sigma2 / (*sigma2 + n_per_site(s)); // Note, here we de-reference sigma2 to get its value
-    
-    // Calculate conditional variance
-    conditional_var(s) = sum_y(s) / (*sigma2 + n_per_site(s)); 
-
+    conditional_mu(c) = conditional_var(c) * ( (mu_0 * (*sigma2) + nu2 * sum_y(c)) / (*sigma2 * nu2) ); 
     // Generate a normally distributed random number with mean 0 and standard deviation sigma
-    double sigma = std::sqrt(conditional_var(s)); // Standard deviation is the square root of variance
+    double sigma = std::sqrt(conditional_var(c)); 
     double random_normal = gsl_ran_gaussian(rr, sigma);
-    
     // Adjust the generated number to have mean mu
-    xi(s) = conditional_mu(s) + random_normal;
-
+    ksi(c) = conditional_mu(c) + random_normal;
   }
-  
-  return xi;
-  
+  return ksi;
 }
 
 void logPostGam(double *logpo, arma::vec IndVar, int Np, int r, int n, arma::vec P, 
@@ -873,7 +844,26 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                   arma::vec VarSelMeanGlobal, arma::vec GrpSelMean, arma::vec GrpEffectMean,
                   arma::vec IntGrpMean, arma::vec EstU, arma::vec EstSig2, double InterceptMean, arma::vec EstLoadMod,
                   arma::vec EstLoad, int nbrmodel1, arma::vec postgam, arma::vec priorcompsel, arma::vec priorcompselo,
-                  arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel) {
+                  arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel,
+                  arma::mat Z) {
+  
+  // The following calculates the n observations specific to the cth site i.e. the colsums of the design matrix Z and only needs to be calculated once:
+  // arma::vec n_per_site = arma::sum(Z, 0); // n observations specific to the cth site
+  int n_clusters = Z.n_cols;
+  // int cluster_depth = 1; // Hard-coded to 1 for now since focusing on site-specific effects
+  // int ***cluster_indices = static_cast<int***>(malloc(cluster_depth*sizeof(int **)));
+  // for (int h=0; h<cluster_depth; h++) {
+  //   for (int c; c<n_clusters; c++) {
+  //     arma::uvec indices = arma::find(Z.col(c) == 1); // Get indices of observations that belong to a given site
+  //     for (int i; i<indices.n_elem; i++) {
+  //       cluster_indices[h][c][i] = indices[i];
+  //     }
+  //   }
+  // }
+  
+  // FOR NOW, store site-level effect chain
+  arma::mat re_chain(n_clusters, nbrsample);
+
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (Method==1)
@@ -1109,11 +1099,21 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   for (t=0;t<N;t++){
     for (m=0;m<Np;m++){
       if (IndVar[m]==1){
-        SampleIntercept(rr,n, r, &intercp, s2[m], 100.0,U, A[m], X[m]);
-        for (i=0;i<n;i++){
-          for (j=0;j<P[m];j++){
-            X1[m][i][j]=X[m][i][j]-intercp;
-          }
+        
+        // Sample alpha_0 intercept
+        SampleIntercept(rr, n, r, &intercp, s2[m], 100.0, U, A[m], X[m]);
+        
+        // Sample random effects
+        arma::vec ksi_t = sample_ksi(rr, n, r, n_clusters, &intercp, s2[m], U, A[m], X[m], Z, 0.0, 1.0); // TODO: What might we set the prior mean and variance to?
+        re_chain.col(t) = ksi_t;
+        
+        for (int c = 0; c < n_clusters; c++) {
+          arma::uvec indices = arma::find(Z.col(c) == 1); // Get indices of observations that belong to a given site
+          // Loop over observations in the given site
+          for (int i : indices) {
+            for (j=0;j<P[m];j++){
+              X1[m][i][j]=X[m][i][j]-intercp-ksi_t(c);
+            }
         }
       }
       double sumrho=0;
@@ -1435,7 +1435,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     Rcpp::Named("IntGrpMean") = IntGrpMean,
     Rcpp::Named("EstSig2") = EstSig2,
     Rcpp::Named("EstLoadMod") = EstLoadMod,
-    Rcpp::Named("nbrmodel1") = nbrmodel1
+    Rcpp::Named("nbrmodel1") = nbrmodel1,
+    Rcpp::Named("re_chain") = re_chain
   );
 }
 
@@ -1444,7 +1445,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 # Define R wrapper
 library(MASS)
 BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Method,nbrcomp=4, sample=5000, burnin=1000,nbrmaxmodels=50,
-                priorcompselv=c(1,1),priorcompselo=c(1,1),priorb0=c(2,2),priorb=c(1,1),priorgrpsel=c(1,1),probvarsel=0.05) {
+                priorcompselv=c(1,1),priorcompselo=c(1,1),priorb0=c(2,2),priorb=c(1,1),priorgrpsel=c(1,1),probvarsel=0.05,
+                Z=NULL) {
   
   if (sample<=burnin){
     stop("Argument burnin must be smaller than sample: the number of MCMC iterations.")
@@ -1520,7 +1522,8 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
     EstU=as.double(rep(0,n*nbrcomp)),EstSig2=as.double(rep(0,sum(P))),InterceptMean=as.double(rep(0,1)),
     EstLoadMod=as.double(rep(0,nbrmaxmodels*nbrcomp*sum(P))),EstLoad=as.double(rep(0,nbrcomp*sum(P))),
     nbrmodel=as.integer(0),postgam=rep(0,nbrmaxmodels),priorcompsel=priorcompselv,
-    priorcompselo=priorcompselo,priorb0=priorb0,priorb=as.double(priorb),priorgrpsel=priorgrpsel,probvarsel=as.double(probvarsel)
+    priorcompselo=priorcompselo,priorb0=priorb0,priorb=as.double(priorb),priorgrpsel=priorgrpsel,probvarsel=as.double(probvarsel),
+    Z
   )
   
   reseffect=result$EstLoadMod
@@ -1570,17 +1573,21 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 
   }
 
-  return (list(EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,CompoSelMean=CompoSelMean,GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,IntGrpMean=IntGrpMean,EstLoad=EstLoad,EstLoadModel=EstLoadModel,nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD))
+  return (list(EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,CompoSelMean=CompoSelMean,
+               GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,IntGrpMean=IntGrpMean,EstLoad=EstLoad,
+               EstLoadModel=EstLoadModel,nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,
+               PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD,
+               re_chain=result$re_chain))
 }
 
 # Simulate data & estimate associated parameters
-source("00_simulate_simple_data.R")
+source("simulate_random_intercept_data.R")
 set.seed(1)
-simulation_results <- simulate_iid_data(prob_component_importance = 0.5)
-dataList <- list(simulation_results$X_list[[1]],
-                  simulation_results$X_list[[2]],
+simulation_results <- simulate_re_data(n_sites=5)
+dataList <- list(simulation_results$X[[1]],
+                  simulation_results$X[[2]],
                   simulation_results$Y)
-BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=5000, burnin=1000)
+BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=5000, burnin=1000, Z= simulation_results$Z)
 
 print("Component selection mean:")
 BA$CompoSelMean
@@ -1596,4 +1603,5 @@ print("Element-wise mean absolute error between true U and estimated U:")
 mean(simulation_results$U - BA$EstU)
 print("Estimated Sig2:")
 BA$EstSig2
+
 */

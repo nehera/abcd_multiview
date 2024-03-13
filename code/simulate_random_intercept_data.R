@@ -55,11 +55,12 @@ simulate_re_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
   # Outcome model
   alpha_0 <- 1 # Grand intercept fixed
   alpha <- matrix(0, nrow = r, ncol = 1)
-  alpha[index_important_components, ] <- rnorm(length(index_important_components))
   
-  # Covariates
-  W <- matrix(rnorm(n_obs), nrow = n_obs, ncol = n_covars)
-  beta <- rnorm(n_covars) %>% matrix(ncol = 1)
+  alpha[omics_data$index_important_components, ] <- rnorm(length(omics_data$index_important_components))
+  
+  # TODO Covariates
+  # W <- matrix(rnorm(n_obs), nrow = n_obs, ncol = n_covars)
+  # beta <- rnorm(n_covars) %>% matrix(ncol = 1)
   
   # Sample random intercept design matrix
   Z <- rmultinom(n_obs, size = 1, prob = rep(1/ n_sites, n_sites)) %>% t() # convert into n x n_sites design matrix
@@ -69,18 +70,18 @@ simulate_re_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
   # Observation-level residusal
   epsilon <- matrix(rnorm(n_obs), nrow = n_obs)
   
-  Y <- alpha_0 + Z %*% xi_s + omics_data$U %*% alpha + W %*% beta + epsilon
+  Y <- alpha_0 + Z %*% xi_s + omics_data$U %*% alpha + epsilon # TODO W %*% beta 
   
-  return(list(Y=Y, alpha_0=alpha_0, alpha=alpha, W=W, beta=beta, 
+  return(list(Y=Y, alpha_0=alpha_0, alpha=alpha, # TODO W=W, beta=beta, 
               nu2=nu2, n_sites=n_sites, Z=Z, n_per_site=n_per_site,
               xi_s=xi_s, X=omics_data$X, U=omics_data$U, A=omics_data$A,
-              index_important_components=index_important_components, 
-              index_important_features=index_important_features))
+              index_important_components=omics_data$index_important_components, 
+              index_important_features=omics_data$index_important_features))
 }
 
 ## -- Simulate data
 set.seed(473)
-data <- simulate_re_data(n_sites=30)
+data <- simulate_re_data(n_sites=5)
 
 # # Calculate outcome
 # y_tilde <- y - alpha_0 - U%*%A - W%*%beta # Essentially Z%*%xi_s + epsilon
