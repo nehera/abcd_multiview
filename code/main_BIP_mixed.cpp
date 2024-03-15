@@ -847,22 +847,10 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                   arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel,
                   arma::mat Z) {
   
-  // The following calculates the n observations specific to the cth site i.e. the colsums of the design matrix Z and only needs to be calculated once:
-  // arma::vec n_per_site = arma::sum(Z, 0); // n observations specific to the cth site
+  // Calculates the number of clusters (sites)
   int n_clusters = Z.n_cols;
-  // int cluster_depth = 1; // Hard-coded to 1 for now since focusing on site-specific effects
-  // int ***cluster_indices = static_cast<int***>(malloc(cluster_depth*sizeof(int **)));
-  // for (int h=0; h<cluster_depth; h++) {
-  //   for (int c; c<n_clusters; c++) {
-  //     arma::uvec indices = arma::find(Z.col(c) == 1); // Get indices of observations that belong to a given site
-  //     for (int i; i<indices.n_elem; i++) {
-  //       cluster_indices[h][c][i] = indices[i];
-  //     }
-  //   }
-  // }
-  
   // FOR NOW, store site-level effect chain
-  arma::mat re_chain(n_clusters, nbrsample);
+  arma::mat re_chain(n_clusters, burninsample+ nbrsample);
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
@@ -1104,9 +1092,13 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         SampleIntercept(rr, n, r, &intercp, s2[m], 100.0, U, A[m], X[m]);
         
         // Sample random effects
-        arma::vec ksi_t = sample_ksi(rr, n, r, n_clusters, &intercp, s2[m], U, A[m], X[m], Z, 0.0, 1.0); // TODO: What might we set the prior mean and variance to?
+        arma::vec ksi_t = sample_ksi(rr, n, r, n_clusters, &intercp, s2[m], U, A[m], X[m], Z, 0.0, 100.0); // TODO: What might we set the prior mean and variance to?
+        // std::cout << "ksi_t size: " << ksi_t.n_elem << std::endl; // Printing the size of the vector
         re_chain.col(t) = ksi_t;
+        // std::cout << "re_chain n_col: " << re_chain.n_cols << std::endl; 
+        // std::cout << "re_chain n_row: " << re_chain.n_rows << std::endl; 
         
+        // Updated residualization (ignoring covariate effects for now)
         for (int c = 0; c < n_clusters; c++) {
           arma::uvec indices = arma::find(Z.col(c) == 1); // Get indices of observations that belong to a given site
           // Loop over observations in the given site
@@ -1116,6 +1108,9 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
             }
         }
       }
+        
+      }
+        
       double sumrho=0;
       
       for (l=0;l<r;l++){
@@ -1583,7 +1578,7 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
 set.seed(1)
-simulation_results <- simulate_re_data(n_sites=5)
+simulation_results <- simulate_re_data(n_sites=30, nu2=10)
 dataList <- list(simulation_results$X[[1]],
                   simulation_results$X[[2]],
                   simulation_results$Y)
@@ -1598,10 +1593,29 @@ BA$VarSelMean
 print("Estimated Loadings:")
 BA$EstLoad[1:2]
 print("True Loadings:")
-simulation_results$A_list
+simulation_results$A
 print("Element-wise mean absolute error between true U and estimated U:")
 mean(simulation_results$U - BA$EstU)
 print("Estimated Sig2:")
 BA$EstSig2
 
+# Trace plot random effects
+library(reshape2) # For melt
+# Create a data frame from the matrix
+mat <- BA$re_chain
+mat_df <- melt(mat)
+# Naming the columns for clarity
+colnames(mat_df) <- c("Row", "Column", "Value")
+# Plotting
+ggplot(mat_df, aes(x = Column, y = Value, group = Row, color = factor(Row))) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Line Plot of Matrix Rows", 
+       x = "Column Index", 
+       y = "Value", 
+       color = "Row")
+# Estimates
+apply(mat[,1000:6000], 1, mean)
+# Truth
+simulation_results$xi_s
 */
