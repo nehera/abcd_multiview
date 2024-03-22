@@ -1577,8 +1577,7 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
-set.seed(1)
-simulation_results <- simulate_re_data(n_sites=30, nu2=10)
+simulation_results <- simulate_re_data(n_sites=10, nu2=1, seed=2)
 dataList <- list(simulation_results$X[[1]],
                   simulation_results$X[[2]],
                   simulation_results$Y)
@@ -1615,7 +1614,11 @@ ggplot(mat_df, aes(x = Column, y = Value, group = Row, color = factor(Row))) +
        y = "Value", 
        color = "Row")
 # Estimates
-apply(mat[,1000:6000], 1, mean)
+apply(mat[,1000:6000], 1, mean) 
+apply(mat[,1000:6000], 1, mean) %>% sd
+apply(mat[,1000:6000], 1, sd)
+
 # Truth
 simulation_results$xi_s
+sd(simulation_results$xi_s)
 */

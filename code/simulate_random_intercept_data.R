@@ -48,7 +48,9 @@ simulate_omics_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
 simulate_re_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
                           prob_feature_importance=0.5, 
                           prob_component_importance=0.5,
-                          nu2=1, n_sites=5, n_covars=1) {
+                          nu2=1, n_sites=5, n_covars=1, seed=1) {
+  
+  set.seed(seed)
   
   omics_data <- simulate_omics_data(n_views, n_obs, p_m, r, prob_feature_importance, prob_component_importance)
   
