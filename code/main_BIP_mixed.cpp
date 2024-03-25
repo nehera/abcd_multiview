@@ -1093,10 +1093,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         
         // Sample random effects
         arma::vec ksi_t = sample_ksi(rr, n, r, n_clusters, &intercp, s2[m], U, A[m], X[m], Z, 0.0, 100.0); // TODO: What might we set the prior mean and variance to?
-        // std::cout << "ksi_t size: " << ksi_t.n_elem << std::endl; // Printing the size of the vector
         re_chain.col(t) = ksi_t;
-        // std::cout << "re_chain n_col: " << re_chain.n_cols << std::endl; 
-        // std::cout << "re_chain n_row: " << re_chain.n_rows << std::endl; 
         
         // Updated residualization (ignoring covariate effects for now)
         for (int c = 0; c < n_clusters; c++) {
@@ -1427,6 +1424,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     Rcpp::Named("EstLoad") = EstLoad,
     Rcpp::Named("EstU") = EstU,
     Rcpp::Named("CompoSelMean") = CompoSelMean,
+    Rcpp::Named("InterceptMean") = InterceptMean,
     Rcpp::Named("IntGrpMean") = IntGrpMean,
     Rcpp::Named("EstSig2") = EstSig2,
     Rcpp::Named("EstLoadMod") = EstLoadMod,
