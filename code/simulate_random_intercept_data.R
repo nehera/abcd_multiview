@@ -3,7 +3,7 @@ library(tidyverse)
 ## -- Define custom functions
 
 # simulate_A assumes all features important across active components
-simulate_A <- function(n_important_components, n_important_features) {
+simulate_A <- function(r, p_m, n_important_components, n_important_features) {
   A <- matrix(0, nrow = r, ncol = p_m) 
   if (n_important_components > 0) {
     index_important_components <- seq(to = n_important_components)
@@ -33,7 +33,7 @@ simulate_omics_data <- function(n_views=2, n_obs=200, p_m=10, r=4,
   E_list <- list()
   
   for (m in 1:n_views) {
-    A_list[[m]] <- simulate_A(n_important_components, n_important_features)
+    A_list[[m]] <- simulate_A(r, p_m, n_important_components, n_important_features)
     E_list[[m]] <- matrix(data = rnorm(n_obs*p_m), nrow = n_obs, ncol = p_m)
     X_list[[m]] <- U %*% A_list[[m]] + E_list[[m]]
   }

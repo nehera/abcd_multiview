@@ -1,6 +1,6 @@
 # The following is from Bayesian Data Analysis 3 (BDA3) Appendix C:
 library(tidyverse)
-setwd("code/test_sampling_re_variance")
+# setwd("code/test_sampling_re_variance")
 schools <- read.csv("schools.csv", header=TRUE)
 J <- nrow(schools)
 y <- schools$estimate
