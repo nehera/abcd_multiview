@@ -76,6 +76,54 @@ arma::vec sample_ksi(gsl_rng * rr, int n, int r, int n_clusters, double * interc
   return ksi;
 }
 
+// Sample random effect variance parameters nu2
+// Function to calculate hat{nu}^2
+double calculateHatNuSquared(const arma::vec& ksi, double mu) {
+  arma::vec diff = ksi - mu;
+  double sumSquares = arma::accu(diff % diff); // Element-wise multiplication
+  return sumSquares / (ksi.n_elem - 1);
+}
+// Function to sample from a Gamma distribution and invert it for the Inverse-Gamma
+double sampleInverseGamma(double alpha, double beta) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::gamma_distribution<> gammaDist(alpha, 1.0 / beta);
+  double gammaSample = gammaDist(gen);
+  return 1.0 / gammaSample; // Invert to get Inverse-Gamma sample
+}
+// Gibbs sampling step for nu^2 with or without truncation
+double gibbsSamplingStepNuSquared(const arma::vec& ksi, double mu, double c2, bool truncate_nu2) {
+  double J = static_cast<double>(ksi.n_elem);
+  double hatNuSquared = calculateHatNuSquared(ksi, mu);
+  // Parameters for the conditional Inverse-Gamma distribution
+  double alpha = (J - 1) / 2.0;
+  double beta = (J - 1) * hatNuSquared / 2.0;
+  double nuSquaredSample;
+  if (truncate_nu2) {
+    // Truncated sampling
+    do {
+      nuSquaredSample = sampleInverseGamma(alpha, beta);
+    } while (nuSquaredSample >= c2);
+  } else {
+    // Direct sampling without truncation
+    nuSquaredSample = sampleInverseGamma(alpha, beta);
+  }
+  return nuSquaredSample;
+}
+// [[Rcpp::export]]
+int gibbsSamplingStepNuSquaredExample() {
+  // Example usage with Armadillo
+  arma::vec ksi = {1.2, 2.3, 2.1, 1.8}; // Your data vector
+  double mu = 2.0; // Mean (mu)
+  // Perform a Gibbs sampling step for nu^2 without truncation
+  double nuSquaredSample = gibbsSamplingStepNuSquared(ksi, mu, 0.2, false);
+  std::cout << "Sampled nu^2 without truncation: " << nuSquaredSample << std::endl;
+  // Perform a Gibbs sampling step for nu^2 with truncation
+  nuSquaredSample = gibbsSamplingStepNuSquared(ksi, mu, 0.2, true);
+  std::cout << "Sampled nu^2 with truncation: " << nuSquaredSample << std::endl;
+  return 0;
+}
+
 void logPostGam(double *logpo, arma::vec IndVar, int Np, int r, int n, arma::vec P, 
                 double *** Tau, double ** U,double *** X, double **s2, bool ** rho, 
                 bool *** Gam, double** qv, double* q) {
@@ -845,12 +893,13 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                   arma::vec IntGrpMean, arma::vec EstU, arma::vec EstSig2, double InterceptMean, arma::vec EstLoadMod,
                   arma::vec EstLoad, int nbrmodel1, arma::vec postgam, arma::vec priorcompsel, arma::vec priorcompselo,
                   arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel,
-                  arma::mat Z) {
+                  arma::mat Z, double c2nu2, bool trunate_nu2) {
   
   // Calculates the number of clusters (sites)
   int n_clusters = Z.n_cols;
-  // FOR NOW, store site-level effect chain
+  // FOR NOW, store random effect chains in entirety
   arma::mat re_chain(n_clusters, burninsample+ nbrsample);
+  arma::vec nu2_chain(burninsample+ nbrsample);
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
@@ -1091,9 +1140,14 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         // Sample alpha_0 intercept
         SampleIntercept(rr, n, r, &intercp, s2[m], 100.0, U, A[m], X[m]);
         
-        // Sample random effects
+        // Sample random effect intercepts
         arma::vec ksi_t = sample_ksi(rr, n, r, n_clusters, &intercp, s2[m], U, A[m], X[m], Z, 0.0, 100.0); // TODO: What might we set the prior mean and variance to?
         re_chain.col(t) = ksi_t;
+        
+        // Sample random effect variance parameter
+        double nu2_t = gibbsSamplingStepNuSquared(ksi_t, 0.0, c2nu2, trunate_nu2);
+        // std::cout << "nu2_t: " << nu2_t << endl;
+        nu2_chain(t) = nu2_t;
         
         // Updated residualization (ignoring covariate effects for now)
         for (int c = 0; c < n_clusters; c++) {
@@ -1429,7 +1483,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     Rcpp::Named("EstSig2") = EstSig2,
     Rcpp::Named("EstLoadMod") = EstLoadMod,
     Rcpp::Named("nbrmodel1") = nbrmodel1,
-    Rcpp::Named("re_chain") = re_chain
+    Rcpp::Named("re_chain") = re_chain,
+    Rcpp::Named("nu2_chain") = nu2_chain
   );
 }
 
@@ -1439,7 +1494,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 library(MASS)
 BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Method,nbrcomp=4, sample=5000, burnin=1000,nbrmaxmodels=50,
                 priorcompselv=c(1,1),priorcompselo=c(1,1),priorb0=c(2,2),priorb=c(1,1),priorgrpsel=c(1,1),probvarsel=0.05,
-                Z=NULL) {
+                Z=NULL, c2nu2=100, trunate_nu2=FALSE) {
   
   if (sample<=burnin){
     stop("Argument burnin must be smaller than sample: the number of MCMC iterations.")
@@ -1516,7 +1571,7 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
     EstLoadMod=as.double(rep(0,nbrmaxmodels*nbrcomp*sum(P))),EstLoad=as.double(rep(0,nbrcomp*sum(P))),
     nbrmodel=as.integer(0),postgam=rep(0,nbrmaxmodels),priorcompsel=priorcompselv,
     priorcompselo=priorcompselo,priorb0=priorb0,priorb=as.double(priorb),priorgrpsel=priorgrpsel,probvarsel=as.double(probvarsel),
-    Z
+    Z, c2nu2, trunate_nu2
   )
   
   reseffect=result$EstLoadMod
@@ -1570,16 +1625,19 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
                GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,IntGrpMean=IntGrpMean,EstLoad=EstLoad,
                EstLoadModel=EstLoadModel,nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,
                PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD,
-               re_chain=result$re_chain))
+               re_chain=result$re_chain, nu2_chain = result$nu2_chain, c2nu2=c2nu2, trunate_nu2=trunate_nu2))
 }
 
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
-simulation_results <- simulate_re_data(n_sites=10, nu2=1, seed=2)
+nu2_truth <- 2
+simulation_results <- simulate_re_data(n_sites=30, nu2=nu2_truth, seed=2)
 dataList <- list(simulation_results$X[[1]],
                   simulation_results$X[[2]],
                   simulation_results$Y)
-BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=5000, burnin=1000, Z= simulation_results$Z)
+n_sample <- 5000
+n_burnin <- 1000
+BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=n_sample, burnin=n_burnin, Z= simulation_results$Z)
 
 print("Component selection mean:")
 BA$CompoSelMean
@@ -1612,11 +1670,33 @@ ggplot(mat_df, aes(x = Column, y = Value, group = Row, color = factor(Row))) +
        y = "Value", 
        color = "Row")
 # Estimates
-apply(mat[,1000:6000], 1, mean) 
-apply(mat[,1000:6000], 1, mean) %>% sd
-apply(mat[,1000:6000], 1, sd)
+apply(mat[,n_burnin:n_sample], 1, mean) 
+apply(mat[,n_burnin:n_sample], 1, mean) %>% sd
+apply(mat[,n_burnin:n_sample], 1, sd)
 
 # Truth
 simulation_results$xi_s
 sd(simulation_results$xi_s)
+
+# Test nu2 Sampling
+gibbsSamplingStepNuSquaredExample()
+BA$nu2_chain[3000:n_sample] %>% mean() # Later burnin seemingly required. Also, right-skew suggests median merited
+nu2_plt_data <- data.frame(t=1:length(BA$nu2_chain), nu2=BA$nu2_chain) 
+nu2_plt_data %>%
+  ggplot(aes(x=t, y=nu2)) +
+  geom_line()
+nu2_plt_data %>% ggplot(aes(x=nu2)) + geom_density() + geom_vline(aes(xintercept = nu2_truth, color = "red")) + ggtitle("without truncation")
+
+# Experiment with truncated prior on the variance parameter
+gibbsSamplingStepNuSquaredExample()
+
+# Sample with truncation
+BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=n_sample, burnin=n_burnin, Z= simulation_results$Z, c2nu2=3, trunate_nu2=TRUE)
+BA$nu2_chain[3000:n_sample] %>% mean() # Later burnin seemingly required. Also, right-skew suggests median merited
+nu2_plt_data <- data.frame(t=1:length(BA$nu2_chain), nu2=BA$nu2_chain) 
+nu2_plt_data %>%
+  ggplot(aes(x=t, y=nu2)) +
+  geom_line()
+nu2_plt_data %>% ggplot(aes(x=nu2)) + geom_density() + geom_vline(aes(xintercept = nu2_truth, color = "red")) + ggtitle("with truncation")
+
 */
