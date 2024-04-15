@@ -1691,7 +1691,7 @@ nu2_plt_data %>% ggplot(aes(x=nu2)) + geom_density() + geom_vline(aes(xintercept
 gibbsSamplingStepNuSquaredExample()
 
 # Sample with truncation
-BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=n_sample, burnin=n_burnin, Z= simulation_results$Z, c2nu2=3, trunate_nu2=TRUE)
+BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=n_sample, burnin=n_burnin, Z= simulation_results$Z, c2nu2=100, trunate_nu2=TRUE)
 BA$nu2_chain[3000:n_sample] %>% mean() # Later burnin seemingly required. Also, right-skew suggests median merited
 nu2_plt_data <- data.frame(t=1:length(BA$nu2_chain), nu2=BA$nu2_chain) 
 nu2_plt_data %>%
