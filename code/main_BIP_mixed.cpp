@@ -43,7 +43,7 @@ void SampleIntercept(gsl_rng * rr, int n, int r, double * intercept, double * si
   *intercept=(n/(invsig2*sigma2[0]))*meany+sqrt(1/invsig2)*gsl_ran_ugaussian(rr);
 }
 
-// Samples random intercepts at a given level of the hierarchy, modifying a double-pointer that stores nested random intercepts
+// Samples random intercepts at a given level of the hierarchy
 arma::vec sample_ksi(gsl_rng * rr, int n, int r, int n_clusters, double * intercept, 
                      double * sigma2, double ** U, double ** A, double ** y,
                     arma::mat Z, double mu_0, double nu2) {
@@ -74,6 +74,77 @@ arma::vec sample_ksi(gsl_rng * rr, int n, int r, int n_clusters, double * interc
     ksi(c) = conditional_mu(c) + random_normal;
   }
   return ksi;
+}
+
+// Samples random intercepts for all levels of the hierarchy
+Rcpp::List sample_ksi_nest(gsl_rng * rr, int n, int r, int n_families, int n_sites, double * intercept, 
+                     double * sigma2, double ** U, double ** A, double ** y,
+                     arma::mat Z_family, arma::mat Z_site, double mu_0, double nu2_family, double nu2_site) {
+  
+  // Initialize family-level data structures
+  arma::vec sum_y(n_families);
+  arma::vec conditional_mu_families(n_families);
+  arma::vec conditional_var_families(n_families);
+  arma::vec ksi_families(n_families);
+  
+  // Initialize site-level data structures
+  arma::vec sum_ksi(n_sites);
+  arma::vec conditional_mu_sites(n_sites);
+  arma::vec conditional_var_sites(n_sites);
+  arma::vec ksi_sites(n_sites);
+  
+  for (int s = 0; s < n_sites; s++) {
+    
+    // Sample site-level intercepts
+    arma::uvec indices_site = arma::find(Z_site.col(s) == 1); // Get indices of observations that belong
+    // Loop over observations in the given site
+    for (int i : indices_site) {
+      arma::uvec fam_indices = arma::find(Z_family.row(i) == 1);
+      int fam_id = fam_indices(0);  // Get the first (and supposedly only) index
+      double ksi_i = ksi_families(fam_id);
+      sum_ksi += ksi_i; // Add up family-level ksi's for site-level sampling
+    }
+    int site_size = indices_site.n_elem;
+    // Calculate conditional variance where nu2_site is the prior variance
+    conditional_var_sites(s) = (nu2_site * (nu2_family)) / (nu2_family + nu2_site * site_size); // Note, here we de-reference sigma2 to get its value
+    // Calculate conditional mean
+    conditional_mu_sites(s) = conditional_var_sites(s) * ( (mu_0 * (nu2_family) + nu2_site * sum_ksi(s)) / (nu2_family * nu2_site) ); 
+    // Generate a normally distributed random number with mean 0 and standard deviation sigma
+    double sigma = std::sqrt(conditional_var_sites(s)); 
+    double random_normal = gsl_ran_gaussian(rr, sigma);
+    // Adjust the generated number to have mean mu
+    ksi_sites(s) = conditional_mu_sites(s) + random_normal;
+    
+    // Sample family-level intercepts
+    for (int f = 0; f < n_families; f++) {
+      arma::uvec indices_family = arma::find(Z_family.col(f) == 1); // Get indices of observations that belong
+      // Loop over observations in the given family
+      for (int i : indices_family) {
+        double ua_i = 0;
+        for (int l = 0; l < r; l++) {
+          ua_i += U[i][l] * A[l][0];
+        }
+        sum_y(f) += y[i][0] - *intercept - ua_i;  // TODO also residualize covariate effects
+      }
+      int family_size = indices_family.n_elem;
+      // Calculate conditional variance where nu2_family is the prior variance
+      conditional_var_families(f) = (nu2_family * (*sigma2)) / (*sigma2 + nu2_family * family_size); // Note, here we de-reference sigma2 to get its value
+      // Calculate conditional mean
+      conditional_mu_families(f) = conditional_var_families(f) * ( (ksi_sites(s) * (*sigma2) + nu2_family * sum_y(f)) / (*sigma2 * nu2_family) ); 
+      // Generate a normally distributed random number with mean 0 and standard deviation sigma
+      double sigma = std::sqrt(conditional_var_families(f)); 
+      double random_normal = gsl_ran_gaussian(rr, sigma);
+      // Adjust the generated number to have mean mu
+      ksi_families(f) = conditional_mu_families(f) + random_normal;
+    }
+    
+  }
+  
+  return Rcpp::List::create(
+    Rcpp::Named("ksi_sites") = ksi_sites,
+    Rcpp::Named("ksi_families") = ksi_families
+  );
+  
 }
 
 // Sample random effect variance parameters nu2
@@ -893,13 +964,18 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                   arma::vec IntGrpMean, arma::vec EstU, arma::vec EstSig2, double InterceptMean, arma::vec EstLoadMod,
                   arma::vec EstLoad, int nbrmodel1, arma::vec postgam, arma::vec priorcompsel, arma::vec priorcompselo,
                   arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel,
-                  arma::mat Z, double c2nu2, bool trunate_nu2) {
+                  arma::mat Z_family, arma::mat Z_site, double c2nu2, bool trunate_nu2) {
   
-  // Calculates the number of clusters (sites)
-  int n_clusters = Z.n_cols;
+  // Calculates the number of clusters
+  int n_sites = Z_site.n_cols;
+  int n_families = Z_family.n_cols;
+  
   // FOR NOW, store random effect chains in entirety
-  arma::mat re_chain(n_clusters, burninsample+ nbrsample);
-  arma::vec nu2_chain(burninsample+ nbrsample);
+  arma::mat ksi_sites_chain(n_sites, burninsample + nbrsample);
+  arma::mat ksi_families_chain(n_families, burninsample + nbrsample);
+  // arma::vec nu2_site_chain(burninsample + nbrsample);
+  // arma::vec nu2_family_chain(burninsample + nbrsample);
+  arma::vec nu2_chain(burninsample + nbrsample);
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
@@ -1141,23 +1217,32 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         SampleIntercept(rr, n, r, &intercp, s2[m], 100.0, U, A[m], X[m]);
         
         // Sample random effect intercepts
-        arma::vec ksi_t = sample_ksi(rr, n, r, n_clusters, &intercp, s2[m], U, A[m], X[m], Z, 0.0, 100.0); // TODO: What might we set the prior mean and variance to?
-        re_chain.col(t) = ksi_t;
+        Rcpp::List result = sample_ksi_nest(rr, n, r, n_families, n_sites, &intercp, s2[m], U, A[m], X[m], Z_family, Z_site, 0.0, 1.0, 1.0);
+        // Extract elements
+        arma::vec ksi_sites = Rcpp::as<arma::vec>(result["ksi_sites"]);
+        arma::vec ksi_families = Rcpp::as<arma::vec>(result["ksi_families"]);
+        // Store each iteration
+        ksi_sites_chain.col(t) = ksi_sites;
+        ksi_families_chain.col(t) = ksi_families;
         
-        // Sample random effect variance parameter
-        double nu2_t = gibbsSamplingStepNuSquared(ksi_t, 0.0, c2nu2, trunate_nu2);
-        // std::cout << "nu2_t: " << nu2_t << endl;
+        // // Sample random effect variance parameter
+        double nu2_t = 100.0;
+        // double nu2_t = gibbsSamplingStepNuSquared(ksi_t, 0.0, c2nu2, trunate_nu2);
         nu2_chain(t) = nu2_t;
         
         // Updated residualization (ignoring covariate effects for now)
-        for (int c = 0; c < n_clusters; c++) {
-          arma::uvec indices = arma::find(Z.col(c) == 1); // Get indices of observations that belong to a given site
-          // Loop over observations in the given site
-          for (int i : indices) {
-            for (j=0;j<P[m];j++){
-              X1[m][i][j]=X[m][i][j]-intercp-ksi_t(c);
+        for (int s = 0; s < n_sites; s++) {
+          for (int f = 0; f < n_families; f++) {
+            // Loop over observations in a given family and site
+            // Note, family is perfectly nested within site
+            arma::uvec indices = arma::find(Z_family.col(s) == 1); 
+            for (int i : indices) {
+              for (j=0;j<P[m];j++){
+                // TODO Also residualize on covariate effects
+                X1[m][i][j]=X[m][i][j]-intercp-ksi_sites(s)-ksi_families(f);
+              }
             }
-        }
+          }
       }
         
       }
@@ -1483,7 +1568,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     Rcpp::Named("EstSig2") = EstSig2,
     Rcpp::Named("EstLoadMod") = EstLoadMod,
     Rcpp::Named("nbrmodel1") = nbrmodel1,
-    Rcpp::Named("re_chain") = re_chain,
+    Rcpp::Named("ksi_sites_chain") = ksi_sites_chain,
+    Rcpp::Named("ksi_families_chain") = ksi_families_chain,
     Rcpp::Named("nu2_chain") = nu2_chain
   );
 }
@@ -1494,7 +1580,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 library(MASS)
 BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Method,nbrcomp=4, sample=5000, burnin=1000,nbrmaxmodels=50,
                 priorcompselv=c(1,1),priorcompselo=c(1,1),priorb0=c(2,2),priorb=c(1,1),priorgrpsel=c(1,1),probvarsel=0.05,
-                Z=NULL, c2nu2=100, trunate_nu2=FALSE) {
+                Z_family=NULL, Z_site=NULL, c2nu2=100, trunate_nu2=FALSE) {
   
   if (sample<=burnin){
     stop("Argument burnin must be smaller than sample: the number of MCMC iterations.")
@@ -1571,7 +1657,7 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
     EstLoadMod=as.double(rep(0,nbrmaxmodels*nbrcomp*sum(P))),EstLoad=as.double(rep(0,nbrcomp*sum(P))),
     nbrmodel=as.integer(0),postgam=rep(0,nbrmaxmodels),priorcompsel=priorcompselv,
     priorcompselo=priorcompselo,priorb0=priorb0,priorb=as.double(priorb),priorgrpsel=priorgrpsel,probvarsel=as.double(probvarsel),
-    Z, c2nu2, trunate_nu2
+    Z_family, Z_site, c2nu2, trunate_nu2
   )
   
   reseffect=result$EstLoadMod
@@ -1625,19 +1711,24 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
                GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,IntGrpMean=IntGrpMean,EstLoad=EstLoad,
                EstLoadModel=EstLoadModel,nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,
                PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD,
-               re_chain=result$re_chain, nu2_chain = result$nu2_chain, c2nu2=c2nu2, trunate_nu2=trunate_nu2))
+               ksi_families_chain=result$ksi_families_chain, ksi_sites_chain=result$ksi_sites_chain, nu2_chain = result$nu2_chain, c2nu2=c2nu2, trunate_nu2=trunate_nu2))
 }
 
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
-nu2_truth <- 2
-simulation_results <- simulate_re_data(n_sites=30, nu2=nu2_truth, seed=2)
+nu2_site_truth <- 1
+nu2_family_truth <- 1
+# simulation_results <- simulate_re_data(n_sites=30, nu2=nu2_truth, seed=2)
+simulation_results <- simulate_re_data_nested(n_sites = 10, n_families_per_site = 20,
+                                              nu2_site = nu2_site_truth, 
+                                              nu2_family = nu2_family_truth)
 dataList <- list(simulation_results$X[[1]],
                   simulation_results$X[[2]],
                   simulation_results$Y)
 n_sample <- 5000
 n_burnin <- 1000
-BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=n_sample, burnin=n_burnin, Z= simulation_results$Z)
+BA <- BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=n_sample, burnin=n_burnin, 
+       Z_site = simulation_results$Z_site, Z_family = simulation_results$Z_family)
 
 print("Component selection mean:")
 BA$CompoSelMean
@@ -1657,7 +1748,7 @@ BA$EstSig2
 # Trace plot random effects
 library(reshape2) # For melt
 # Create a data frame from the matrix
-mat <- BA$re_chain
+mat <- BA$ksi_sites_chain
 mat_df <- melt(mat)
 # Naming the columns for clarity
 colnames(mat_df) <- c("Row", "Column", "Value")
@@ -1675,7 +1766,7 @@ apply(mat[,n_burnin:n_sample], 1, mean) %>% sd
 apply(mat[,n_burnin:n_sample], 1, sd)
 
 # Truth
-simulation_results$xi_s
+simulation_results$xi_family
 sd(simulation_results$xi_s)
 
 # Test nu2 Sampling
