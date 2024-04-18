@@ -1217,7 +1217,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         SampleIntercept(rr, n, r, &intercp, s2[m], 100.0, U, A[m], X[m]);
         
         // Sample random effect intercepts
-        Rcpp::List result = sample_ksi_nest(rr, n, r, n_families, n_sites, &intercp, s2[m], U, A[m], X[m], Z_family, Z_site, 0.0, 1.0, 1.0);
+        Rcpp::List result = sample_ksi_nest(rr, n, r, n_families, n_sites, &intercp, s2[m], U, A[m], X[m], Z_family, Z_site, 0.0, 5.0, 5.0);
         // Extract elements
         arma::vec ksi_sites = Rcpp::as<arma::vec>(result["ksi_sites"]);
         arma::vec ksi_families = Rcpp::as<arma::vec>(result["ksi_families"]);
@@ -1226,7 +1226,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         ksi_families_chain.col(t) = ksi_families;
         
         // // Sample random effect variance parameter
-        double nu2_t = 100.0;
+        double nu2_t = 5.0;
         // double nu2_t = gibbsSamplingStepNuSquared(ksi_t, 0.0, c2nu2, trunate_nu2);
         nu2_chain(t) = nu2_t;
         
@@ -1239,7 +1239,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
             for (int i : indices) {
               for (j=0;j<P[m];j++){
                 // TODO Also residualize on covariate effects
-                X1[m][i][j]=X[m][i][j]-intercp-ksi_sites(s)-ksi_families(f);
+                X1[m][i][j]=X[m][i][j]-intercp-ksi_families(f);
               }
             }
           }
@@ -1716,8 +1716,8 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
-nu2_site_truth <- 1
-nu2_family_truth <- 1
+nu2_site_truth <- 5
+nu2_family_truth <- 5
 # simulation_results <- simulate_re_data(n_sites=30, nu2=nu2_truth, seed=2)
 simulation_results <- simulate_re_data_nested(n_sites = 10, n_families_per_site = 20,
                                               nu2_site = nu2_site_truth, 
@@ -1748,8 +1748,8 @@ BA$EstSig2
 # Trace plot random effects
 library(reshape2) # For melt
 # Create a data frame from the matrix
-mat <- BA$ksi_sites_chain
-mat_df <- melt(mat)
+ksi_sites_chain <- BA$ksi_sites_chain
+mat_df <- melt(ksi_sites_chain)
 # Naming the columns for clarity
 colnames(mat_df) <- c("Row", "Column", "Value")
 # Plotting
@@ -1761,13 +1761,13 @@ ggplot(mat_df, aes(x = Column, y = Value, group = Row, color = factor(Row))) +
        y = "Value", 
        color = "Row")
 # Estimates
-apply(mat[,n_burnin:n_sample], 1, mean) 
-apply(mat[,n_burnin:n_sample], 1, mean) %>% sd
-apply(mat[,n_burnin:n_sample], 1, sd)
+apply(ksi_sites_chain[,n_burnin:n_sample], 1, mean) 
+apply(ksi_sites_chain[,n_burnin:n_sample], 1, mean) %>% sd
+apply(ksi_sites_chain[,n_burnin:n_sample], 1, sd)
 
 # Truth
-simulation_results$xi_family
-sd(simulation_results$xi_s)
+simulation_results$xi_sites
+sd(simulation_results$xi_sites)
 
 # Test nu2 Sampling
 gibbsSamplingStepNuSquaredExample()
