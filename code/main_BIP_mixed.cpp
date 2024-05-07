@@ -162,6 +162,7 @@ double sampleInverseGamma(double alpha, double beta) {
   double gammaSample = gammaDist(gen);
   return 1.0 / gammaSample; // Invert to get Inverse-Gamma sample
 }
+
 // Gibbs sampling step for nu^2 with or without truncation
 double gibbsSamplingStepNuSquared(const arma::vec& ksi, double mu, double c2, bool truncate_nu2) {
   double J = static_cast<double>(ksi.n_elem);
@@ -181,6 +182,7 @@ double gibbsSamplingStepNuSquared(const arma::vec& ksi, double mu, double c2, bo
   }
   return nuSquaredSample;
 }
+
 // [[Rcpp::export]]
 int gibbsSamplingStepNuSquaredExample() {
   // Example usage with Armadillo
@@ -193,6 +195,26 @@ int gibbsSamplingStepNuSquaredExample() {
   nuSquaredSample = gibbsSamplingStepNuSquared(ksi, mu, 0.2, true);
   std::cout << "Sampled nu^2 with truncation: " << nuSquaredSample << std::endl;
   return 0;
+}
+
+// Gibbs sampling step for nu^2 with or without truncation
+double gibbsSamplingStepNuSquared_nest(const arma::vec& ksi, double mu, double c2, bool truncate_nu2) {
+  double J = static_cast<double>(ksi.n_elem);
+  double hatNuSquared = calculateHatNuSquared(ksi, mu);
+  // Parameters for the conditional Inverse-Gamma distribution
+  double alpha = (J - 1) / 2.0;
+  double beta = (J - 1) * hatNuSquared / 2.0;
+  double nuSquaredSample;
+  if (truncate_nu2) {
+    // Truncated sampling
+    do {
+      nuSquaredSample = sampleInverseGamma(alpha, beta);
+    } while (nuSquaredSample >= c2);
+  } else {
+    // Direct sampling without truncation
+    nuSquaredSample = sampleInverseGamma(alpha, beta);
+  }
+  return nuSquaredSample;
 }
 
 void logPostGam(double *logpo, arma::vec IndVar, int Np, int r, int n, arma::vec P, 

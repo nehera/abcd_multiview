@@ -1,0 +1,80 @@
+---
+title: "ABCD Multiview Step 1. Dataset, Simulation Topic, Questions, and Relevant References"
+author: "Aidan Neher"
+format: docx
+editor: visual
+---
+
+## Motivating Questions
+
+1. Motivating application: Which early life adversity (ELA), neuroimaging, and genomic features are important for the prediction of cognitive outcomes? 
+2. Methods extension: Does extension of the BIP framework to a mixed outcome model that accommodates observational clustering perform well, specifically above and beyond the BIP framework that does not account for observational clustering, in this setting and related settings?  
+
+## ABCD Study Dataset
+
+The Adolescent Brain and Cognitive Development Study (ABCD Study®) is the largest long-term study of brain development and child health in the United States. Starting with students aged 9-10 years old and repeated until age 19-20, brains scans are taken bi-annually, biosamples, paper and pen tests, and iPad tasks annually, and interviews every 3-6 months.
+
+We are most interested in the following "views"
+
+* Early life adversity (ELA)
+* Neuroimaging 
+* Genomics/ epigenomics
+
+We are performing variable selection jointly with prediction in relation to the following continuous outcomes
+
+* internalizing problems, 
+* externalizing problems, 
+* cognitive flexibility, and 
+* inhibitory control
+
+We control for common covariates 
+* sex
+* age
+* race
+* ... 
+
+Firstly, we load the ELA view using code shared by Mark Fiecas. Here is the additional context he provided on sharing: "This came from the supplementary material of the Orendain et al paper. Note that they actually used more, but these were the ones that were "relevant" per their factor analysis. They had about ~10 more variables but those did not have high factor loadings. Please see their supplemental material if you'd like to get the other ~10. You'll need to revise Ellery's standard prep code to make sure these get loaded in (see her "files" variable), and the first place to start is here, which is at the very bottom."
+
+```{r, include=FALSE}
+library(tidyverse)
+
+# Physical and sexual violence
+mh_p_ksads = read.csv('mental-health/mh_p_ksads_ptsd.csv') %>%
+dplyr::select(src_subject_id,eventname,ksads_ptsd_raw_761_p,ksads_ptsd_raw_762_p,ksads_ptsd_raw_763_p,ksads_ptsd_raw_767_p,ksads_ptsd_raw_768_p,ksads_ptsd_raw_769_p,ksads_ptsd_raw_760_p,ksads_ptsd_raw_764_p,ksads_ptsd_raw_765_p)
+
+# Parent psychopathology
+mh_p_fhx = read.csv('mental-health/mh_p_fhx.csv') %>%
+dplyr::select(src_subject_id,eventname,famhx_4_p,fam_history_5_yes_no,fam_history_6_yes_no,fam_history_7_yes_no,fam_history_8_yes_no,fam_history_11_yes_no,fam_history_12_yes_no,fam_history_13_yes_no)
+
+# Neighborhood Threat
+ce_p_nsc = read.csv('culture-environment/ce_p_nsc.csv') %>%
+dplyr::select(src_subject_id,eventname,neighborhood3r_p,neighborhood2r_p)
+
+# Prenatal Substance Exposure
+ph_p_dhx = read.csv('physical-health/ph_p_dhx.csv') %>% dplyr::select(src_subject_id,eventname,devhx_9_tobacco,devhx_9_alcohol,devhx_9_marijuana,devhx_9_coc_crack,devhx_9_her_morph,devhx_9_oxycont)
+
+# Scarcity
+abcd_p_demo = demog %>%
+dplyr::select(src_subject_id,eventname,demo_fam_exp1_v2,demo_fam_exp5_v2)
+
+# Household Dysfunction
+ce_y_fes = read.csv('culture-environment/ce_y_fes.csv') %>%
+dplyr::select(src_subject_id,eventname,fes_youth_q6,fes_youth_q1,fes_youth_q5)
+
+###
+
+files <- list(demog, demog_y, puberty, study_covars, mri, dat.mri,qc, scan_qtns, cbcl, bpm_y, ksad_new_df,
+mh_p_ksads,mh_p_fhx,ce_p_nsc,ph_p_dhx,abcd_p_demo,ce_y_fes)
+
+```
+
+## Simulation Topic
+
+
+
+## Relevant References
+
+## Appendix: All code for this document consolidated
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
