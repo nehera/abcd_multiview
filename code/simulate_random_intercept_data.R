@@ -142,6 +142,11 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
     family_index <- sample(n_families_per_site, 1) # Randomly assign an observation to a family within the site
     Z_family[i, (site_index - 1) * n_families_per_site + family_index] <- 1
   }
+  # TODO center xi_familes at xi_sites
+  # xi_families <- NULL
+  # for (f in 1:ncol(Z_family)) {
+  #   xi_families <- rbind( xi_families, rnorm(1, mean = xi_sites[s, 1], sd = sqrt(nu2_family)) )
+  # }
   xi_families <- rnorm(n_sites * n_families_per_site, sd = sqrt(nu2_family)) %>% matrix(ncol = 1)
   
   # Sample residuals

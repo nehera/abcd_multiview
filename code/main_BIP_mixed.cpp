@@ -1823,14 +1823,26 @@ sd(simulation_results$xi_sites)
 
 # Test nu2 Sampling
 BA$nu2_chain[1, n_burnin:n_sample] %>% mean() # Later burnin seemingly required. Also, right-skew suggests median merited
-nu2_plt_data <- data.frame(t=1:(n_burnin+n_sample), nu1_squared = BA$nu2_chain[1, ], nu2_squared=BA$nu2_chain[2, ]) %>%
-  pivot_longer(
-    cols = c(nu1_squared, nu2_squared),
-    names_to = "variable",
-    values_to = "value"
-  )
+nu2_plt_data <- data.frame(t=1:(n_burnin+n_sample), nu1_squared = BA$nu2_chain[1, ], nu2_squared=BA$nu2_chain[2, ]) # %>%
+  # pivot_longer(
+  #   cols = c(nu1_squared, nu2_squared),
+  #   names_to = "variable",
+  #   values_to = "value"
+  # )
 nu2_plt_data %>%
-  ggplot(aes(x=t, y=value, color = variable)) +
-  geom_line()
+  ggplot(aes(x=t, y=nu1_squared)) +
+  geom_line() + geom_hline(yintercept = nu2_family_truth)
+
+nu2_plt_data %>%
+  ggplot(aes(x=nu1_squared)) +
+  geom_density() + geom_vline(xintercept = nu2_family_truth)
+
+nu2_plt_data %>%
+  ggplot(aes(x=t, y=nu2_squared)) +
+  geom_line() + geom_hline(yintercept = nu2_site_truth)
+
+nu2_plt_data %>%
+  ggplot(aes(x=nu2_squared)) +
+  geom_density() + geom_vline(xintercept = nu2_site_truth)
 
 */
