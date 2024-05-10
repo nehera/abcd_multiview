@@ -160,7 +160,7 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
   
   return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, xi_sites=xi_sites, xi_families=xi_families, 
               X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha_0=alpha_0, alpha=alpha,
-              gamma=omics_data$gamma, Eta=omics_data$Eta))
+              gamma=omics_data$gamma, Eta=omics_data$Eta, nu2 = matrix(c(nu2_site, nu2_family), ncol = 1)))
 }
 
 ## -- Example Usage

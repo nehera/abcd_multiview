@@ -1768,10 +1768,10 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
-nu2_site_truth <- 2
-nu2_family_truth <- 0.5
+nu2_site_truth <- 10
+nu2_family_truth <- 5
 # simulation_results <- simulate_re_data(n_sites=30, nu2=nu2_truth, seed=2)
-simulation_results <- simulate_re_data_nested(n_obs = 300, n_sites = 3, n_families_per_site = 10,
+simulation_results <- simulate_re_data_nested(n_obs = 30, n_sites = 30, n_families_per_site = 1,
                                               nu2_site = nu2_site_truth, 
                                               nu2_family = nu2_family_truth)
 dataList <- list(simulation_results$X[[1]],
@@ -1822,7 +1822,6 @@ simulation_results$xi_sites
 sd(simulation_results$xi_sites)
 
 # Test nu2 Sampling
-BA$nu2_chain[1, n_burnin:n_sample] %>% mean() # Later burnin seemingly required. Also, right-skew suggests median merited
 nu2_plt_data <- data.frame(t=1:(n_burnin+n_sample), nu1_squared = BA$nu2_chain[1, ], nu2_squared=BA$nu2_chain[2, ]) 
 
 nu2_plt_data %>%
@@ -1840,5 +1839,68 @@ nu2_plt_data %>%
 nu2_plt_data %>%
   ggplot(aes(x=nu2_squared)) +
   geom_density() + geom_vline(xintercept = nu2_site_truth)
+
+# Posterior mean estimates
+nu2_plt_data[n_burnin:nrow(nu2_plt_data), 2:3] %>% apply(2, mean)
+
+# Extract dimensions of matrices to dynamically calculate parameters
+n_parameters_ksi_sites <- nrow(BA$ksi_sites_chain)
+n_parameters_ksi_f_in_s <- nrow(BA$ksi_f_in_s_chain)
+n_parameters_nu2 <- nrow(BA$nu2_chain)
+
+# Total number of parameters
+total_parameters <- n_parameters_ksi_sites + n_parameters_ksi_f_in_s + n_parameters_nu2
+
+# Number of iterations (assuming the number of columns represent the iterations)
+n_iterations <- ncol(BA$ksi_sites_chain)  # Assuming all matrices have the same number of iterations
+
+# Define dimensions
+dim1 <- n_iterations  # Iterations
+dim2 <- 1             # Chains (only one in this case)
+dim3 <- total_parameters  # Total number of parameters
+
+# Initialize the array
+combined_array <- array(dim = c(dim1, dim2, dim3))
+
+# Fill the array with the respective parameters
+combined_array[,,1:n_parameters_ksi_sites] <- t(BA$ksi_sites_chain)
+combined_array[,,(n_parameters_ksi_sites + 1):(n_parameters_ksi_sites + n_parameters_ksi_f_in_s)] <- t(BA$ksi_f_in_s_chain)
+combined_array[,,(total_parameters - n_parameters_nu2 + 1):total_parameters] <- t(BA$nu2_chain)
+
+# Define names for the parameters
+param_names <- c(paste("ksi_s[", 1:n_parameters_ksi_sites, "]", sep=""),
+                 paste("ksi_f[", 1:n_parameters_ksi_f_in_s, "]", sep=""),
+                 paste("nu2[", 1:n_parameters_nu2, "]", sep=""))
+
+# Assign names to dimensions of the array
+dimnames(combined_array) <- list(NULL, NULL, param_names)
+
+# Use rstan::monitor on the combined array
+mcmc_summary <- rstan::monitor(combined_array)
+
+# Extract the credible intervals and mean estimates
+mean_values <- mcmc_summary$mean
+lower_bounds <- mcmc_summary$`2.5%`
+upper_bounds <- mcmc_summary$`97.5%`
+
+# Combine the true values into a single vector, ordered according to the MCMC parameters
+true_values <- c(as.vector(simulation_results$xi_sites), 
+                 as.vector(simulation_results$xi_families), 
+                 as.vector(simulation_results$nu2))
+
+# Initialize a dataframe to hold the comparisons
+comparison <- data.frame(
+  param_name = param_names,
+  lower = lower_bounds,
+  mean = mean_values,
+  upper = upper_bounds,
+  true_value = true_values
+)
+
+# Add a logical vector to see if true values are within the credible intervals
+comparison$within_credible_interval <- with(comparison, true_value >= lower & true_value <= upper)
+
+# Print the result to check each parameter
+print(comparison)
 
 */
