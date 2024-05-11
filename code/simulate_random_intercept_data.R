@@ -13,6 +13,7 @@ default_args <- list(
   nu2_family = 0.5,
   n_sites = 5,
   n_families_per_site = 3,
+  n_individs_per_family = 2,
   n_covars = 1,
   alpha_0=1, 
   sigma2=1,
@@ -121,7 +122,10 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
                                     prob_component_importance=0.5,
                                     nu2_site=1, nu2_family=0.5,
                                     n_sites=5, n_families_per_site=3, 
+                                    n_individs_per_family = 2,
                                     n_covars=1, alpha_0=1, sigma2=1, seed=1) {
+  
+  
   
   set.seed(seed)
   omics_data <- simulate_omics_data(n_views, n_obs, p_m, r, prob_feature_importance, prob_component_importance)
@@ -149,19 +153,75 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
     xi_families[site, ] <- xi_sites[site] + rnorm(n_families_per_site, mean = 0, sd = sqrt(nu2_family))
   }
   
+  temp <- xi_families
+  
+  print(temp)
+  
   # Family effects as a single vector
-  xi_families <- as.vector(xi_families) %>% matrix(ncol = 1)
+  xi_families <- as.vector(t(xi_families)) %>% matrix(ncol = 1)
   
   # Sample residuals
   epsilon <- matrix(rnorm(n_obs, sd = sqrt(sigma2)), nrow = n_obs)
   
   # Combine effects
-  Y <- alpha_0 + Z_site %*% xi_sites + Z_family %*% xi_families + omics_data$U %*% alpha + epsilon
+  Y <- alpha_0 + Z_family %*% xi_families + omics_data$U %*% alpha + epsilon
   
   return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, xi_sites=xi_sites, xi_families=xi_families, 
               X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha_0=alpha_0, alpha=alpha,
-              gamma=omics_data$gamma, Eta=omics_data$Eta, nu2 = matrix(c(nu2_site, nu2_family), ncol = 1)))
+              gamma=omics_data$gamma, Eta=omics_data$Eta, nu2 = matrix(c(nu2_family, nu2_site), ncol = 1)))
+}
+
+################################################################################
+# Major mods
+################################################################################
+simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
+                                    prob_feature_importance=0.5, 
+                                    prob_component_importance=0.5,
+                                    nu2_site=1, nu2_family=0.5,
+                                    n_sites=5, n_families_per_site=3, 
+                                    n_individs_per_family = 2,
+                                    n_covars=1, alpha_0=1, sigma2=1, seed=1) {
+  
+  
+  n_obs <- n_sites*n_families_per_site*n_individs_per_family # Remove?
+  
+  set.seed(seed)
+  omics_data <- simulate_omics_data(n_views, n_obs, p_m, r, prob_feature_importance, prob_component_importance)
+  
+  # Sample latent factor loadings
+  alpha <- matrix(0, nrow = r, ncol = 1)
+  alpha[omics_data$index_important_components, ] <- rnorm(length(omics_data$index_important_components))
+  
+  # Specify design matrix for sites
+  Z_site <- kronecker(diag(n_sites), rep(1, n_families_per_site*n_individs_per_family))
+  xi_sites <- rnorm(n_sites, sd = sqrt(nu2_site)) %>% matrix(ncol = 1)
+  
+  # Specify design matrix for families nested within sites
+  Z_family <- kronecker(diag(n_sites*n_families_per_site), rep(1, n_individs_per_family))
+  
+  
+  # Sample xi_familes centered at xi_sites
+  xi_families <- matrix(0, nrow = n_sites, ncol = n_families_per_site)
+  for (site in 1:n_sites) {
+    xi_families[site, ] <- xi_sites[site] + rnorm(n_families_per_site, mean = 0, sd = sqrt(nu2_family))
+  }
+  
+  #temp <- xi_families
+  #print(temp)
+  
+  # Family effects as a single vector
+  xi_families <- as.vector(t(xi_families)) %>% matrix(ncol = 1)
+  
+  # Sample residuals
+  epsilon <- matrix(rnorm(n_obs, sd = sqrt(sigma2)), nrow = n_obs)
+  
+  # Combine effects
+  Y <- alpha_0 + Z_family %*% xi_families + omics_data$U %*% alpha + epsilon
+  
+  return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, xi_sites=xi_sites, xi_families=xi_families, 
+              X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha_0=alpha_0, alpha=alpha,
+              gamma=omics_data$gamma, Eta=omics_data$Eta, nu2 = matrix(c(nu2_family, nu2_site), ncol = 1)))
 }
 
 ## -- Example Usage
-data_nested <- simulate_re_data_nested(n_sites=5, n_families_per_site=3)
+data_nested <- simulate_re_data_nested(n_sites=2, n_families_per_site=2, n_individs_per_family = )
