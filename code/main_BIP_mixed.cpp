@@ -858,7 +858,7 @@ void EstimateLoad(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau,doub
   }
 }
 
-void proposal(int n,bool R[n],bool R1[n],float phi, gsl_rng * r) {
+void proposal(int n,bool *R,bool *R1,float phi, gsl_rng * r) {
   int i;
   for (i=0; i<n;i++) R1[i]=R[i];
   
@@ -1008,6 +1008,11 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                   arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel,
                   arma::mat Z_family, arma::mat Z_site, double c2nu2, bool trunate_nu2) {
   
+  // Set GSL random number generator seed
+  long seed=1;
+  gsl_rng * rr = gsl_rng_alloc (gsl_rng_rand48);
+  gsl_rng_set (rr, seed);
+  
   // Calculates the number of clusters
   int n_sites = Z_site.n_cols;
   int n_families = Z_family.n_cols;
@@ -1019,14 +1024,21 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   arma::mat ksi_f_in_s_chain(n_families, burninsample + nbrsample);
 
   arma::mat nu2_chain(2, burninsample + nbrsample);
+
+  // Initialize variance parameters
+  double nu1_sample = 1;
+  double nu2_sample = 1;
   
   // Initialize ksi_f_in_s for 0th iteration of sampling
-  arma::vec ksi_f_in_s(n_families, arma::fill::zeros);
+  arma::vec ksi_f_in_s(n_families, arma::fill::value(0));
   
-  // Initialize varionce parameters
-  double nu1_sample = 1.0;
-  double nu2_sample = 1.0;
-
+  //////////////////////////////////////////////////////////////////////////////
+  // Remove?
+  // for(int f = 0; f < n_families; f++) {
+  //   ksi_f_in_s(f) = gsl_ran_gaussian(rr, std::sqrt(nu1_sample));
+  // }
+  //////////////////////////////////////////////////////////////////////////////
+  
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (Method==1)
@@ -1092,9 +1104,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     } 
   }
   
-  long seed=1;
-  gsl_rng * rr = gsl_rng_alloc (gsl_rng_rand48);
-  gsl_rng_set (rr, seed);
+
   double ** U=dmatrix(0,n-1,0,r-1);
   double ** meanU=dmatrix(0,n-1,0,r-1);
   for (i=0;i<n;i++){
@@ -1275,7 +1285,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         ksi_sites_chain.col(t) = ksi_sites;
         ksi_f_in_s_chain.col(t) = ksi_f_in_s;
         
-        // Sample random effect variance parameter
+        // Sample random effect variance parameters
         Rcpp::List result2 = sample_nu_squared_nest(ksi_sites, ksi_f_in_s, Z_family_to_site); 
         double nu1_sample = Rcpp::as<double>(result2["nu1_sample"]);
         double nu2_sample = Rcpp::as<double>(result2["nu2_sample"]);
@@ -1627,9 +1637,12 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 }
 
 /*** R
+# Importing libraries
+require(MASS)
+require(reshape2) # For melt
 
 # Define R wrapper
-library(MASS)
+
 BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Method,nbrcomp=4, sample=5000, burnin=1000,nbrmaxmodels=50,
                 priorcompselv=c(1,1),priorcompselo=c(1,1),priorb0=c(2,2),priorb=c(1,1),priorgrpsel=c(1,1),probvarsel=0.05,
                 Z_family=NULL, Z_site=NULL, c2nu2=100, trunate_nu2=FALSE) {
@@ -1768,10 +1781,12 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
-nu2_site_truth <- 10
-nu2_family_truth <- 5
+nu2_site_truth <- 2
+nu2_family_truth <- 3
 # simulation_results <- simulate_re_data(n_sites=30, nu2=nu2_truth, seed=2)
-simulation_results <- simulate_re_data_nested(n_obs = 30, n_sites = 30, n_families_per_site = 1,
+simulation_results <- simulate_re_data_nested(n_obs = 200, 
+                                              n_sites = 6, n_families_per_site = 10,
+                                              n_individs_per_family = 2,
                                               nu2_site = nu2_site_truth, 
                                               nu2_family = nu2_family_truth)
 dataList <- list(simulation_results$X[[1]],
@@ -1798,7 +1813,6 @@ print("Estimated Sig2:")
 BA$EstSig2
 
 # Trace plot random effects
-library(reshape2) # For melt
 # Create a data frame from the matrix
 ksi_sites_chain <- BA$ksi_sites_chain
 mat_df <- melt(ksi_sites_chain)
@@ -1819,26 +1833,31 @@ apply(ksi_sites_chain[,n_burnin:n_sample], 1, sd)
 
 # Truth
 simulation_results$xi_sites
-sd(simulation_results$xi_sites)
+var(simulation_results$xi_sites)
+var(simulation_results$xi_families)
 
 # Test nu2 Sampling
 nu2_plt_data <- data.frame(t=1:(n_burnin+n_sample), nu1_squared = BA$nu2_chain[1, ], nu2_squared=BA$nu2_chain[2, ]) 
 
 nu2_plt_data %>%
   ggplot(aes(x=t, y=nu1_squared)) +
-  geom_line() + geom_hline(yintercept = nu2_family_truth)
+  geom_line() + geom_hline(yintercept = nu2_family_truth, color = 'darkred', linewidth = 1.1) +
+  labs(x = "Iteration", y = expression(nu[1]^2))
 
 nu2_plt_data %>%
   ggplot(aes(x=nu1_squared)) +
-  geom_density() + geom_vline(xintercept = nu2_family_truth)
+  geom_density() + geom_vline(xintercept = nu2_family_truth, color = 'darkred', linewidth = 1.1) +
+  labs(x = expression(nu[1]^2))
 
 nu2_plt_data %>%
   ggplot(aes(x=t, y=nu2_squared)) +
-  geom_line() + geom_hline(yintercept = nu2_site_truth)
+  geom_line() + geom_hline(yintercept = nu2_site_truth, color = 'darkred', linewidth = 1.1) +
+  labs(x = "Iteration", y = expression(nu[2]^2))
 
 nu2_plt_data %>%
   ggplot(aes(x=nu2_squared)) +
-  geom_density() + geom_vline(xintercept = nu2_site_truth)
+  geom_density() + geom_vline(xintercept = nu2_site_truth, color = 'darkred', linewidth = 1.1) +
+  labs(x = expression(nu[2]^2))
 
 # Posterior mean estimates
 nu2_plt_data[n_burnin:nrow(nu2_plt_data), 2:3] %>% apply(2, mean)
@@ -1879,9 +1898,9 @@ dimnames(combined_array) <- list(NULL, NULL, param_names)
 mcmc_summary <- rstan::monitor(combined_array)
 
 # Extract the credible intervals and mean estimates
-mean_values <- mcmc_summary$mean
-lower_bounds <- mcmc_summary$`2.5%`
-upper_bounds <- mcmc_summary$`97.5%`
+mean_values <- round(mcmc_summary$mean, 4)
+lower_bounds <- round(mcmc_summary$`2.5%`, 4)
+upper_bounds <- round(mcmc_summary$`97.5%`, 4)
 
 # Combine the true values into a single vector, ordered according to the MCMC parameters
 true_values <- c(as.vector(simulation_results$xi_sites), 
@@ -1894,7 +1913,7 @@ comparison <- data.frame(
   lower = lower_bounds,
   mean = mean_values,
   upper = upper_bounds,
-  true_value = true_values
+  true_value = round(true_values, 4)
 )
 
 # Add a logical vector to see if true values are within the credible intervals
