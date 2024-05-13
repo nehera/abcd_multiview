@@ -126,7 +126,6 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
                                     n_covars=1, alpha_0=1, sigma2=1, seed=1) {
   
   
-  
   set.seed(seed)
   omics_data <- simulate_omics_data(n_views, n_obs, p_m, r, prob_feature_importance, prob_component_importance)
   
@@ -206,9 +205,6 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
     xi_families[site, ] <- xi_sites[site] + rnorm(n_families_per_site, mean = 0, sd = sqrt(nu2_family))
   }
   
-  #temp <- xi_families
-  #print(temp)
-  
   # Family effects as a single vector
   xi_families <- as.vector(t(xi_families)) %>% matrix(ncol = 1)
   
@@ -224,4 +220,4 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
 }
 
 ## -- Example Usage
-data_nested <- simulate_re_data_nested(n_sites=2, n_families_per_site=2, n_individs_per_family = )
+data_nested <- simulate_re_data_nested(n_obs=4, n_sites=4, n_families_per_site=4, n_individs_per_family = 4)

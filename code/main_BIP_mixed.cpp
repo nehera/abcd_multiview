@@ -79,7 +79,7 @@ arma::vec sample_ksi(gsl_rng * rr, int n, int r, int n_clusters, double * interc
 // Samples random intercepts for all levels of the hierarchy
 Rcpp::List sample_ksi_nest(gsl_rng * rr, int n, int r, int n_families, int n_sites, double * intercept, 
                      double * sigma2, double ** U, double ** A, double ** y, 
-                     arma::mat Z_family, arma::mat Z_site, arma::mat Z_family_to_site, double nu2_family, double nu2_site, arma::vec ksi_f_in_s) {
+                     arma::mat Z_family, arma::mat Z_site, arma::mat Z_family_to_site, double nu2_family, double nu2_site, arma::vec ksi_f_in_s, arma::vec ksi_sites) {
   
   // Initialize family-level data structures
   arma::vec sum_y(n_families);
@@ -95,19 +95,23 @@ Rcpp::List sample_ksi_nest(gsl_rng * rr, int n, int r, int n_families, int n_sit
   arma::vec conditional_mu_sites(n_sites);
   arma::vec conditional_var_sites(n_sites);
   // Output data structure
-  arma::vec ksi_sites(n_sites);
+  // arma::vec ksi_sites(n_sites); // UNCOMMENT?
   
   for (int s = 0; s < n_sites; s++) {
+    
     // Sample site-level intercepts
-    arma::uvec indices_site = arma::find(Z_site.col(s) == 1); // Get indices of observations that belong
+    arma::uvec indices_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
     // Loop over observations in the given site
     for (int i : indices_site) {
-      arma::uvec fam_indices = arma::find(Z_family.row(i) == 1);
-      int fam_id = fam_indices(0);  // Get the first (and supposedly only) index
-      double ksi_i = ksi_f_in_s(fam_id);
+      //arma::uvec fam_indices = arma::find(Z_family.row(i) == 1);
+      //int fam_id = fam_indices(0);  // Get the first (and supposedly only) index
+      //double ksi_i = ksi_f_in_s(fam_id);
+      
+      double ksi_i = ksi_f_in_s(i);
       sum_ksi += ksi_i; // Add up family-level ksi's for site-level sampling
     }
     int site_size = indices_site.n_elem;
+    
     // Calculate conditional variance where nu2_site is the prior variance
     conditional_var_sites(s) = (nu2_site * nu2_family) / (nu2_family + nu2_site * site_size); // Note, here we de-reference sigma2 to get its value
     // Calculate conditional mean
@@ -119,7 +123,7 @@ Rcpp::List sample_ksi_nest(gsl_rng * rr, int n, int r, int n_families, int n_sit
     ksi_sites(s) = conditional_mu_sites(s) + random_normal;
     
     // Sample family-level intercepts
-    arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) == 1); // Get indices of families that belong
+    arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
     for (int f : indices_family_in_site) {
       arma::uvec indices_individuals_in_family = arma::find(Z_family.col(f) == 1); // Get indices of observations that belong
       // Loop over observations in the given family
@@ -142,8 +146,10 @@ Rcpp::List sample_ksi_nest(gsl_rng * rr, int n, int r, int n_families, int n_sit
       ksi_f_in_s(f) = conditional_mu_families(f) + random_normal;
     }
     
-  }
     
+  }
+  
+  
   return Rcpp::List::create(
     Rcpp::Named("ksi_sites") = ksi_sites,
     Rcpp::Named("ksi_f_in_s") = ksi_f_in_s
@@ -208,6 +214,7 @@ Rcpp::List sample_nu_squared_nest(arma::vec ksi_sites, arma::vec ksi_f_in_s, arm
   
   int n_sites = ksi_sites.n_elem;
   int n_families = ksi_f_in_s.n_elem;
+
   double sum_ksi_site_squared = 0.0;
   for (int s = 0; s < n_sites; s++) {
     sum_ksi_site_squared += pow(ksi_sites(s), 2);
@@ -219,7 +226,7 @@ Rcpp::List sample_nu_squared_nest(arma::vec ksi_sites, arma::vec ksi_f_in_s, arm
   
   double sum_ksi_family_in_site_squared = 0.0;
   for (int s = 0; s < n_sites; s++) {
-    arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) == 1); // Get indices of families that belong
+    arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
     for (int f : indices_family_in_site) {
       double diff = ksi_f_in_s(f) - ksi_sites(s);
       sum_ksi_family_in_site_squared += pow(diff, 2);
@@ -229,6 +236,19 @@ Rcpp::List sample_nu_squared_nest(arma::vec ksi_sites, arma::vec ksi_f_in_s, arm
   double nu1_squared_hat = sum_ksi_family_in_site_squared / (n_families-1);
   double alpha1 = (n_families-1) / 2.0;
   double beta1 = alpha1*nu1_squared_hat;
+  
+  // REMOVE
+  //std::cout << "("<< beta1 << ", " << beta2 << ")" << std::endl;
+    
+  //////////////////////////////////////////////////////////////////////////////
+  // REMOVE
+  
+  //double nu1_sample= c2;
+  // do {
+  //   nu1_sample = sampleInverseGamma(alpha1, beta1);
+  // } while (nu1_sample >= c2);
+  //////////////////////////////////////////////////////////////////////////////
+  
   double nu1_sample = sampleInverseGamma(alpha1,beta1);
 
   return Rcpp::List::create(
@@ -1016,6 +1036,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   // Calculates the number of clusters
   int n_sites = Z_site.n_cols;
   int n_families = Z_family.n_cols;
+  
   // Map families to site
   arma::mat Z_family_to_site = Z_family.t() * Z_site;
   
@@ -1026,14 +1047,22 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   arma::mat nu2_chain(2, burninsample + nbrsample);
 
   // Initialize variance parameters
-  double nu1_sample = 1;
-  double nu2_sample = 1;
+  double nu1_sample = 21;
+  double nu2_sample = 21;
+  
+  // Initialize ksi_s for 0th iteration of sampling
+  arma::vec ksi_sites(n_sites, arma::fill::zeros);
+  
   
   // Initialize ksi_f_in_s for 0th iteration of sampling
-  arma::vec ksi_f_in_s(n_families, arma::fill::value(0));
+  arma::vec ksi_f_in_s(n_families, arma::fill::zeros);
   
   //////////////////////////////////////////////////////////////////////////////
   // Remove?
+  // for(int s = 0; s < n_sites; s++) {
+  //   ksi_sites(s) = gsl_ran_gaussian(rr, std::sqrt(nu2_sample));
+  // }
+  
   // for(int f = 0; f < n_families; f++) {
   //   ksi_f_in_s(f) = gsl_ran_gaussian(rr, std::sqrt(nu1_sample));
   // }
@@ -1277,10 +1306,10 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         SampleIntercept(rr, n, r, &intercp, s2[m], 100.0, U, A[m], X[m]);
         
         // Sample random effect intercepts
-        Rcpp::List result = sample_ksi_nest(rr, n, r, n_families, n_sites, &intercp, s2[m], U, A[m], X[m], Z_family, Z_site, Z_family_to_site, nu1_sample, nu2_sample, ksi_f_in_s);
+        Rcpp::List result = sample_ksi_nest(rr, n, r, n_families, n_sites, &intercp, s2[m], U, A[m], X[m], Z_family, Z_site, Z_family_to_site, nu1_sample, nu2_sample, ksi_f_in_s, ksi_sites);
         // Extract elements
-        arma::vec ksi_sites = Rcpp::as<arma::vec>(result["ksi_sites"]);
-        arma::vec ksi_f_in_s = Rcpp::as<arma::vec>(result["ksi_f_in_s"]);
+        ksi_sites = Rcpp::as<arma::vec>(result["ksi_sites"]);
+        ksi_f_in_s = Rcpp::as<arma::vec>(result["ksi_f_in_s"]);
         // Store each iteration
         ksi_sites_chain.col(t) = ksi_sites;
         ksi_f_in_s_chain.col(t) = ksi_f_in_s;
@@ -1781,19 +1810,19 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
-nu2_site_truth <- 2
-nu2_family_truth <- 3
+nu2_site_truth <- 10
+nu2_family_truth <- 5
 # simulation_results <- simulate_re_data(n_sites=30, nu2=nu2_truth, seed=2)
 simulation_results <- simulate_re_data_nested(n_obs = 200, 
-                                              n_sites = 6, n_families_per_site = 10,
-                                              n_individs_per_family = 2,
+                                              n_sites = 10, n_families_per_site = 10,
+                                              n_individs_per_family = 10,
                                               nu2_site = nu2_site_truth, 
                                               nu2_family = nu2_family_truth)
 dataList <- list(simulation_results$X[[1]],
                   simulation_results$X[[2]],
                   simulation_results$Y)
 n_sample <- 5000
-n_burnin <- 1000
+n_burnin <- 3000
 BA <- BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=n_sample, burnin=n_burnin, 
        Z_site = simulation_results$Z_site, Z_family = simulation_results$Z_family)
 
@@ -1845,6 +1874,7 @@ nu2_plt_data %>%
   labs(x = "Iteration", y = expression(nu[1]^2))
 
 nu2_plt_data %>%
+  filter(t > n_burnin) %>%
   ggplot(aes(x=nu1_squared)) +
   geom_density() + geom_vline(xintercept = nu2_family_truth, color = 'darkred', linewidth = 1.1) +
   labs(x = expression(nu[1]^2))
@@ -1855,6 +1885,7 @@ nu2_plt_data %>%
   labs(x = "Iteration", y = expression(nu[2]^2))
 
 nu2_plt_data %>%
+  filter(t > n_burnin) %>%
   ggplot(aes(x=nu2_squared)) +
   geom_density() + geom_vline(xintercept = nu2_site_truth, color = 'darkred', linewidth = 1.1) +
   labs(x = expression(nu[2]^2))
@@ -1874,7 +1905,8 @@ total_parameters <- n_parameters_ksi_sites + n_parameters_ksi_f_in_s + n_paramet
 n_iterations <- ncol(BA$ksi_sites_chain)  # Assuming all matrices have the same number of iterations
 
 # Define dimensions
-dim1 <- n_iterations  # Iterations
+dim1 <- n_sample  # Post-burnin Iterations
+# dim1 <- n_iterations  # Iterations
 dim2 <- 1             # Chains (only one in this case)
 dim3 <- total_parameters  # Total number of parameters
 
@@ -1882,9 +1914,9 @@ dim3 <- total_parameters  # Total number of parameters
 combined_array <- array(dim = c(dim1, dim2, dim3))
 
 # Fill the array with the respective parameters
-combined_array[,,1:n_parameters_ksi_sites] <- t(BA$ksi_sites_chain)
-combined_array[,,(n_parameters_ksi_sites + 1):(n_parameters_ksi_sites + n_parameters_ksi_f_in_s)] <- t(BA$ksi_f_in_s_chain)
-combined_array[,,(total_parameters - n_parameters_nu2 + 1):total_parameters] <- t(BA$nu2_chain)
+combined_array[,,1:n_parameters_ksi_sites] <- t(BA$ksi_sites_chain[,(n_burnin+1):n_iterations])
+combined_array[,,(n_parameters_ksi_sites + 1):(n_parameters_ksi_sites + n_parameters_ksi_f_in_s)] <- t(BA$ksi_f_in_s_chain[,(n_burnin+1):n_iterations])
+combined_array[,,(total_parameters - n_parameters_nu2 + 1):total_parameters] <- t(BA$nu2_chain[,(n_burnin+1):n_iterations])
 
 # Define names for the parameters
 param_names <- c(paste("ksi_s[", 1:n_parameters_ksi_sites, "]", sep=""),
@@ -1899,6 +1931,7 @@ mcmc_summary <- rstan::monitor(combined_array)
 
 # Extract the credible intervals and mean estimates
 mean_values <- round(mcmc_summary$mean, 4)
+median_values <- round(mcmc_summary$`50%`, 4)
 lower_bounds <- round(mcmc_summary$`2.5%`, 4)
 upper_bounds <- round(mcmc_summary$`97.5%`, 4)
 
@@ -1912,6 +1945,7 @@ comparison <- data.frame(
   param_name = param_names,
   lower = lower_bounds,
   mean = mean_values,
+  median = median_values,
   upper = upper_bounds,
   true_value = round(true_values, 4)
 )
@@ -1920,6 +1954,18 @@ comparison <- data.frame(
 comparison$within_credible_interval <- with(comparison, true_value >= lower & true_value <= upper)
 
 # Print the result to check each parameter
-print(comparison)
+print(comparison[c(1:n_parameters_ksi_sites, (total_parameters - n_parameters_nu2-10):total_parameters),])
 
+# % of sampled RE parameters within credible interval
+print(mean(comparison$within_credible_interval == "TRUE"))
+
+# % of sampled RE parameters with correct sign
+mean(sign(comparison$mean) == sign(comparison$true_value))
+
+# Frequentist model
+library(lme4)
+df_temp <- data.frame(y = simulation_results$Y)
+df_temp$site <- which(simulation_results$Z_site == 1, arr.ind = T)[,2]
+df_temp$family <- which(simulation_results$Z_family == 1, arr.ind = T)[,2]
+summary(lmer(y~(1|site) + (1|family:site), data = df_temp))
 */
