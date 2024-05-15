@@ -78,8 +78,7 @@ load_orendain_ela <- function(data_dir, supp_features=TRUE) {
   load_supp_ela <- function() {
     
     # Read the Excel file to get the supp_lookup table
-    supp_lookup <- read_xlsx("orendain_vars_from_supplement.xlsx") %>%
-      filter(var_name != "devhx_8_prescript_yes") # TODO troubshoot
+    supp_lookup <- read_xlsx("orendain_vars_from_supplement.xlsx")
     
     # Get the unique file paths
     supp_paths <- file.path(data_dir,
