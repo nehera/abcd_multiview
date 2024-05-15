@@ -198,6 +198,8 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
   # Specify design matrix for families nested within sites
   Z_family <- kronecker(diag(n_sites*n_families_per_site), rep(1, n_individs_per_family))
   
+  # Mapping of families to sites
+  Z_family_to_site <- t(Z_family) %*% Z_site
   
   # Sample xi_familes centered at xi_sites
   xi_families <- matrix(0, nrow = n_sites, ncol = n_families_per_site)
@@ -214,7 +216,7 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
   # Combine effects
   Y <- alpha_0 + Z_family %*% xi_families + omics_data$U %*% alpha + epsilon
   
-  return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, xi_sites=xi_sites, xi_families=xi_families, 
+  return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, Z_family_to_site=Z_family_to_site, xi_sites=xi_sites, xi_families=xi_families, 
               X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha_0=alpha_0, alpha=alpha,
               gamma=omics_data$gamma, Eta=omics_data$Eta, nu2 = matrix(c(nu2_family, nu2_site), ncol = 1)))
 }

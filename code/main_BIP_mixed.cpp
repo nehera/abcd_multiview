@@ -97,8 +97,10 @@ Rcpp::List sample_ksi_nest(gsl_rng * rr, int n, int r, int n_families, int n_sit
   // Output data structure
   // arma::vec ksi_sites(n_sites); // UNCOMMENT?
   
+  double SD = 0;
+  double random_normal = 0;
+  
   for (int s = 0; s < n_sites; s++) {
-    
     // Sample site-level intercepts
     arma::uvec indices_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
     // Loop over observations in the given site
@@ -116,10 +118,12 @@ Rcpp::List sample_ksi_nest(gsl_rng * rr, int n, int r, int n_families, int n_sit
     conditional_var_sites(s) = (nu2_site * nu2_family) / (nu2_family + nu2_site * site_size); // Note, here we de-reference sigma2 to get its value
     // Calculate conditional mean
     conditional_mu_sites(s) = conditional_var_sites(s) * sum_ksi(s) / nu2_family; 
-    // Generate a normally distributed random number with mean 0 and standard deviation sigma
-    double sigma = std::sqrt(conditional_var_sites(s)); 
-    double random_normal = gsl_ran_gaussian(rr, sigma);
+    // Generate a normally distributed random number with mean 0 and standard deviation SD
+    SD = std::sqrt(conditional_var_sites(s)); 
+    random_normal = gsl_ran_gaussian(rr, SD);
     // Adjust the generated number to have mean mu
+    
+    //ksi_sites(s) = 0; //REMOVE
     ksi_sites(s) = conditional_mu_sites(s) + random_normal;
     
     // Sample family-level intercepts
@@ -132,21 +136,20 @@ Rcpp::List sample_ksi_nest(gsl_rng * rr, int n, int r, int n_families, int n_sit
         for (int l = 0; l < r; l++) {
           ua_i += U[i][l] * A[l][0];
         }
-        sum_y(f) += y[i][0] - *intercept - ua_i;  // TODO also residualize covariate effects
+      sum_y(f) += y[i][0] - *intercept - ua_i;  // TODO also residualize covariate effects
       }
-      int family_size = indices_individuals_in_family.n_elem;
-      // Calculate conditional variance where nu2_family is the prior variance
-      conditional_var_families(f) = (nu2_family * (*sigma2)) / (*sigma2 + nu2_family * family_size); // Note, here we de-reference sigma2 to get its value
-      // Calculate conditional mean
-      conditional_mu_families(f) = conditional_var_families(f) * ( (ksi_sites(s) * (*sigma2) + nu2_family * sum_y(f)) / (*sigma2 * nu2_family) ); 
-      // Generate a normally distributed random number with mean 0 and standard deviation sigma
-      double sigma = std::sqrt(conditional_var_families(f)); 
-      double random_normal = gsl_ran_gaussian(rr, sigma);
-      // Adjust the generated number to have mean mu
-      ksi_f_in_s(f) = conditional_mu_families(f) + random_normal;
+    int family_size = indices_individuals_in_family.n_elem;
+    
+    // Calculate conditional variance where nu2_family is the prior variance
+    conditional_var_families(f) = (nu2_family * (*sigma2)) / (*sigma2 + nu2_family * family_size); // Note, here we de-reference sigma2 to get its value
+    // Calculate conditional mean
+    conditional_mu_families(f) = conditional_var_families(f) * ( (ksi_sites(s) * (*sigma2) + nu2_family * sum_y(f)) / (*sigma2 * nu2_family) ); 
+    // Generate a normally distributed random number with mean 0 and standard deviation SD
+    SD = std::sqrt(conditional_var_families(f)); 
+    random_normal = gsl_ran_gaussian(rr, SD);
+    // Adjust the generated number to have mean mu
+    ksi_f_in_s(f) = conditional_mu_families(f) + random_normal;
     }
-    
-    
   }
   
   
@@ -210,32 +213,35 @@ int gibbsSamplingStepNuSquaredExample() {
 // Gibbs sampling step for nu^2 with or without truncation
 // TODO implement truncation piece
 Rcpp::List sample_nu_squared_nest(arma::vec ksi_sites, arma::vec ksi_f_in_s, arma::mat Z_family_to_site,
-                              double c2=100.0, bool truncate_nu2=false) {
+                              double c2=100.0, bool truncate_nu2=false, double alpha1_prior = 100,
+                              double beta1_prior = 100, double alpha2_prior = 100,
+                              double beta2_prior = 100) {
   
   int n_sites = ksi_sites.n_elem;
   int n_families = ksi_f_in_s.n_elem;
-
+  double diff = 0;
+  
   double sum_ksi_site_squared = 0.0;
   for (int s = 0; s < n_sites; s++) {
     sum_ksi_site_squared += pow(ksi_sites(s), 2);
   }
   double nu2_squared_hat = sum_ksi_site_squared / (n_sites-1);
-  double alpha2 = (n_sites-1) / 2.0;
-  double beta2 = alpha2*nu2_squared_hat;
+  double alpha2 = alpha2_prior + (n_sites-0)/2.0;
+  double beta2 = beta2_prior + (n_sites-1)*nu2_squared_hat/2.0;
   double nu2_sample = sampleInverseGamma(alpha2,beta2);
   
   double sum_ksi_family_in_site_squared = 0.0;
   for (int s = 0; s < n_sites; s++) {
     arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
     for (int f : indices_family_in_site) {
-      double diff = ksi_f_in_s(f) - ksi_sites(s);
+      diff = ksi_f_in_s(f) - ksi_sites(s);
       sum_ksi_family_in_site_squared += pow(diff, 2);
     }
   }
   
   double nu1_squared_hat = sum_ksi_family_in_site_squared / (n_families-1);
-  double alpha1 = (n_families-1) / 2.0;
-  double beta1 = alpha1*nu1_squared_hat;
+  double alpha1 = alpha1_prior + (n_families-0)/2.0;
+  double beta1 = beta1_prior + (n_families-1 )*nu1_squared_hat/2.0;
   
   // REMOVE
   //std::cout << "("<< beta1 << ", " << beta2 << ")" << std::endl;
@@ -1047,8 +1053,12 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   arma::mat nu2_chain(2, burninsample + nbrsample);
 
   // Initialize variance parameters
-  double nu1_sample = 21;
-  double nu2_sample = 21;
+  double alpha1_prior = 2;
+  double beta1_prior = 1;
+  double alpha2_prior = 2;
+  double beta2_prior = 1;
+  double nu1_sample = sampleInverseGamma(alpha1_prior, beta1_prior);
+  double nu2_sample = sampleInverseGamma(alpha2_prior, beta2_prior);
   
   // Initialize ksi_s for 0th iteration of sampling
   arma::vec ksi_sites(n_sites, arma::fill::zeros);
@@ -1059,13 +1069,14 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   
   //////////////////////////////////////////////////////////////////////////////
   // Remove?
-  // for(int s = 0; s < n_sites; s++) {
-  //   ksi_sites(s) = gsl_ran_gaussian(rr, std::sqrt(nu2_sample));
-  // }
-  
-  // for(int f = 0; f < n_families; f++) {
-  //   ksi_f_in_s(f) = gsl_ran_gaussian(rr, std::sqrt(nu1_sample));
-  // }
+  for(int s = 0; s < n_sites; s++) {
+    ksi_sites(s) = gsl_ran_gaussian(rr, std::sqrt(nu2_sample));
+    arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
+    for (int f : indices_family_in_site) {
+      ksi_f_in_s(f) = ksi_sites(s) + gsl_ran_gaussian(rr, std::sqrt(nu1_sample));
+    }
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   
   setvbuf(stdout, NULL, _IONBF, 0);
@@ -1315,18 +1326,18 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         ksi_f_in_s_chain.col(t) = ksi_f_in_s;
         
         // Sample random effect variance parameters
-        Rcpp::List result2 = sample_nu_squared_nest(ksi_sites, ksi_f_in_s, Z_family_to_site); 
+        Rcpp::List result2 = sample_nu_squared_nest(ksi_sites, ksi_f_in_s, Z_family_to_site, alpha1_prior=alpha1_prior, beta1_prior=beta1_prior, alpha2_prior=alpha2_prior, beta2_prior=beta2_prior); 
         double nu1_sample = Rcpp::as<double>(result2["nu1_sample"]);
         double nu2_sample = Rcpp::as<double>(result2["nu2_sample"]);
         nu2_chain(0, t) = nu1_sample;
         nu2_chain(1, t) = nu2_sample;
         
         // Updated residualization (ignoring covariate effects for now)
-        for (int s = 0; s < n_sites; s++) {
+        //for (int s = 0; s < n_sites; s++) {
           for (int f = 0; f < n_families; f++) {
             // Loop over observations in a given family and site
             // Note, family is perfectly nested within site
-            arma::uvec indices = arma::find(Z_family.col(s) == 1); 
+            arma::uvec indices = arma::find(Z_family.col(f) == 1); 
             for (int i : indices) {
               for (j=0;j<P[m];j++){
                 // TODO Also residualize on covariate effects
@@ -1334,7 +1345,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
               }
             }
           }
-      }
+      //}
         
       }
         
@@ -1810,8 +1821,8 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 
 # Simulate data & estimate associated parameters
 source("simulate_random_intercept_data.R")
-nu2_site_truth <- 10
-nu2_family_truth <- 5
+nu2_site_truth <- 3
+nu2_family_truth <- 2
 # simulation_results <- simulate_re_data(n_sites=30, nu2=nu2_truth, seed=2)
 simulation_results <- simulate_re_data_nested(n_obs = 200, 
                                               n_sites = 10, n_families_per_site = 10,
