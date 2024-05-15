@@ -1,0 +1,79 @@
+---
+title: "ABCD Multiview Step 1. Proposal for Data Analysis and Simulation Study"
+author: "Aidan Neher"
+format: docx
+editor: visual
+---
+
+## Motivating Questions
+
+Data Analysis: Cross-sectionally, at baseline, which early life adversity (ELA) and neuroimaging features are important for the prediction of continuous clinical outcomes "internalizing problems" and "externalizing problems"? From these features, how well can we predict these clinical outcomes? 
+
+Simulation Study: Does extension of the BIP framework to a mixed outcome model predict well? Specifically, does the extension provide predictive value above and beyond the original BIP framework and the 2 step (i) dimension reduction and (ii) prediction method commonly employed in an ABCD Study-like setting and other realistic settings?
+
+## Data Analysis
+
+The Adolescent Brain and Cognitive Development Study (ABCD Study®) is the largest long-term brain development and child health study in the United States. Starting with subjects aged 9-10 years old and repeated until 19-20 years, brains scans are taken (bi-annually), biosamples, paper and pen tests, and iPad tasks (annually), and interviews (every 3-6 months). Cross-sectionally, at baseline, we will conduct an integrative analysis of the following data types ("views") in relation to the listed covariates and clinical outcomes.
+
+### About the Data
+
+#### Views
+
+We are most interested in the following "views"
+
+-   **Early life adversity (ELA)**: These features will be defined from Brieant et al. 2023 and Orendain et al. 2023. These papers use differing selection criteria and filtering methods to come to feature sets without much overlap. We choose include all ELA features considered across the papers and follow Brieant et al. 2023's >50% missingness filtering step. This results in a view with size **XXX** features. 
+-   **Neuroimaging**: The metrics listed below will be vectorized and concatenated to form one neuroimaging view. Thus, for simplicity, we do not account for spatial correlation between nearby brain regions. The concatenation results in a view with size **XXX** features. 
+    -   sMRI: Cortical Thickness (CT) and Surface Area (SA): **XXX** features x 2 = **XXX** features. 
+    -   fMRI: Functional Connectivity (FC): **XXX** features.
+
+#### Covariates
+
+We include commonly adjusted for covariates: 
+
+This will result in a total number of fixed effects = **XXX** 
+
+#### Outcomes
+
+These continuous outcomes are considered by both Brieant et al. 2023 and Orendain et al. 2023 and readily available from code Mark has shared.
+
+-   Internalizing problems: 
+-   Externalizing problems: 
+
+### Model Training & Testing
+
+70:15:15 split for hyperparameter tuning
+
+Mean square prediction error as primary performance metric
+
+## Simulation Study
+
+### Competing Methods
+
+- Vanilla BIP
+- 2 stage method
+- Other methods used in BIP paper
+
+### Simulation Settings
+
+- One like ABCD study
+- Ideal scenario e.g. balanced/ "enough" observational clustering
+- Challenging scenario
+
+**What Thierry proposed**
+
+- Sample size from small to big (like ABCD)
+- Small number of features (like what we are planning) to large number of features
+- Balanced study design to unbalanced (like what we observe in ABCD)
+
+### Performance Metrics 
+
+Mean square prediction error as primary performance metric
+
+AUC/ accuracy, sensitivity, specificity for variable selection? How might we choose the feature selection threshold? 
+
+## Relevant References
+
+- BIP
+- Brieant et al. 2023
+- Orendain et al. 2023
+- 

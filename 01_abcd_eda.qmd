@@ -1,5 +1,5 @@
 ---
-title: "ABCD Multiview Step 1. Dataset, Simulation Topic, Questions, and Relevant References"
+title: "ABCD Study Exploratory Data Analysis"
 author: "Aidan Neher"
 format: docx
 editor: visual
@@ -7,6 +7,7 @@ editor: visual
 
 ```{r, include=FALSE}
 library(tidyverse)
+library(readxl)
 library(psych) # For polychoric correlation
 library(Rtsne) # For tsne plots
 library(VennDiagram) # For venn diagram comparing variables used in 2 diff ELA papers
@@ -21,11 +22,6 @@ out_date <- NULL
 # Initials or other string you want in output naming - no NULL option here
 out_initials <- 'AN' 
 ```
-
-## Motivating Questions
-
-1.  Motivating application: Which early life adversity (ELA), neuroimaging, and genomic features are important for the prediction of cognitive outcomes?
-2.  Methods extension: Does extension of the BIP framework to a mixed outcome model that accommodates observational clustering perform well, specifically above and beyond the BIP framework that does not account for observational clustering, in this setting and related settings?
 
 ## ABCD Study Dataset
 
@@ -55,8 +51,43 @@ We control for common covariates \* sex \* age \* race \* ...
 Firstly, we load the ELA view using code shared by Mark Fiecas. Here is the additional context he provided on sharing: "This came from the supplementary material of the Orendain et al paper. Note that they actually used more, but these were the ones that were"relevant" per their factor analysis. They had about \~10 more variables but those did not have high factor loadings. Please see their supplemental material if you'd like to get the other \~10. You'll need to revise Ellery's standard prep code to make sure these get loaded in (see her "files" variable), and the first place to start is here, which is at the very bottom."
 
 ```{r,include=FALSE}
-# Defaults to baseline data - alternatively, pass a vector of eventnames
-load_ela_data <- function(data_dir, events = "baseline_year_1_arm_1") {
+
+load_supp_ela <- function() {
+  
+  # Read the Excel file to get the supp_lookup table
+  supp_lookup <- read_xlsx("orendain_vars_from_supplement.xlsx")
+  
+  # Get the unique file paths
+  supp_paths <- file.path(data_dir,
+                          unique(supp_lookup$table_file_path))
+  
+  # Function to read CSV file and select the specified columns
+  read_and_select <- function(file_path, var_names) {
+    # Read the CSV file
+    data <- read_csv(paste0(file_path, ".csv"))
+    # Select the specified columns
+    selected_data <- data %>% select(all_of(var_names))
+    return(selected_data)
+  }
+  
+  # Apply the function to each file path with corresponding var_names
+  selected_tables <- lapply(supp_paths, function(path) {
+    var_names <- supp_lookup %>%
+      filter(table_name == basename(path)) %>%
+      pull(var_name)
+    var_names <- c("src_subject_id", "eventname", var_names)
+    read_and_select(path, var_names)
+  })
+  
+  # Merge the tables in the list by "src_subject_id" and "eventname"
+  merged_data <- reduce(selected_tables, function(x, y) {
+    full_join(x, y, by = c("src_subject_id", "eventname"))
+  })
+}
+
+# Defaults to baseline data - you can pass a vector of eventnames
+load_orendain_ela <- function(data_dir, supp_features=TRUE, 
+                              events = "baseline_year_1_arm_1") {
   
   # Physical and sexual violence
   mh_p_ksads_path <- file.path(data_dir, "mental-health/mh_p_ksads_ptsd.csv")
@@ -79,7 +110,8 @@ load_ela_data <- function(data_dir, events = "baseline_year_1_arm_1") {
   # Neighborhood Threat
   ce_p_nsc_path <- file.path(data_dir, "culture-environment/ce_p_nsc.csv")
   ce_p_nsc <- read_csv(ce_p_nsc_path) %>%
-    select(src_subject_id, eventname, neighborhood3r_p, neighborhood2r_p)
+    select(src_subject_id, eventname, neighborhood3r_p,
+           neighborhood2r_p)
   
   # Prenatal Substance Exposure
   ph_p_dhx_path <- file.path(data_dir, "physical-health/ph_p_dhx.csv")
@@ -92,16 +124,23 @@ load_ela_data <- function(data_dir, events = "baseline_year_1_arm_1") {
   # Scarcity
   abcd_p_demo_path <- file.path(data_dir, "abcd-general/abcd_p_demo.csv")
   abcd_p_demo <- read_csv(abcd_p_demo_path) %>%
-    select(src_subject_id, eventname, demo_fam_exp1_v2, demo_fam_exp5_v2)
+    select(src_subject_id, eventname, 
+           demo_fam_exp1_v2, demo_fam_exp5_v2)
   
   # Household Dysfunction
   ce_y_fes_path <- file.path(data_dir, "culture-environment/ce_y_fes.csv")
   ce_y_fes <- read_csv(ce_y_fes_path) %>%
-    select(src_subject_id, eventname, fes_youth_q6, fes_youth_q1, fes_youth_q5)
+    select(src_subject_id, eventname, fes_youth_q6, 
+           fes_youth_q1, fes_youth_q5)
   
   # Merging all data frames
   merged_data <- list(mh_p_ksads, mh_p_fhx, ce_p_nsc, ph_p_dhx, abcd_p_demo, ce_y_fes) %>%
     reduce(full_join, by = c("src_subject_id", "eventname"))
+  
+  if (supp_features==TRUE) {
+    supp_data <- load_supp_ela()
+    merged_data <- merge(merged_data, supp_data)
+  }
   
   # Filter to events of interest
   filtered_data <- merged_data %>%
@@ -116,7 +155,7 @@ load_ela_data <- function(data_dir, events = "baseline_year_1_arm_1") {
   return(tidy_data)
 }
 
-ela_data <- load_ela_data(data_dir)
+ela_data <- load_orendain_ela(data_dir)
 
 ```
 
@@ -388,8 +427,15 @@ ela_data_brieant <- full_join(fhx, asr) %>%
   full_join(rel) %>%
   full_join(ADI)
 
-print(paste("ncols of ELA data used for Brieant el al. 2023 analysis:",
-            ncol(ela_data_brieant)))
+# TODO Clean certain variables
+  # 777 and 999
+  # Remove covariates e.g. demo_... vars
+  # Remove clustering vars e.g. rel_family_id
+  # Note, rel_family_id might be included as a fixed effect in unnested world
+  # reshist_addr1_adi_wsum: Residential history derived - Area Deprivation Index: scaled weighted sum based on Kind et al., Annals of Internal Medicine, 2014 1
+# nsc_p_ss_mean_3_items: Neighborhood Safety Protocol: Mean of Parent Report, (neighborhood1r_p + neighborhood2r_p + neighborhood3r_p)/3; Validation: No minimum
+
+print(paste("ncols of ELA data used for Brieant el al. 2023 analysis:", ncol(ela_data_brieant)))
 ```
 
 We see the extent to which the variables included by Brient and colleagues overlap with the 60 considered important by Orendain et al. 2023. 
@@ -397,9 +443,11 @@ We see the extent to which the variables included by Brient and colleagues overl
 ```{r}
 # Exclude specified variables and extract variable names from each dataset
 vars_ela_orendain <- setdiff(names(ela_data), 
-                             c("src_subject_id", "eventname", "rel_family_id"))
+                             c("src_subject_id", "eventname",
+                               "rel_family_id"))
 vars_ela_brieant <- setdiff(names(ela_data_brieant), 
-                            c("src_subject_id", "eventname", "rel_family_id"))
+                            c("src_subject_id", "eventname",
+                              "rel_family_id"))
 
 # Draw a Venn diagram
 venn.plot <- venn.diagram(
@@ -432,6 +480,32 @@ We discover these studies chose quite different sets of ELA variables for their 
 
 1. Would the amount of overlap be different had we included variables from upstream in these authors respective data processing and analysis pipelines? 
 2. What accounts for the limited overlap in the variables used for each analysis? Could it be that variables included by Orendain et al. 2023 would have been excluded by Brieant et al. 2023's missingness and <0.05% endorsement filters? What explains the 63 variables included by strictly Brieant et al. 2023? Is subjective judgement to blame, or are there other justifications available? 
+
+Let's consider the variables that would be included should we keep with the <0.05% endorsement filter. This would mean certain variables from the Orendain et. al. 2023 paper would be excluded. 
+
+```{r}
+# Filter the tibble to include only those with prop_non_zero less than 0.05%
+orendain_vars_to_include <- non_zero_data %>%
+  filter(prop_non_zero >= 0.0005) %>%
+  pull(variable)
+
+orendain_data <- ela_data %>%
+  select(all_of(c("src_subject_id", "eventname", 
+                  orendain_vars_to_include)))
+
+# Combine ELA data from both papers
+combined_ela <- merge(orendain_data, ela_data_brieant)
+
+print(paste("ncols of ELA data for analysis:", 
+            ncol(
+              select(
+                combined_ela, 
+                -src_subject_id,
+                -eventname,
+                -rel_family_id))))
+```
+
+^Some of these ELA features include "demo_..." features e.g. "demo_prnt_marital_v2" and "demo_prnt_ed_v2". These features are typically considered covariates. I am leaning towards putting this information in the covariate matrix and exluding from the ELA view.
 
 ### Covariates and Outcomes
 
