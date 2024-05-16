@@ -306,15 +306,19 @@ abcd_data.selected_time <- abcd_data %>%
   filter(eventname %in% timepoint_list)
 
 ## -- Extract Covariates and Outcomes from Ellery's Processing Steps
-covariates <- abcd_data.selected_time[, c(1,2, 117, 119:128)] 
-# TODO Is the age fine here? 
-# TODO Should we also use pubertal status as a covariate? 
-# TODO Are there additional covariates I am missing? 
+
+covariates <- abcd_data.selected_time %>%
+  select(src_subject_id, 
+         interview_age, 
+         ends_with("_race"), # Select all columns that end with "_race"
+         demo_comb_income_v2_bl,
+         highest_demo_ed_bl,
+         demo_prnt_marital_v2_bl)
+         # TODO consider including religion as covar with varname demo_relig_v2_l
 
 outcomes <- abcd_data.selected_time %>%
+  # Brient et al. 2023 use t scores (Not the raw r scores)
   select("src_subject_id", "cbcl_scr_syn_internal_t", "cbcl_scr_syn_external_t")
-# TODO Is it fine to use the T (truncated) score? 
-# Brient et al. 2023 seemingly used the T scores. 
 
 ## -- Write out a covariates and outcome variables separately
 
@@ -329,13 +333,13 @@ if(is.null(out_initials)){
 }
 
 # Construct the filename
-file_name <- sprintf("covariates_%s_%s.csv", out_initials, out_date)
+file_name <- sprintf("%s_%s_covariates.csv", out_date, out_initials)
 # Define the output path
 output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
 write_csv(covariates, output_path)
 
 # Construct the filename
-file_name <- sprintf("outcomes_%s_%s.csv", out_initials, out_date)
+file_name <- sprintf("%s_%s_outcomes.csv", out_date, out_initials)
 # Define the output path
 output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
 write_csv(outcomes, output_path)

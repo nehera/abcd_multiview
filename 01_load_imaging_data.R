@@ -73,7 +73,7 @@ cat("n Missing for the variable with the most missingness:",
 if (is.null(out_date)) { out_date <- Sys.Date() }
 
 # Construct the filename
-file_name <- sprintf("view_sMRI_%s_%s.csv", out_initials, out_date)
+file_name <- sprintf("%s_%s_sMRI_view.csv", out_date, out_initials)
 # Define the output path
 output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
 # Write the smri_data to CSV file

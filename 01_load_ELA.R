@@ -12,15 +12,6 @@ out_date <- NULL
 # Initials or other string you want in output naming - no NULL option here
 out_initials <- 'AN'
 
-## -- Construct Output Path
-
-# Use current date if out_date is NULL
-if (is.null(out_date)) { out_date <- Sys.Date() }
-# Construct the filename
-file_name <- sprintf("view_ela_%s_%s.csv", out_initials, out_date)
-# Define the output path
-output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
-
 ## -- Construct ELA View
 
 # Loads the ELA variables considered by Orendain et. al. 2023
@@ -256,6 +247,13 @@ recoded_data <- no_covariate_data %>%
   ))
 
 ## -- Write ELA View
+
+# Use current date if out_date is NULL
+if (is.null(out_date)) { out_date <- Sys.Date() }
+# Construct the filename
+file_name <- sprintf("%s_%s_ela_view.csv", out_date, out_initials)
+# Define the output path
+output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
 
 # Write the recoded_data to the CSV file
 write_csv(recoded_data, output_path)

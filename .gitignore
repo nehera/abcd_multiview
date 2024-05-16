@@ -1,5 +1,8 @@
-# ABCD Study Data
+# Data
 data/*
+
+# Figures
+figures/*
 
 # History files
 .Rhistory
