@@ -308,7 +308,8 @@ abcd_data.selected_time <- abcd_data %>%
 ## -- Extract Covariates and Outcomes from Ellery's Processing Steps
 
 covariates <- abcd_data.selected_time %>%
-  select(src_subject_id, 
+  select(src_subject_id,
+         demo_sex_v2,
          interview_age, 
          ends_with("_race"), # Select all columns that end with "_race"
          demo_comb_income_v2_bl,

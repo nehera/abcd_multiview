@@ -86,110 +86,6 @@ colnames(Z_family_to_site_df) <- colnames(Z_site)    # Site IDs
 # Checkout the resulting design matrix
 print(head(Z_family_to_site_df))
 
-## -- Calculate Summary Stats
-library(gridExtra)
-
-# Calculate the number of families in each site
-families_per_site <- cluster_data %>%
-  group_by(site_id_l) %>%
-  summarize(n_families = n_distinct(rel_family_id)) %>%
-  arrange(desc(n_families))
-
-# Calculate the number of families per site
-families_per_site <- cluster_data %>%
-  group_by(site_id_l) %>%
-  summarize(n_families = n_distinct(rel_family_id))
-
-# Calculate the number of individuals per family
-individuals_per_family <- cluster_data %>%
-  group_by(rel_family_id) %>%
-  summarize(n_individuals = n())
-
-# Calculate the number of individuals per site
-individuals_per_site <- cluster_data %>%
-  group_by(site_id_l) %>%
-  summarize(n_individuals = n())
-
-# Function to identify outliers
-identify_outliers <- function(data, column) {
-  Q1 <- quantile(data[[column]], 0.25)
-  Q3 <- quantile(data[[column]], 0.75)
-  IQR <- Q3 - Q1
-  lower_bound <- Q1 - 1.5 * IQR
-  upper_bound <- Q3 + 1.5 * IQR
-  outliers <- data %>%
-    filter(data[[column]] < lower_bound | data[[column]] > upper_bound)
-  return(outliers)
-}
-
-# Identify outliers for each dataset
-outliers_families_per_site <- identify_outliers(families_per_site, "n_families")
-outliers_individuals_per_family <- identify_outliers(individuals_per_family, "n_individuals")
-outliers_individuals_per_site <- identify_outliers(individuals_per_site, "n_individuals")
-
-# Create boxplots
-plot_families_per_site <- ggplot(families_per_site, aes(x = 0, y = n_families)) +
-  geom_boxplot(fill = "blue", color = "black", alpha = 0.7) +
-  geom_text(data = outliers_families_per_site, aes(x = 0, label = n_families), 
-            position = position_jitter(width = 0.2, height = 0), 
-            hjust = -0.3, color = "red") +
-  labs(title = "Number of Families per Site",
-       y = "Number of Families",
-       x = "") +
-  coord_flip() +
-  theme_minimal()
-
-plot_individuals_per_site <- ggplot(individuals_per_site, aes(x = 0, y = n_individuals)) +
-  geom_boxplot(fill = "orange", color = "black", alpha = 0.7) +
-  geom_text(data = outliers_individuals_per_site, aes(x = 0, label = n_individuals), 
-            position = position_jitter(width = 0.2, height = 0), 
-            hjust = -0.3, color = "red") +
-  labs(title = "Number of Individuals per Site",
-       y = "Number of Individuals",
-       x = "") +
-  coord_flip() +
-  theme_minimal()
-
-# Calculate the counts for each number of individuals
-counts <- individuals_per_family %>%
-  group_by(n_individuals) %>%
-  summarize(count = n())
-
-# Create a histogram with counts labeled above each bar
-plot_individuals_per_family <- ggplot(individuals_per_family, aes(x = n_individuals)) +
-  geom_histogram(binwidth = 1, fill = "green", color = "black", alpha = 0.7) +
-  geom_text(data = counts, aes(x = n_individuals, y = count, label = count), vjust = -0.5) +
-  scale_x_continuous(breaks = 1:5) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
-  labs(title = "Histogram of Number of Individuals per Family",
-       x = "Number of Individuals",
-       y = "Count of Families") +
-  theme_minimal()
-
-# Arrange the boxplots in a grid
-grid_plots <- grid.arrange(plot_individuals_per_family, plot_families_per_site, plot_individuals_per_site, ncol = 1)
-
-# Define function to save the plot with date and initials
-save_plot_with_date_initials <- function(plot, out_initials, out_dir = NULL, out_date = NULL) {
-  # Use current date if out_date is NULL
-  if (is.null(out_date)) { out_date <- Sys.Date() }
-  
-  # Construct the filename
-  file_name <- sprintf("%s_%s_abcd_clustering_summary.png", out_date, out_initials)
-  
-  # Define the output path
-  output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
-  
-  # Save the plot to a .png file
-  ggsave(output_path, plot, width = 10, height = 15)
-  
-  # Print the output path for verification
-  print(paste("Plot saved to:", output_path))
-}
-
-# Example usage:
-save_plot_with_date_initials(grid_plots, out_initials = "AN", out_dir = "figures")
-
 ## -- Write Design Matrices
 
 # Define the function to write the matrix to CSV
@@ -214,3 +110,13 @@ write_matrix_to_csv <- function(matrix_data, matrix_name, out_dir = NULL, out_in
 write_matrix_to_csv(Z_family, "family_Z", out_dir, out_initials = "AN")
 write_matrix_to_csv(Z_site, "site_Z", out_dir, out_initials = "AN")
 write_matrix_to_csv(Z_family_to_site, "family_to_site_Z", out_dir, out_initials = "AN")
+
+# Save the cluster_data object to a CSV file
+# Use current date if out_date is NULL
+if (is.null(out_date)) { out_date <- Sys.Date() }
+cluster_data_file_name <- sprintf("%s_%s_cluster_data.csv", out_date, out_initials)
+cluster_data_output_path <- file.path(out_dir, cluster_data_file_name)
+write_csv(cluster_data, cluster_data_output_path)
+
+# Print the output path for verification
+print(paste("cluster_data written to:", cluster_data_output_path))

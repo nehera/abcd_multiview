@@ -27,9 +27,10 @@ load_sMRI_view <- function(data_dir) {
     # These represent mean SA in left hemisphere, right hemisphere, & brain overall respectively
     select(-mrisdp_451, -mrisdp_452, -mrisdp_453)
   
-  # Merge sMRI data & filter to baseline
+  # Merge sMRI data, filter to baseline, & remove eventname since cross-sectional
   smri_data <- merge(ct_data, sa_data) %>%
-    filter(eventname == "baseline_year_1_arm_1")
+    filter(eventname == "baseline_year_1_arm_1") %>%
+    select(-eventname)
   cat("Total n sMRI Scans Available at Baseline:", nrow(smri_data))
   
   return(smri_data)
