@@ -21,6 +21,21 @@ read_data <- function(suffix) {
 data_list <- lapply(file_suffix, read_data)
 names(data_list) <- file_suffix
 
+## -- Calculate and Save the Number of Variables per Data Type
+
+# Calculate the number of columns excluding 'src_subject_id'
+variables_per_datatype <- sapply(data_list, function(df) ncol(df) - 1)
+
+# Print the number of variables for each data frame
+print(variables_per_datatype)
+
+# Prepare variables_per_datatype for saving
+variables_per_datatype_df <- tibble(data_type = names(variables_per_datatype), n_variables = variables_per_datatype)
+
+# Save the n_variables data to a CSV file
+variables_data_path <- file.path(data_dir, paste0(data_processing_date, "_", data_processor, "_n_variables_per_datatype.csv"))
+write_csv(variables_per_datatype_df, variables_data_path)
+
 ## -- Combine, Filter, & Summarize Missingness
 
 # Calculate the number of rows with any missing data for each data frame

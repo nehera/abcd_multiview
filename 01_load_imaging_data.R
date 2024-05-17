@@ -33,42 +33,59 @@ load_sMRI_view <- function(data_dir) {
     select(-eventname)
   cat("Total n sMRI Scans Available at Baseline:", nrow(smri_data))
   
+  # Check for missing values in each column
+  missingness_summary <- smri_data %>%
+    summarize_all(~ sum(is.na(.)))
+  
+  # Print the summary of missing values
+  cat("The following variables have some missingness:",
+      (names(missingness_summary)[missingness_summary!=0]))
+  
+  cat("n Missing for the variable with the most missingness:",
+      missingness_summary %>% max)
+  
   return(smri_data)
   
 }
 
-# TODO load_FC_view <- function(data_dir) {
+load_fMRI_view <- function(data_dir) {
 
-  # TODO load data
+  # Load Data
+  table_names <- c("mri_y_rsfmr_var_dst", # Temporal Variance [Destrieux]
+                   "mri_y_rsfmr_cor_gp_gp", # Correlations [Gordon Network] 
+                   "mri_y_rsfmr_cor_gp_aseg" # Correlations [Gordon Network to Subcortical] 
+                   )
+  
+  table_dirs <- paste0("imaging/", table_names, ".csv")
+  file_paths <- file.path(data_dir, table_dirs)
+  read_filter_data <- function(file_path) {
+    data <- read.csv(file_path) %>% 
+      filter(eventname == "baseline_year_1_arm_1") %>%
+      select(-eventname)
+  }
+  
+  data_list <- lapply(file_paths, read_filter_data)
+  
+  # Calculate Summary Statistics
+  cat("Table Names:", table_names, "\n")
+  n_features_per_table <- data_list %>% sapply(function(df) ncol(df)-1)
+  names(n_features_per_table) <- table_names
+  cat("n rsfMRI Variables Available per Table:", n_features_per_table, "\n")
+  n_rows_with_missing <- sapply(data_list, function(df) sum(apply(df, 1, function(row) any(is.na(row)))))
+  names(n_rows_with_missing) <- table_names
+  cat("n Observations with Any Missing Data per Table:", n_rows_with_missing)
+  
+  merged_df <- reduce(data_list, function(x, y) inner_join(x, y, by = "src_subject_id"))
+  
+  return(merged_df)
 
-  # TODO filter to baseline
-  # filtered_data <- fc_data %>%
-  #   filter(eventname == "baseline_year_1_arm_1")
-  # cat("n fMRI Scans Available at Baseline Pre-QC Filtering:", nrow(filtered_data))
-
-  # TODO perform qc filtering - I'm pretty sure this is only needed for fMRI data
-  # qc_data <- filtered_data %>%
-  #   filter()
-
-  # cat("n fMRI Scans Available at Baseline Post-QC Filtering:", nrow(qc_data))
-
-# }
+}
 
 smri_data <- load_sMRI_view(data_dir)
 
-# Doublecheck missingness
-# Check for missing values in each column
-missingness_summary <- smri_data %>%
-  summarize_all(~ sum(is.na(.)))
+fmri_data <- load_fMRI_view(data_dir)
 
-# Print the summary of missing values
-cat("The following variables have some missingness:",
-    (names(missingness_summary)[missingness_summary!=0]))
-
-cat("n Missing for the variable with the most missingness:",
-    missingness_summary %>% max)
-
-## -- Write Imaging View
+## -- Write Imaging Views
 
 # Use current date if out_date is NULL
 if (is.null(out_date)) { out_date <- Sys.Date() }
@@ -81,3 +98,13 @@ output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name)
 write_csv(smri_data, output_path)
 # Print the output path for verification
 print(paste("sMRI view written to:", output_path))
+
+# Construct the filename
+file_name <- sprintf("%s_%s_fMRI_view.csv", out_date, out_initials)
+# Define the output path
+output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
+# Write the fMRI_data to CSV file
+write_csv(fmri_data, output_path)
+# Print the output path for verification
+print(paste("fMRI view written to:", output_path))
+

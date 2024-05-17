@@ -1,8 +1,11 @@
 ---
 title: "ABCD Multiview Step 1. Proposal for Data Analysis and Simulation Study"
 author: "Aidan Neher"
-format: docx
+date: "May 17, 2024"
+format: 
+  docx: default
 editor: visual
+prefer-html: true
 ---
 
 ## Motivating Questions
@@ -11,69 +14,313 @@ Data Analysis: Cross-sectionally, at baseline, which early life adversity (ELA) 
 
 Simulation Study: Does extension of the BIP framework to a mixed outcome model predict well? Specifically, does the extension provide predictive value above and beyond the original BIP framework and the 2 step (i) dimension reduction and (ii) prediction method commonly employed in an ABCD Study-like setting and other realistic settings?
 
-## Data Analysis
+## Data Analysis Plan
 
-The Adolescent Brain and Cognitive Development Study (ABCD Study®) is the largest long-term brain development and child health study in the United States. Starting with subjects aged 9-10 years old and repeated until 19-20 years, brains scans are taken (bi-annually), biosamples, paper and pen tests, and iPad tasks (annually), and interviews (every 3-6 months). Cross-sectionally, at baseline, we will conduct an integrative analysis of the following data types ("views") in relation to the listed covariates and clinical outcomes.
+Cross-sectionally, at baseline, we will conduct an integrative analysis of the following data types ("views") in relation to the listed covariates and clinical outcomes.
 
 ### About the Data
 
-#### Views
+```{r,include=FALSE}
+library(tidyverse)
+library(kableExtra)
+# Define the directory, date, processor, and file suffixes
+data_dir <- "data"
+figures_dir <- "figures"
+data_processing_date <- "2024-05-16"
+data_processor <- "AN"
+# Construct file paths
+missing_per_datatype_path <- file.path(data_dir,
+                                       paste0(data_processing_date,
+                                              "_", data_processor,
+                                              "_n_missing_per_datatype.csv"))
+missing_per_variable_path <- file.path(data_dir, paste0(data_processing_date, 
+                                                        "_", data_processor,
+                                                        "_n_missing_per_variable.csv"))
+variables_per_datatype_path <- file.path(data_dir, paste0(data_processing_date, 
+                                                          "_", data_processor,
+                                                          "_n_variables_per_datatype.csv"))
+# Read in the CSV files
+missing_per_datatype_df <- read.csv(missing_per_datatype_path) 
+missing_per_variable_df <- read.csv(missing_per_variable_path) 
+variables_per_datatype_df <- read.csv(variables_per_datatype_path) 
 
-We are most interested in the following "views"
+# Show only the top 5 variables with the most missing data
+top_5_missing_per_variable_df <- missing_per_variable_df %>%
+  arrange(desc(n_missing)) %>%
+  slice_head(n = 5)
 
--   **Early life adversity (ELA)**: These features will be defined from Brieant et al. 2023 and Orendain et al. 2023. These papers use differing selection criteria and filtering methods to come to feature sets without much overlap. We choose include all ELA features considered across the papers and follow Brieant et al. 2023's >50% missingness filtering step. This results in a view with size **XXX** features. 
--   **Neuroimaging**: The metrics listed below will be vectorized and concatenated to form one neuroimaging view. Thus, for simplicity, we do not account for spatial correlation between nearby brain regions. The concatenation results in a view with size **XXX** features. 
-    -   sMRI: Cortical Thickness (CT) and Surface Area (SA): **XXX** features x 2 = **XXX** features. 
-    -   fMRI: Functional Connectivity (FC): **XXX** features.
+# Table 1: Variables per Data Type
+variables_per_datatype_table <- kable(variables_per_datatype_df, 
+                                      booktabs = TRUE, 
+                                      align = "c", 
+                                      caption = "Table 1. Number of Variables per Data Type") %>%
+  kable_styling(latex_options = c("striped", "repeat_header"),
+                stripe_color = "blue!15")
 
-#### Covariates
+# Table 2: Missing per Data Type
+missing_per_datatype_table <- kable(missing_per_datatype_df, 
+                                    booktabs = TRUE, 
+                                    align = "c", 
+                                    caption = "Table 2. Observations with Missingness per Data Type") %>%
+  kable_styling(latex_options = c("striped", "repeat_header"),
+                stripe_color = "blue!15")
 
-We include commonly adjusted for covariates: 
+# Table S2: Top 5 Missing per Variable
+top_5_missing_per_variable_table <- kable(top_5_missing_per_variable_df, 
+                                           booktabs = TRUE, 
+                                           align = "c", 
+                                           caption = "Table S2. Top 5 Variables by Missing Observations") %>%
+  kable_styling(latex_options = c("striped", "repeat_header"),
+                stripe_color = "blue!15")
 
-This will result in a total number of fixed effects = **XXX** 
+covar_labels <- c(
+  "Sex (At Birth)",
+  "Age (Months)",
+  "White (Yes/No)",
+  "Black (Yes/No)",
+  "American Indian or Native American (Yes/No)",
+  "Native Hawaiian or Pacific Islander (Yes/No)",
+  "Asian (Yes/No)",
+  "Other Race (Yes/No)",
+  "Missing Race (Yes/No)",
+  "Indigenous Race (Yes/No)",
+  "Total Family Income (Past 12 Months)",
+  "Highest Parent Education Completed",
+  "Parent Marital Status"
+)
 
-#### Outcomes
+outcome_labels <- c(
+  "Internalizing Problems (T-Score)",
+  "Externalizing Problems (T-Score)"
+)
 
-These continuous outcomes are considered by both Brieant et al. 2023 and Orendain et al. 2023 and readily available from code Mark has shared.
+```
 
--   Internalizing problems: 
--   Externalizing problems: 
+The Adolescent Brain and Cognitive Development Study (ABCD Study®) is the largest long-term brain development and child health study in the United States. Starting with subjects aged 9-10 years old and repeated until 19-20 years, brains scans are taken (bi-annually), biosamples, paper and pen tests, and iPad tasks (annually), and interviews (every 3-6 months). We use baseline data from the 5.1 release. We are most interested in the following views:
+
+-   **Early life adversity (ELA)**: We consider all ELA variables that Brieant et al. 2023 and Orendain et al. 2023 investigate. Similar to Brieant et al. 2023, we exclude ELA variables with >50% missingness and <0.05% endorsment. The endorsement filtering step led to 1 variable from Orendain et al. 2023 getting dropped from our dataset. Additionally, we removed ELA variables represented in the covariates. This results in a view with size `r variables_per_datatype_df %>% filter(data_type=="ela_view") %>% pull(n_variables)` variables.
+-   **Structural MRI (sMRI)**: We use data parcellated with the Destrieux Atlas, which has 74 regions of interest (ROIs) defined. With 74 ROIs across 2 hemispheres, we have 148 measures for each of 2 sMRI metrics, Cortical Thickness (CT) and Surface Area (SA). These data are vectorized and concatenated to form an sMRI view. This view consequently has size `r variables_per_datatype_df %>% filter(data_type=="sMRI_view") %>% pull(n_variables)` variables. 
+-   **Functional MRI (fMRI)**: We plan to use pre-tabulated Functional Connectivity (FC), which measures pairwise correlation in functional activity across ROIs. This data is not readily available at present so will need to be procured or generated. The total number of variables for this view is not identified here since whichever Atlas is available will define how large this view ultimately is. 
+
+**Covariates:** We include: `r covar_labels`. Total n covariates = `r length(covar_labels)`. **Outcomes:** Continuous random variables `r outcome_labels` were studied by both Brieant et al. 2023 and Orendain et al. 2023. Total n outcomes = `r length(outcome_labels)`.
+
+```{r,echo=FALSE}
+# Show the number of variables included from each data type 
+variables_per_datatype_table
+```
+
+#### Missing Data
+
+We describe the number of observations missing per data type (Table 2), and notice ELA and covariates account for the most missingness. On exploring the top 5 variables by number of missing observations (Table S2), we realize household combined income has the most missingness (n_missing=1017), and ELA variables represent the other top 4 missing variables. 
+
+```{r,echo=FALSE}
+missing_per_datatype_table
+```
+
+```{r,echo=FALSE}
+sample_key <- read.csv("data/2024-05-16_AN_sample_key.csv")
+```
+
+We plan for a complete case analysis, excluding observations with missingness in any of the data types mentioned though we are ignoring FC since we lack access at present. This would result in an overall sample size N = `r length(sample_key$src_subject_id)`. 
+
+#### Observational Clustering
+
+From the complete case data, we explore the clustering by family and family within site that we will account for by mixed modeling. In Equation 1, we propose use of the an outcome model to account for this observational clustering. For the $0$th view ($m=0$), $p_0 = 1$ so the model can be expressed after suppressing the $j$ subscript and introducing random effects in the intercept of the $i$th unit. Indices $i:=$ subject, $f:=$ family, and $s:=$ site. 
+
+$$
+\begin{equation}
+    y_i = y_{ifs} = \alpha_0 + \xi_{f:s} + {U}_{i, .}{\alpha} + {W}_{i.}{\beta} + \varepsilon_{ifs}
+\end{equation}
+$$
+
+where 
+
+$$
+\begin{align}
+    {\alpha} = {A}^{(0)} \in \mathbb{R}^{r \times 1} \\
+    \xi_{f:s} | \xi_s \overset{iid}{\sim} N(\xi_s, \nu^2_1) \\
+    \xi_{s} \overset{iid}{\sim} N(0, \nu^2_2) \\
+    \varepsilon_i = \varepsilon_{ifs} \overset{iid}{\sim} N(0, \sigma^2) 
+\end{align}
+$$
+
+Furthermore, we describe the ABCD Study's nested clustering ($i:f:s$) empirically in Figure S1. This distribution will be referenced in simulation study scenario development. Note, in complete case analysis, presently, one site has 26 families available, which might challenge $f:s$ random effect estimation.
 
 ### Model Training & Testing
 
-70:15:15 split for hyperparameter tuning
+We will split our data 80:20 train:test. This will result in roughly `r length(sample_key$src_subject_id) * .8` training samples and `length(sample_key$src_subject_id) * .2` test samples. We perform hyperparameter tuning using 5-fold cross-validation in the training set. The test set is reserved for final model performance evaluation. Our primary performance metric is mean square prediction error (MSPE) in the test set. Secondarily, we will explore overlap between the ELA features we find with substantial loadings (threshold TBD) by BIP modeling and those found/ used by Brieant et al. 2023 and Orendain et al. 2023. 
 
-Mean square prediction error as primary performance metric
+**Table 1:** Schematic of data analysis prediction performance results. Confidence intervals will be estimated by bootstrapping. 
+
+|       Outcome         |         MSPE         |
+|-----------------------|----------------------|
+| `r outcome_labels[1]` | $\hat{MSPE}(95\%CI)$ |  
+| `r outcome_labels[2]` | $\hat{MSPE}(95\%CI)$ |  
 
 ## Simulation Study
 
+We will test our mixed modeling framework. TBD if random effect nesting will be achieved/ not. Regardless, the simulation study proposed below is relevant.
+
 ### Competing Methods
 
-- Vanilla BIP
-- 2 stage method
-- Other methods used in BIP paper
+- BIPmixed: Proposed BIP framework with a mixed outcome model.
+- BIP: BIP method originally proposed by Chekouo and Safo 2021. 
+- 2-Step Regression: Brieant et al. 2023 and Orendain et al. 2023 (i) perform factor analysis for dimension reduction and then (ii) fit linear regression models in 2 steps. In particular, we consider Brieant et al. 2023's (i) factor analysis and then (ii) fit a Bayesian linear regression model. *Note, the number of factors pass from (i) to (ii) is a hyperparameter that will need to be tuned. Also, for (i), we will either need to concatenate views/ consider another multiview factor analysis method.*
+- Other Methods from BIP Paper: *Are there methods from BIP paper that we should carry forward to this simulation? Are there methods more usable/ more suitable for comparison to the BIPmixed approach?*
 
 ### Simulation Settings
 
-- One like ABCD study
-- Ideal scenario e.g. balanced/ "enough" observational clustering
-- Challenging scenario
+We fix our outcome model, include 10 covariates, which is roughly the data analysis number, and 2 views where the ELA-analogous view is smaller (p=100) and the more traditionally considered -omics views are larger (p=300). We fix the ABCD Study site count = 21.
 
-**What Thierry proposed**
+- **Sample Size:** Small (We can use traditional neuroimaging studies as a benchmark for this), Medium, and Large (e.g. $n=10,000$, like the ABCD Study).
+- **Number of Variables:** Small (Can be based on the number we are using, roughly 400 in total, 100/ 300 per view) to large number of variables in the -omics view (The size to vary to can be based on if we were to include gene expression data/ SNPs)
+**Study Design:** Balanced (Number of families/ site is fixed to median number observed in ABCD Study) vs. Unbalanced (Distribution of $i:f:s$ can be empirically derived from ABCD Study. See Figure S1 for details).
 
-- Sample size from small to big (like ABCD)
-- Small number of features (like what we are planning) to large number of features
-- Balanced study design to unbalanced (like what we observe in ABCD)
+3 Sample Size x 2 Number of Variables x 2 Study Design conditions = 12 total simulation scenarios. 
+
+We will generate $M=1,000$ datasets and estimate performance of each competing method on all sets. 
 
 ### Performance Metrics 
 
-Mean square prediction error as primary performance metric
+**Table 2: Primary performance metric** mean square prediction error in simulated test sets where confidence intervals are based on performance across $M$ datasets schematic.
 
-AUC/ accuracy, sensitivity, specificity for variable selection? How might we choose the feature selection threshold? 
+| Scenario     |   BIPmixed MSPE       | BIP MSPE            | ... |
+|--------------|------------------------|---------------------|-----|
+| Scenario 1   | $\hat{\text{MSPE}}(95\%\text{CI})$ | ... | ... |
+| Scenario 2   | $\hat{\text{MSPE}}(95\%\text{CI})$ | ... | ... |
+| ...          | $\hat{\text{MSPE}}(95\%\text{CI})$ | ... | ... |
+| Scenario 12  | $\hat{\text{MSPE}}(95\%\text{CI})$ | ... | ... |
 
-## Relevant References
+**Table 3: Secondary performance metric** AUC for variable selection against the truth in simulated test sets where confidence intervals are based on performance across $M$ datasets schematic.
 
-- BIP
-- Brieant et al. 2023
-- Orendain et al. 2023
-- 
+| Scenario    | BIPmixed AUC       | BIP AUC               | ... |
+|-------------|--------------------|-----------------------|-----|
+| Scenario 1  | $\hat{\text{AUC}}(95\%\text{CI})$ | ... | ... |
+| Scenario 2  | $\hat{\text{AUC}}(95\%\text{CI})$ | ... | ... |
+| ...         | $\hat{\text{AUC}}(95\%\text{CI})$ | ... | ... |
+| Scenario 12 | $\hat{\text{AUC}}(95\%\text{CI})$ | ... | ... |
+
+## Relevant References & Why
+
+1. Chekouo, T. & Safo, S. E. Bayesian integrative analysis and prediction with application to atherosclerosis cardiovascular disease. Biostatistics 24, 124–139 (2021). 
+2. Orendain, N., Anderson, A., Galván, A., Bookheimer, S. & Chung, P. J. A data-driven approach to categorizing early life adversity exposure in the ABCD Study. BMC Med Res Methodol 23, 164 (2023).
+3. Brieant, A. et al. Characterizing the dimensional structure of early-life adversity in the Adolescent Brain Cognitive Development (ABCD) Study. Developmental Cognitive Neuroscience 61, 101256 (2023).
+4. Saragosa-Harris, N. M. et al. A practical guide for researchers and reviewers using the ABCD Study and other large longitudinal datasets. Developmental Cognitive Neuroscience 55, 101115 (2022).
+5. Wiglesworth, A. et al. Sex and age variations in the impact of puberty on cortical thickness and associations with internalizing symptoms and suicidal ideation in early adolescence. Developmental Cognitive Neuroscience 59, 101195 (2023).
+6. Gelman, A. et al. Bayesian Data Analysis Third edition (with errors ﬁxed as of 15 February 2021).
+7. Gelman, A. Prior distributions for variance parameters in hierarchical models.
+8. Banerjee, S. Bayesian Linear Model: Gory Details.
+
+Why? 
+
+1. This is the framework we are extending, which can be referenced, especially BIP's performance relative to competing methods.
+2. Authors define ABCD Study ELA variables we use in the data analysis.
+3. Authors define ABCD Study ELA variables we use in the data analysis. Also, we follow similar data processing decisions, except for excluding/ consolidating highly correlated ELA variables.
+4. Useful description of the ABCD Study that can be cited in our brief introduction to the study.
+5. This paper mirror our covariate coding approach and which covariates we include in relation to outcomes internalizing and externalizing problems.
+6. This textbook will be referenced in hierarchical model development.
+7. This paper will be referenced in hierarchical model development, especially prior choice for variance parameters. Authors recommend our initial uniform prior choice for the variance parameters as a starting point.
+8. While not an academic article that will be cited/ citable in our paper, this has been referenced for understanding Bayesian linear model development and result derivations.
+
+## Appendix 1. Supplementary Materials
+
+**Software:** All analyses will be conducted using the R statistical software, version 4.2.0, and relevant R packages.
+
+**Table S1:** Summary statistics of outcomes Internalizing Problems (T-Score) and Externalizing Problems (T-Score) and covariates for complete case sample. 
+
+```{r, include=FALSE}
+library(tableone)
+library(labelled) # for set_variable_levels
+library(kableExtra)
+
+covariates <- file.path(data_dir, paste0(data_processing_date, "_", data_processor, "_covariates.csv")) %>%
+  read.csv()
+outcomes <- file.path(data_dir, paste0(data_processing_date, "_", data_processor, "_outcomes.csv")) %>%
+  read.csv()
+
+# Merge outcomes and covariates data frames and filter to common subjects
+data <- inner_join(outcomes, covariates, by = "src_subject_id") %>%
+  filter(src_subject_id %in% sample_key$src_subject_id)
+
+# Convert all columns except 'src_subject_id' to numeric
+data <- data %>%
+  mutate_at(vars(-src_subject_id), as.numeric)
+
+# Relevel race variables to be factors with levels "No" and "Yes"
+race_vars <- colnames(data)[grepl("_race$", colnames(data))]
+data <- data %>%
+  mutate_at(vars(one_of(race_vars)), ~ factor(., levels = c(0, 1), labels = c("No", "Yes")))
+
+# Relevel demo_sex_v2
+data <- data %>%
+  mutate(demo_sex_v2 = factor(demo_sex_v2, levels = c(1, 2, 3, 4), labels = c(
+    "Male", "Female", "Intersex-Male", "Intersex-Female"
+  )))
+
+# Define labels
+table1_labels <- c(
+  "Internalizing Problems (T-Score)",
+  "Externalizing Problems (T-Score)",
+  "Sex (At Birth)",
+  "Age (Months)",
+  "White (Yes/No)",
+  "Black (Yes/No)",
+  "American Indian or Native American (Yes/No)",
+  "Native Hawaiian or Pacific Islander (Yes/No)",
+  "Asian (Yes/No)",
+  "Other Race (Yes/No)",
+  "Missing Race (Yes/No)",
+  "Indigenous Race (Yes/No)",
+  "Total Family Income (Past 12 Months)",
+  "Highest Parent Education Completed",
+  "Parent Marital Status"
+)
+
+# Define factor levels and labels
+data <- data %>%
+  mutate(
+    demo_comb_income_v2_bl = factor(demo_comb_income_v2_bl, levels = 1:10, labels = c(
+      "Less than $5,000", "$5,000 - $11,999", "$12,000 - $15,999", 
+      "$16,000 - $24,999", "$25,000 - $34,999", "$35,000 - $49,999",
+      "$50,000 - $74,999", "$75,000 - $99,999", "$100,000 - $199,999",
+      "$200,000 and greater")),
+    highest_demo_ed_bl = factor(highest_demo_ed_bl, levels = c(1:22), labels = c(
+      "1st grade", "2nd grade", "3rd grade", "4th grade", "5th grade", 
+      "6th grade", "7th grade", "8th grade", "9th grade", "10th grade", "11th grade", 
+      "12th grade, no diploma", "High school graduate", "GED or equivalent", 
+      "Less than 1 year of college credit/post-secondary education", "One year or more of college credit, no degree", 
+      "Associate degree: Occupational, Technical, or Vocational", "Associate degree: Academic Program", 
+      "Bachelor's degree (e.g., BA, AB, BS, BBA)", "Master's degree (e.g., MA, MS, MEng, MEd, MBA)", 
+      "Professional School degree (e.g., MD, DDS, DVM, JD)", "Doctoral degree (e.g., PhD, EdD)")),
+    demo_prnt_marital_v2_bl = factor(demo_prnt_marital_v2_bl, levels = c(1:6), labels = c(
+      "Married", "Widowed", "Divorced", "Separated", "Never married", "Living with partner"))
+  )
+
+# Apply labels to variables
+colnames(data)[-1] <- table1_labels
+
+# Create Table 1 using the table1 package
+tbl_1 <- CreateTableOne(data = data, vars = colnames(data)[-1], 
+                        test = FALSE)
+tbl_1_printed <- print(tbl_1, varLabels = TRUE, showAllLevels = TRUE)
+```
+
+```{r,echo=FALSE}
+kable(tbl_1_printed, booktabs = TRUE, 
+      align = "c", longtable = TRUE) %>%
+  kable_styling(latex_options = c("striped", "repeat_header"),
+                stripe_color = "blue!15")
+```
+
+```{r,echo=FALSE}
+top_5_missing_per_variable_table
+```
+
+**Figure S1.** Summary of ABCD Study nested clustering of observations (study subject/ individual within family & family within study site). 
+
+![](figures/2024-05-16_AN_abcd_clustering_summary.png)
+
+# Appendix 2: Code for Document
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
