@@ -92,7 +92,7 @@ combine_samples <- function(samples_list) {
 
 # Example data
 set.seed(123)
-n_iter <- 1000
+n_iter <- 10000
 n_chains <- 4
 n <- 300
 J <- 30
@@ -178,10 +178,13 @@ df_temp <- data.frame(y = y, x = X[, 2], site = factor(study_site))
 freq_model <- lmer(y ~ x + (1 | site), data = df_temp)
 summary(freq_model)
 
-
-## -- Nested with 1 Family:Site Variance Parameters
-
 ## -- Nested with N Study Sites Worth of Family:Site Variance Parameters
+
+library(parallel)
+library(MASS)
+library(rstan)
+library(lme4)
+library(dplyr)
 
 # Modified Gibbs sampler to accept a seed and handle nested random effects
 gibbs_sampler_nested <- function(y, X, study_site, family, n_iter, priors, seed) {
@@ -301,7 +304,7 @@ combine_samples_nested <- function(samples_list) {
 
 # Example data
 set.seed(123)
-n_iter <- 1000
+n_iter <- 10000
 n_chains <- 4
 n <- 900
 J <- 30
@@ -377,73 +380,39 @@ comparison <- data.frame(
 # Add a logical vector to see if true values are within the credible intervals
 comparison$within_credible_interval <- with(comparison, true_value >= lower & true_value <= upper)
 
-# Combine the true values into a single vector, ordered according to the MCMC parameters
-true_values <- c(sigma_true^2, sigma_u_true^2, rep(sigma_v_true^2, J))
-
-# Parameter names
-param_names <- c("sigma2", "sigma_u2", paste0("sigma_v2_", 1:J))
-
-# Initialize a dataframe to hold the comparisons
-comparison <- data.frame(
-  param_name = param_names,
-  lower = lower_bounds[grepl("^sigma2$|^sigma_u2$|^sigma_v2_", rownames(mcmc_summary))],
-  mean = mean_values[grepl("^sigma2$|^sigma_u2$|^sigma_v2_", rownames(mcmc_summary))],
-  upper = upper_bounds[grepl("^sigma2$|^sigma_u2$|^sigma_v2_", rownames(mcmc_summary))],
-  true_value = round(true_values, 4)
-)
-
-# Add a logical vector to see if true values are within the credible intervals
-comparison$within_credible_interval <- with(comparison, true_value >= lower & true_value <= upper)
-
-# Print the result to check each parameter
-print(comparison)
-
-# % of variance parameters within credible interval
-cat("% of variance parameters within credible interval: ", mean(comparison$within_credible_interval), "\n")
-
 # % of all parameters within credible interval
 cat("% of all parameters within credible interval: ", mean(comparison$within_credible_interval), "\n")
 
-# Filter for random intercept parameters (those starting with "u_" or "v_")
-u_comparison <- comparison %>% filter(grepl("^u_", param_name))
-v_comparison <- comparison %>% filter(grepl("^v_", param_name))
+print("Fixed Effect Estimation vs. Truth:")
+
+# Filter for fixed effect parameters
+fixed_effect_comparison <- comparison %>% filter(grepl("^beta_", param_name))
+
+# Print the result to check fixed effect parameters
+print(fixed_effect_comparison)
+
+print("Random Intercept Estimation vs. Truth:")
+
+# Filter for random intercept parameters (those starting with "u_")
+random_intercept_comparison <- comparison %>% filter(grepl("^u_|^v_", param_name))
 
 # % of random intercept parameters within credible interval
-cat("% of random intercept parameters (u) within credible interval: ", mean(u_comparison$within_credible_interval), "\n")
-cat("% of random intercept parameters (v) within credible interval: ", mean(v_comparison$within_credible_interval), "\n")
+cat("% of random intercept parameters within credible interval: ", mean(random_intercept_comparison$within_credible_interval), "\n")
 
 # % of random intercept parameters with correct sign
-cat("% of sampled RE parameters (u) with correct sign: ", mean(sign(u_comparison$mean) == sign(u_comparison$true_value)), "\n")
-cat("% of sampled RE parameters (v) with correct sign: ", mean(sign(v_comparison$mean) == sign(v_comparison$true_value)), "\n")
+random_intercept_comparison$correct_sign <- sign(random_intercept_comparison$mean) == sign(random_intercept_comparison$true_value)
+cat("% of random intercept parameters with correct sign: ", mean(random_intercept_comparison$correct_sign), "\n")
 
-# Combine the true values into a single vector, ordered according to the MCMC parameters
-true_values <- c(sigma_true^2, sigma_u_true^2, rep(sigma_v_true^2, J))
+# Print the result to check random intercept parameters
+print(random_intercept_comparison)
 
-# Parameter names
-param_names <- c("sigma2", "sigma_u2", paste0("sigma_v2_", 1:J))
+print("Variance Parameter Estimation vs. Truth:")
 
-# Initialize a dataframe to hold the comparisons
-comparison <- data.frame(
-  param_name = param_names,
-  lower = lower_bounds[grepl("^sigma2$|^sigma_u2$|^sigma_v2_", rownames(mcmc_summary))],
-  mean = mean_values[grepl("^sigma2$|^sigma_u2$|^sigma_v2_", rownames(mcmc_summary))],
-  upper = upper_bounds[grepl("^sigma2$|^sigma_u2$|^sigma_v2_", rownames(mcmc_summary))],
-  true_value = round(true_values, 4)
-)
+# Filter the comparison dataframe for variance parameters
+variance_comparison <- comparison %>% filter(grepl("^sigma2$|^sigma_u2$|^sigma_v2_", param_name))
 
-# Add a logical vector to see if true values are within the credible intervals
-comparison$within_credible_interval <- with(comparison, true_value >= lower & true_value <= upper)
-
-# Print the result to check each parameter
-print(comparison)
+# Print the filtered result to check each variance parameter
+print(variance_comparison)
 
 # % of variance parameters within credible interval
-cat("% of all variance parameters within credible interval: ", mean(comparison$within_credible_interval), "\n")
-
-# Frequentist model
-df_temp <- data.frame(y = y, x = X[, 2], site = factor(study_site), family = factor(family))
-freq_model <- lmer(y ~ x + (1 | site) + (1 | family:site), data = df_temp)
-summary(freq_model)
-
-# Observation! It seems sigma2 and sigma_u2 are getting mixed up by our Bayesian Model
-# Question? Is there an identifiability issue we have imposed between our sigma2 and sigma_u2? Have these parameters become exchangeable? 
+cat("% of variance parameters within credible interval: ", mean(variance_comparison$within_credible_interval), "\n")
