@@ -416,3 +416,176 @@ print(variance_comparison)
 
 # % of variance parameters within credible interval
 cat("% of variance parameters within credible interval: ", mean(variance_comparison$within_credible_interval), "\n")
+
+# Make traceplots
+
+library(ggplot2)
+library(gridExtra)
+
+# Set the number of chains to plot
+n_chains_to_plot <- 2
+
+# Define the parameters to plot
+parameters_to_plot <- c(
+  paste0("beta_", 1:ncol(samples_list[[1]]$beta)),
+  paste0("u_", 1),
+  paste0("v_", 1),
+  "sigma_u2",
+  "sigma2",
+  paste0("sigma_v2_", 1:2)
+)
+
+# True values for the parameters
+true_values <- c(
+  beta_true, 
+  u_true[1], 
+  v_true[1], 
+  sigma_u_true^2, 
+  sigma_true^2, 
+  rep(sigma_v_true^2, 2)
+)
+
+# Prepare a list to store ggplot objects
+plot_list <- list()
+
+# Create trace plots for each parameter in each chain
+for (i in seq_along(parameters_to_plot)) {
+  param <- parameters_to_plot[i]
+  true_value <- true_values[i]
+  
+  for (chain in 1:n_chains_to_plot) {
+    # Extract the values for the parameter and chain
+    param_values <- combined_samples[, chain, which(dimnames(combined_samples)[[3]] == param)]
+    
+    # Create a dataframe for ggplot
+    df <- data.frame(
+      iter = 1:n_iter,
+      value = param_values,
+      chain = factor(chain)
+    )
+    
+    # Create the trace plot
+    p <- ggplot(df, aes(x = iter, y = value, color = chain)) +
+      geom_line() +
+      geom_hline(yintercept = true_value, linetype = "dashed", color = "black") +
+      geom_vline(xintercept = n_iter / 2, linetype = "dashed", color = "red") +
+      labs(x = ifelse(param == tail(parameters_to_plot, 1), "Iteration", ""), y = ifelse(chain == 1, param, "")) +
+      theme_minimal() +
+      theme(legend.position = "none")
+    
+    # Remove y-axis label for chains > 1
+    if (chain > 1) {
+      p <- p + theme(axis.title.y = element_blank())
+    }
+    
+    # Add the plot to the list
+    plot_list[[paste(param, chain, sep = "_")]] <- p
+  }
+}
+
+# Arrange the plots into a grid
+grid_plots <- do.call(grid.arrange, c(plot_list, ncol = n_chains_to_plot))
+
+# Make Density Plots
+
+library(ggplot2)
+library(gridExtra)
+library(scales)
+
+# Set the number of chains to plot
+n_chains_to_plot <- 2
+
+# Define the parameters to plot
+parameters_to_plot <- c(
+  paste0("beta_", 1:ncol(samples_list[[1]]$beta)),
+  paste0("u_", 1),
+  paste0("v_", 1),
+  "sigma_u2",
+  "sigma2",
+  paste0("sigma_v2_", 1:2)
+)
+
+# True values for the parameters
+true_values <- c(
+  beta_true, 
+  u_true[1], 
+  v_true[1], 
+  sigma_u_true^2, 
+  sigma_true^2, 
+  rep(sigma_v_true^2, 2)
+)
+
+# Determine the x-axis limits for each class of parameters
+beta_limits <- range(combined_samples[(n_iter / 2 + 1):n_iter, , grep("^beta_", dimnames(combined_samples)[[3]])])
+u_limits <- range(combined_samples[(n_iter / 2 + 1):n_iter, , grep("^u_", dimnames(combined_samples)[[3]])])
+v_limits <- range(combined_samples[(n_iter / 2 + 1):n_iter, , grep("^v_", dimnames(combined_samples)[[3]])])
+sigma_u2_limits <- range(combined_samples[(n_iter / 2 + 1):n_iter, , grep("^sigma_u2", dimnames(combined_samples)[[3]])])
+sigma2_limits <- range(combined_samples[(n_iter / 2 + 1):n_iter, , grep("^sigma2", dimnames(combined_samples)[[3]])])
+sigma_v2_limits <- c(0, 25)  # Truncate to a maximum of 25
+
+# Determine the y-axis limits to be (0, 1) for all density plots
+y_limits <- c(0, 1)
+
+# Prepare a list to store ggplot objects
+plot_list <- list()
+
+# Create density plots for each parameter in each chain after burn-in
+for (i in seq_along(parameters_to_plot)) {
+  param <- parameters_to_plot[i]
+  true_value <- true_values[i]
+  
+  # Determine x-axis limits based on parameter class
+  if (grepl("^beta_", param)) {
+    x_limits <- beta_limits
+  } else if (grepl("^u_", param)) {
+    x_limits <- u_limits
+  } else if (grepl("^v_", param)) {
+    x_limits <- v_limits
+  } else if (grepl("^sigma_u2", param)) {
+    x_limits <- sigma_u2_limits
+  } else if (grepl("^sigma2", param)) {
+    x_limits <- sigma2_limits
+  } else if (grepl("^sigma_v2_", param)) {
+    x_limits <- sigma_v2_limits
+  }
+  
+  for (chain in 1:n_chains_to_plot) {
+    # Extract the values for the parameter and chain after burn-in
+    param_values <- combined_samples[(n_iter / 2 + 1):n_iter, chain, which(dimnames(combined_samples)[[3]] == param)]
+    
+    # Create a dataframe for ggplot
+    df <- data.frame(
+      value = param_values,
+      chain = factor(chain)
+    )
+    
+    # Compute the density
+    density_values <- density(param_values)
+    df_density <- data.frame(
+      x = density_values$x,
+      y = density_values$y / max(density_values$y),  # Normalize the density to unit scale
+      chain = factor(chain)
+    )
+    
+    # Create the density plot
+    p <- ggplot(df_density, aes(x = x, y = y, fill = chain)) +
+      geom_line(aes(color = chain), size = 1) +
+      geom_vline(xintercept = true_value, linetype = "dashed", color = "black") +
+      scale_x_continuous(limits = x_limits, labels = label_number(accuracy = 0.1)) +
+      scale_y_continuous(limits = y_limits, labels = label_number(accuracy = 0.1)) +
+      labs(x = ifelse(param == tail(parameters_to_plot, 1), "Value", ""), y = ifelse(chain == 1, param, "")) +
+      theme_minimal() +
+      theme(legend.position = "none", axis.title.y = element_text(size = 8))
+    
+    # Remove y-axis label for chains > 1
+    if (chain > 1) {
+      p <- p + theme(axis.title.y = element_blank())
+    }
+    
+    # Add the plot to the list
+    plot_list[[paste(param, chain, sep = "_")]] <- p
+  }
+}
+
+# Arrange the plots into a grid
+grid_plots <- do.call(grid.arrange, c(plot_list, ncol = n_chains_to_plot))
