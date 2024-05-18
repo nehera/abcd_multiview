@@ -314,7 +314,7 @@ family <- rep(1:F_count, each = n / F_count)
 X <- cbind(1, rnorm(n))
 beta_true <- c(1, 2)
 sigma_u_true <- 2
-sigma_v_true <- 1.5
+sigma_v_true <- 1.5 # Assume each f:s variance parameter is same across sites
 u_true <- rnorm(J, sd = sigma_u_true)
 v_true <- rnorm(F_count, sd = sigma_v_true)
 sigma_true <- 1
