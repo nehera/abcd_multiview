@@ -296,3 +296,8 @@ for (i in seq_along(parameters_to_plot)) {
 
 # Arrange the plots into a grid
 grid_plots <- do.call(grid.arrange, c(plot_list, ncol = n_chains_to_plot))
+
+# Observation: Fixed effect intercept & Site-level random intercepts 
+# seem to take longer to converge. This is likely attributable to 
+# anti-correlation between the Fixed effect intercept & 
+# Site-level random intercepts, which is apparent in the traceplots. 

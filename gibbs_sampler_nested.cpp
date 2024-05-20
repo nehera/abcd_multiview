@@ -93,9 +93,6 @@ List gibbs_sampler_nested(const vec& y, const mat& X, uvec study_site, uvec fami
     for (int j = 0; j < J; ++j) {
       uvec families_in_site = find(study_site == j);
       families_in_site = unique(family(families_in_site));
-      // std::cout << "j: " << j << std::endl;
-      // std::cout << "families_in_site: " << families_in_site.t() << std::endl;
-      
       if (!families_in_site.is_empty()) {
         for (size_t idx = 0; idx < families_in_site.n_elem; ++idx) {
           if (families_in_site[idx] < 0 || families_in_site[idx] >= F_count) {
