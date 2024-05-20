@@ -82,6 +82,72 @@ smri_data <- load_sMRI_view(data_dir)
 
 fmri_data <- load_fMRI_view(data_dir)
 
+# Let's checkout the fMRI data we have loaded
+# Note, pairwise correlations include self-correlations
+# These self-correlations do not necessarily equal 1.  
+# From Mark: "The reason that the self-correlations are not equal to 1 
+# is that it's a within-network correlation. 
+# Essentially, each network is made of a number of parcels. 
+# They then computed all pairwise correlations between the parcels 
+# within a network to get all these values. So for, e.g., auditory to 
+# auditory, there are still some number of parcels there, and so their 
+# correlations are not exactly equal to 1 (though they will likely be large). 
+# See, for example, Figure 2 here: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9589037/."
+
+# Create a lookup table for the Gordon Network abbreviations
+network_lookup <- data.frame(
+  Abbreviation = c("ad", "cgc", "ca", "dt", "dla", 
+                   "fo", "n", "rspltp", "sa", "smh", 
+                   "smm", "vta", "vs"),
+  FullName = c("Auditory Network", "Cingulo-Opercular Network", 
+               "Cingulo-Parietal Network", "Default Mode Network", 
+               "Dorsal Attention Network", "Fronto-Parietal Network", 
+               "None Network", "Retrosplenial Temporal Network", 
+               "Salience Network", "Sensorimotor Hand Network", 
+               "Sensorimotor Mouth Network", "Ventral Attention Network", 
+               "Visual Network")
+)
+
+# Remove the "rsfmri_c_" and "ngd_" prefixes from column names
+colnames(fmri_data) <- sub("^rsfmri_c_ngd_", "", colnames(fmri_data))
+colnames(fmri_data) <- gsub("_ngd_", "_", colnames(fmri_data))
+# Reshape the data frame to long format
+fmri_long <- fmri_data %>%
+  pivot_longer(
+    cols = -src_subject_id,  # Exclude the subject ID column
+    names_to = c("Network1", "Network2"),
+    names_sep = "_",
+    values_to = "Correlation"
+  )
+
+# Print the reshaped data frame
+print(fmri_long)
+
+# Calculate the average correlation for each network pair
+average_correlations <- fmri_long %>%
+  group_by(Network1, Network2) %>%
+  summarise(AverageCorrelation = mean(Correlation, na.rm = TRUE)) %>%
+  ungroup()
+
+# Create a matrix from the average correlations
+cor_matrix <- average_correlations %>%
+  pivot_wider(names_from = Network2, values_from = AverageCorrelation) %>%
+  column_to_rownames(var = "Network1") %>%
+  as.matrix()
+
+# Plot the heatmap
+ggplot(reshape2::melt(cor_matrix), aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                       name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1),
+        axis.text.y = element_text(size = 12)) +
+  coord_fixed() +
+  labs(x = "Network 1", y = "Network 2", title = "Average Correlation Matrix Heatmap")
+
 ## -- Write Imaging Views
 
 # Use current date if out_date is NULL
