@@ -51,10 +51,7 @@ load_sMRI_view <- function(data_dir) {
 load_fMRI_view <- function(data_dir) {
 
   # Load Data
-  table_names <- c("mri_y_rsfmr_var_dst", # Temporal Variance [Destrieux]
-                   "mri_y_rsfmr_cor_gp_gp", # Correlations [Gordon Network] 
-                   "mri_y_rsfmr_cor_gp_aseg" # Correlations [Gordon Network to Subcortical] 
-                   )
+  table_names <- c("mri_y_rsfmr_cor_gp_gp") # Correlations [Gordon Network]
   
   table_dirs <- paste0("imaging/", table_names, ".csv")
   file_paths <- file.path(data_dir, table_dirs)

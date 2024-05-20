@@ -92,7 +92,7 @@ combine_samples <- function(samples_list) {
 
 # Example data
 set.seed(123)
-n_iter <- 10000
+n_iter <- 6000
 n_chains <- 4
 n <- 300
 J <- 30
@@ -304,11 +304,11 @@ combine_samples_nested <- function(samples_list) {
 
 # Example data
 set.seed(123)
-n_iter <- 10000
+n_iter <- 6000
 n_chains <- 4
-n <- 900
-J <- 30
-F_count <- 30
+n <- 30*30*3
+J <- 30 # Number of Sites
+F_count <- 30*30 # Number of Families in Total
 study_site <- rep(1:J, each = n / J)
 family <- rep(1:F_count, each = n / F_count)
 X <- cbind(1, rnorm(n))
