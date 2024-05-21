@@ -185,7 +185,10 @@ S_count <- 30 # Number of Sites
 F_count <- 30 * 30 # Number of Families in Total
 study_site <- rep(1:S_count, each = n / S_count)
 family <- rep(1:F_count, each = n / F_count)
-W <- cbind(1, rnorm(n))
+# TODO Verify it's fine to drop fixed intercept beta_0. 
+# Observation: Site-level intercepts converge more rapidly on dropping.
+# W <- cbind(1, rnorm(n)) 
+W <- cbind(rnorm(n), rnorm(n))
 beta_true <- c(1, 2)
 sigma_ksi_true <- 2
 sigma_theta_true <- 1.5 # Assume each f:s variance parameter is same across sites
