@@ -37,9 +37,10 @@ List gibbs_sampler_nested(const vec& y, const mat& W, uvec study_site, uvec fami
   int n = y.n_elem;
   int S_count = max(study_site) + 1;
   int F_count = max(family) + 1;
+  int n_beta = W.n_cols;
   
   // Initialize parameters
-  vec beta = zeros<vec>(2);
+  vec beta = zeros<vec>(n_beta);
   vec ksi = zeros<vec>(S_count);
   vec theta = zeros<vec>(F_count);
   double sigma_ksi2 = 1.0;
@@ -47,7 +48,7 @@ List gibbs_sampler_nested(const vec& y, const mat& W, uvec study_site, uvec fami
   double sigma2 = 1.0;
   
   // Storage for samples
-  mat beta_samples(n_iter, 2, fill::zeros);
+  mat beta_samples(n_iter, n_beta, fill::zeros);
   mat ksi_samples(n_iter, S_count, fill::zeros);
   mat theta_samples(n_iter, F_count, fill::zeros);
   vec sigma_ksi2_samples(n_iter, fill::zeros);
