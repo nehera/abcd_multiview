@@ -9,6 +9,7 @@ library(dplyr)
 library(ggplot2)
 library(gridExtra)
 library(rstan)
+library(scales)
 
 # Source the C++ code
 sourceCpp("gibbs_sampler_nested.cpp")
@@ -68,7 +69,10 @@ priors <- list(beta_prior_mean = c(0, 0),
 seeds <- 1:n_chains
 # Note, seed cannot be set in C++
 samples_list <- mclapply(seeds, function(seed) { 
-  gibbs_sampler_nested(y, X, study_site, family, n_iter, priors$beta_prior_mean, priors$beta_prior_var, priors$sigma_u_prior_a, priors$sigma_u_prior_b, priors$sigma_v_prior_a, priors$sigma_v_prior_b, priors$sigma_prior_a, priors$sigma_prior_b)
+  gibbs_sampler_nested(y, X, study_site, family, n_iter, priors$beta_prior_mean, priors$beta_prior_var, 
+                       priors$sigma_u_prior_a, priors$sigma_u_prior_b, 
+                       priors$sigma_v_prior_a, priors$sigma_v_prior_b, 
+                       priors$sigma_prior_a, priors$sigma_prior_b)
 }, mc.cores = n_chains)
 
 # Combine samples
