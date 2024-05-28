@@ -129,44 +129,30 @@ simulate_re_data_nested <- function(n_views=2, n_obs=200, p_m=10, r=4,
   set.seed(seed)
   omics_data <- simulate_omics_data(n_views, n_obs, p_m, r, prob_feature_importance, prob_component_importance)
   
+  # Example data
+  n <- 30 * 30 * 3
+  S_count <- 30 # Number of Sites
+  F_count <- 30 * 30 # Number of Families in Total
+  study_site <- rep(1:S_count, each = n / S_count)
+  family <- rep(1:F_count, each = n / F_count)
+  W <- cbind(1, rnorm(n))
+  beta_true <- c(1, 2)
+  sigma_ksi_true <- 2
+  sigma_theta_true <- 1.5 # Assume each f:s variance parameter is same across sites
+  ksi_true <- rnorm(S_count, sd = sigma_ksi_true)
+  theta_true <- rnorm(F_count, sd = sigma_theta_true)
+  sigma_true <- 1
+  
   # Sample latent factor loadings
   alpha <- matrix(0, nrow = r, ncol = 1)
   alpha[omics_data$index_important_components, ] <- rnorm(length(omics_data$index_important_components))
   
-  # Sample random intercept design matrix for sites
-  Z_site <- rmultinom(n_obs, size = 1, prob = rep(1 / n_sites, n_sites)) %>% t()
-  xi_sites <- rnorm(n_sites, sd = sqrt(nu2_site)) %>% matrix(ncol = 1)
+  y <- omics_data$U %*% alpha + W %*% beta_true + ksi_true[study_site] + theta_true[family] + rnorm(n, sd = sigma_true)
   
-  # Sample random intercept design matrix for families nested within sites
-  Z_family <- matrix(0, nrow = n_obs, ncol = n_sites * n_families_per_site)
-  site_assignments <- apply(Z_site, 1, which.max) # Identify the site each observation belongs to
-  for (i in 1:n_obs) {
-    site_index <- site_assignments[i]
-    family_index <- sample(n_families_per_site, 1) # Randomly assign an observation to a family within the site
-    Z_family[i, (site_index - 1) * n_families_per_site + family_index] <- 1
-  }
-  
-  # Sample xi_familes centered at xi_sites
-  xi_families <- matrix(0, nrow = n_sites, ncol = n_families_per_site)
-  for (site in 1:n_sites) {
-    xi_families[site, ] <- xi_sites[site] + rnorm(n_families_per_site, mean = 0, sd = sqrt(nu2_family))
-  }
-  
-  temp <- xi_families
-  
-  print(temp)
-  
-  # Family effects as a single vector
-  xi_families <- as.vector(t(xi_families)) %>% matrix(ncol = 1)
-  
-  # Sample residuals
-  epsilon <- matrix(rnorm(n_obs, sd = sqrt(sigma2)), nrow = n_obs)
-  
-  # Combine effects
-  Y <- alpha_0 + Z_family %*% xi_families + omics_data$U %*% alpha + epsilon
-  
-  return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, xi_sites=xi_sites, xi_families=xi_families, 
-              X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha_0=alpha_0, alpha=alpha,
+  return(list(Y=y, study_site=study_site, family=family, ksi_true = ksi_true, theta_true = theta_true, 
+              sigma_ksi_true = sigma_ksi_true, sigma_theta_true = sigma_theta_true,
+              sigma_true = sigma_true, beta_true = beta_true, W = W,
+              X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha=alpha,
               gamma=omics_data$gamma, Eta=omics_data$Eta, nu2 = matrix(c(nu2_family, nu2_site), ncol = 1)))
 }
 
