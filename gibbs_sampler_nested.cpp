@@ -106,7 +106,7 @@ List gibbs_sampler_nested(const vec& y, const mat& W, arma::mat Z_family, arma::
     }
     
     // Sample sigma
-    y_tilde = y - alpha_0*ones(N_obs) -Z_family*theta;
+    y_tilde = y - alpha_0*ones(N_obs) - Z_family*theta;
     double a_sigma = sigma_prior_a + N_obs/2.0;
     double b_sigma = sigma_prior_b + sum(square(y - Z_family*theta))/2.0;
     sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
