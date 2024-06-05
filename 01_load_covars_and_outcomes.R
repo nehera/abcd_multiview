@@ -146,15 +146,15 @@ ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_847",	"ksads_1_847", "t") # thi
 # how it combines: if the observation occurred in year1/arm1 (the baseline) the combination variable takes the value of the baseline variable, if not the combo variable takes the value of the longitudinal variable
 var_vect <- c("demo_brthdat_v2", "demo_gender_id_v2", "demo_prnt_ed_v2", "demo_prtnr_ed_v2" , "demo_prnt_marital_v2", "demo_comb_income_v2", "demo_roster_v2", "demo_fam_exp1_v2", "demo_fam_exp2_v2", "demo_fam_exp3_v2", "demo_fam_exp4_v2", "demo_fam_exp5_v2", "demo_fam_exp6_v2", "demo_fam_exp7_v2") # input any baseline variable name you wish to combine with long. var in this vector
 combine.vars <- function(var){ # takes baseline variable name (a string) and makes a new variable using the corresponding long. var, outputs demog dataset with new combo variables (combo variables will be named the baseline variable name with "_comb" at the end)
-  assign("var_comb", paste0(var, "_comb"))
-  assign("var_l", paste0(var, "_l"))
-  demog <- demog %>%
-    mutate(!!var_comb := if_else(eventname == "baseline_year_1_arm_1", get(var), get(var_l))) # if observation occurred in year 1, arm 1 use bl var if not use long var
-  return(demog)
-}
+   assign("var_comb", paste0(var, "_comb"))
+   assign("var_l", paste0(var, "_l"))
+   demog <- demog %>%
+     mutate(!!var_comb := if_else(eventname == "baseline_year_1_arm_1", get(var), get(var_l))) # if observation occurred in year 1, arm 1 use bl var if not use long var
+   return(demog)
+ }
 
-for (i in 1:length(var_vect)) { # loops through vector of all variables to be combined and applies the combine.vars function
-  demog <- combine.vars(var_vect[i])}
+ for (i in 1:length(var_vect)) { # loops through vector of all variables to be combined and applies the combine.vars function
+   demog <- combine.vars(var_vect[i])}
 
 ## -- Select Relevant Variables
 demog_bl <- demog[demog$eventname == "baseline_year_1_arm_1",]
@@ -253,17 +253,18 @@ abcd_data <- abcd_data %>%
          Asian_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 18:24)))
                               >=1, 1, 0),
          Other_race = demo_race_a_p___25,
-         Missing_race = if_else(demo_race_a_p___99 == 1, 1, demo_race_a_p___77), 
-         Missing_race = if_else(White_race == 1 | # if participant did not endorse any of these, mark as missing
-                                  Black_race == 1 | 
-                                  AIAN_race == 1 |
-                                  NHPI_race == 1 |
-                                  Asian_race == 1 | 
-                                  Other_race == 1 |
-                                  demo_ethn_v2 == 1, 0, 1),
-         Missing_race = if_else(is.na(Missing_race) == T, 1, Missing_race)) %>% # mark all NAs in missing race as 1
-  mutate(Indigenous_race = if_else(AIAN_race == 1 | NHPI_race == 1, 1, 0)) 
-
+         # demo_race_a_p___99==1 "Don't Know" & demo_race_a_p___77==1 "Refused to Answer"
+         Missing_ethn_and_race = if_else( ( demo_race_a_p___99 == 1 | demo_race_a_p___77 == 1 ) |
+                                   # if participant did not endorse any of these, mark as missing
+                                   ( White_race != 1 & Black_race != 1 & AIAN_race != 1 &
+                                       NHPI_race != 1 & Asian_race != 1 & Other_race != 1 & 
+                                       demo_ethn_v2 != 1 ), 1, 0),
+         # mark all NAs in missing race as 1
+         Missing_ethn_and_race = if_else(is.na(Missing_ethn_and_race) == T, 1, Missing_ethn_and_race),
+         # mark all NAs in race/ethnicity variables as 0
+         across(c(White_race, Black_race, AIAN_race, NHPI_race, Asian_race, Other_race, demo_ethn_v2),
+                       ~ if_else(is.na(.), 0, .)),
+         Indigenous_race = if_else(AIAN_race == 1 | NHPI_race == 1, 1, 0))
 # Recode Puberty Variable
 abcd_data <- abcd_data %>%
   mutate(pubertal_status = if_else(demo_sex_v2 == '1' | demo_sex_v2 == '3',
@@ -312,14 +313,26 @@ covariates <- abcd_data.selected_time %>%
          demo_sex_v2,
          interview_age, 
          ends_with("_race"), # Select all columns that end with "_race"
+         demo_ethn_v2, # Hispanic/Latino/Latina
          demo_comb_income_v2_bl,
          highest_demo_ed_bl,
          demo_prnt_marital_v2_bl)
-         # TODO consider including religion as covar with varname demo_relig_v2_l
+
+na_counts <- covariates %>%
+  summarise_all(~ sum(is.na(.))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "na_count")
+print(na_counts)
 
 outcomes <- abcd_data.selected_time %>%
-  # Brient et al. 2023 use t scores (Not the raw r scores)
-  select("src_subject_id", "cbcl_scr_syn_internal_t", "cbcl_scr_syn_external_t")
+  # Brient et al. 2023 use t (truncated) scores (Not the raw r scores)
+  # However, we choose to use r (raw) scores
+  # "The current analyses relied on raw scores from the CBCL 
+  # Internalizing Problems Scale, as is recommended by the 
+  # instrument authors to preserve the full range of variation 
+  # (Achenbach & Rescorla, 2001; see also Thurber & Sheehan, 2012)."
+  # Achenbach and Ruffle, (2000). The child behavior checklist and related forms for assessing behavioral/emotional problems and competencies
+  # Thurber, S., & Sheehan, W. P. (2012). Note on truncated T scores in discrepancy studies with the Child Behavior Checklist and Youth Self Report. Archives of Assessment Psychology, 2(1), 73-80.
+  select("src_subject_id", "cbcl_scr_syn_internal_r", "cbcl_scr_syn_external_r")
 
 ## -- Write out a covariates and outcome variables separately
 
