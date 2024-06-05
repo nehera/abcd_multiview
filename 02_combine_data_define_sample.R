@@ -107,8 +107,8 @@ merged_data <- merged_data %>%
 
 # Define labels
 table1_labels <- c(
-  "Internalizing Problems (T-Score)",
-  "Externalizing Problems (T-Score)",
+  "Internalizing Problems (Raw)",
+  "Externalizing Problems (Raw)",
   "Sex (At Birth)",
   "Age (Months)",
   "White (Yes/No)",
@@ -148,7 +148,7 @@ merged_data <- merged_data %>%
 colnames(merged_data)[-1] <- table1_labels
 
 # Create Table 1 using the table1 package
-caption <- "Table 1. Summary statistics of outcomes Internalizing Problems (T-Score) and Externalizing Problems (T-Score) and covariates for complete case sample."
+caption <- "Table 1. Summary statistics of outcomes Internalizing Problems (raw) and Externalizing Problems (raw) and covariates for complete case sample."
 table1_object <- table1(~ . , data = merged_data[, -1], caption = caption)
 
 # Save the table1 object as an HTML file
