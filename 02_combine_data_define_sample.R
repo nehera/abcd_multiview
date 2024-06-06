@@ -6,9 +6,9 @@ library(gridExtra)
 # Define the directory, date, processor, and file suffixes
 data_dir <- "data"
 figures_dir <- "figures"
-data_processing_date <- "2024-05-16"
+data_processing_date <- "2024-06-06"
 data_processor <- "AN"
-file_suffix <- c("outcomes", "covariates", "ela_view", "sMRI_view")
+file_suffix <- c("outcomes", "covariates", "ela_view", "SA_sMRI_view", "CT_sMRI_view", "fMRI_view")
 
 # Function to read data and name list elements
 read_data <- function(suffix) {
@@ -20,6 +20,9 @@ read_data <- function(suffix) {
 # Read in the data frames and create a named list
 data_list <- lapply(file_suffix, read_data)
 names(data_list) <- file_suffix
+
+# Checkout what's been loaded
+lapply(data_list, dim)
 
 ## -- Calculate and Save the Number of Variables per Data Type
 
@@ -77,6 +80,9 @@ complete_data_list <- lapply(data_list, function(df) df %>% drop_na())
 common_subjects <- reduce(complete_data_list, function(df1, df2) inner_join(df1, df2, by = "src_subject_id")) %>%
   select(src_subject_id)
 
+# filter all data frames in list to common_subjects
+complete_data_list <- lapply(complete_data_list, function(df) df[df$src_subject_id %in% common_subjects$src_subject_id, ])
+
 # Print the number of common subjects
 cat("n Common Subjects Across Complete Case Outcomes, Covariates, & Views:", nrow(common_subjects), "\n")
 
@@ -117,8 +123,10 @@ table1_labels <- c(
   "Native Hawaiian or Pacific Islander (Yes/No)",
   "Asian (Yes/No)",
   "Other Race (Yes/No)",
-  "Missing Race (Yes/No)",
-  "Indigenous Race (Yes/No)",
+  "Missing Race & Ethnicity (Yes/No)",
+  # We do not consider indigenous race superset in our analysis. 
+  # "Indigenous Race (Yes/No)",
+  "Hispanic/Latinx (Yes/No)",
   "Total Family Income (Past 12 Months)",
   "Highest Parent Education Completed",
   "Parent Marital Status"
@@ -127,19 +135,20 @@ table1_labels <- c(
 # Define factor levels and labels
 merged_data <- merged_data %>%
   mutate(
-    demo_comb_income_v2_bl = factor(demo_comb_income_v2_bl, levels = 1:10, labels = c(
-      "Less than $5,000", "$5,000 through $11,999", "$12,000 through $15,999", 
-      "$16,000 through $24,999", "$25,000 through $34,999", "$35,000 through $49,999",
-      "$50,000 through $74,999", "$75,000 through $99,999", "$100,000 through $199,999",
-      "$200,000 and greater")),
-    highest_demo_ed_bl = factor(highest_demo_ed_bl, levels = c(1:22), labels = c(
-      "1st grade", "2nd grade", "3rd grade", "4th grade", "5th grade", 
-      "6th grade", "7th grade", "8th grade", "9th grade", "10th grade", "11th grade", 
-      "12th grade, no diploma", "High school graduate", "GED or equivalent", 
-      "Less than 1 year of college credit/post-secondary education", "One year or more of college credit, no degree", 
-      "Associate degree: Occupational, Technical, or Vocational", "Associate degree: Academic Program", 
-      "Bachelor's degree (e.g., BA, AB, BS, BBA)", "Master's degree (e.g., MA, MS, MEng, MEd, MBA)", 
-      "Professional School degree (e.g., MD, DDS, DVM, JD)", "Doctoral degree (e.g., PhD, EdD)")),
+    # We now treat income and highest education as continuous random variables
+    # demo_comb_income_v2_bl = factor(demo_comb_income_v2_bl, levels = 1:10, labels = c(
+    #   "Less than $5,000", "$5,000 through $11,999", "$12,000 through $15,999", 
+    #   "$16,000 through $24,999", "$25,000 through $34,999", "$35,000 through $49,999",
+    #   "$50,000 through $74,999", "$75,000 through $99,999", "$100,000 through $199,999",
+    #   "$200,000 and greater")),
+    # highest_demo_ed_bl = factor(highest_demo_ed_bl, levels = c(1:22), labels = c(
+    #   "1st grade", "2nd grade", "3rd grade", "4th grade", "5th grade", 
+    #   "6th grade", "7th grade", "8th grade", "9th grade", "10th grade", "11th grade", 
+    #   "12th grade, no diploma", "High school graduate", "GED or equivalent", 
+    #   "Less than 1 year of college credit/post-secondary education", "One year or more of college credit, no degree", 
+    #   "Associate degree: Occupational, Technical, or Vocational", "Associate degree: Academic Program", 
+    #   "Bachelor's degree (e.g., BA, AB, BS, BBA)", "Master's degree (e.g., MA, MS, MEng, MEd, MBA)", 
+    #   "Professional School degree (e.g., MD, DDS, DVM, JD)", "Doctoral degree (e.g., PhD, EdD)")),
     demo_prnt_marital_v2_bl = factor(demo_prnt_marital_v2_bl, levels = c(1:6), labels = c(
       "Married", "Widowed", "Divorced", "Separated", "Never married", "Living with partner"))
   )
@@ -148,8 +157,8 @@ merged_data <- merged_data %>%
 colnames(merged_data)[-1] <- table1_labels
 
 # Create Table 1 using the table1 package
-caption <- "Table 1. Summary statistics of outcomes Internalizing Problems (raw) and Externalizing Problems (raw) and covariates for complete case sample."
-table1_object <- table1(~ . , data = merged_data[, -1], caption = caption)
+# caption <- "Table 1. Summary statistics of outcomes Internalizing Problems (Raw) and Externalizing Problems (Raw) and covariates for study sample."
+table1_object <- table1(~ . , data = merged_data[, -1]) # , caption = caption)
 
 # Save the table1 object as an HTML file
 html_output_path <- file.path(figures_dir, paste0(data_processing_date, "_", data_processor, "_table1.html"))
@@ -161,13 +170,122 @@ save_html <- function(table1_object, file) {
   write(html, file)
 }
 
-## -- Summarize Sample's Observational Clustering
+# Date of the input - the subject ids included in the study sample
+input_date <- "2024-06-06"
+sample_key_path <- file.path("data", paste0(input_date, "_AN_sample_key.csv"))
+sample_key <- read.csv(sample_key_path) %>% pull("src_subject_id")
 
-# Read the cluster_data file
-cluster_data_file_name <- sprintf("%s_%s_cluster_data.csv", data_processing_date, data_processor)
-cluster_data_path <- file.path(data_dir, cluster_data_file_name)
-cluster_data <- read.csv(cluster_data_path) %>%
-  filter(src_subject_id %in% common_subjects$src_subject_id)
+## -- User Arguments
+
+# Set the path for raw data files
+data_dir <- '/Users/aidanneher/Library/CloudStorage/Box-Box/ABCD Tabulated Data/5.1/core'
+# Location of desired output directory - if NULL, will output into working directory
+out_dir <- '/Users/aidanneher/Documents/GitHub/abcd_multiview/data'
+# Date you used in output name - if NULL, will use output from Sys.Date() (current date)
+out_date <- Sys.Date()
+# Initials or other string you want in output naming - no NULL option here
+out_initials <- 'AN'
+# Where to put plots
+figures_dir <- "figures"
+
+## -- Make Design Matrices
+
+# Extract clustering information
+path <- file.path(data_dir, "abcd-general", "abcd_y_lt.csv")
+cluster_data <- read.csv(path) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>%
+  select(src_subject_id, rel_family_id, site_id_l) %>%
+  arrange(site_id_l, rel_family_id) %>%
+  # Filter to those we are using for our analysis
+  filter(src_subject_id %in% sample_key)
+
+# Create the Z_family design matrix
+subject_ids <- unique(cluster_data$src_subject_id)
+family_ids <- unique(cluster_data$rel_family_id)
+Z_family <- matrix(0, nrow = nrow(cluster_data), ncol = length(family_ids))
+rownames(Z_family) <- subject_ids
+colnames(Z_family) <- family_ids
+
+for (i in seq_along(family_ids)) {
+  family_id <- family_ids[i]
+  Z_family[cluster_data$rel_family_id == family_id, i] <- 1
+}
+
+# Create the Z_site design matrix
+site_ids <- unique(cluster_data$site_id_l)
+Z_site <- matrix(0, nrow = nrow(cluster_data), ncol = length(site_ids))
+rownames(Z_site) <- subject_ids
+colnames(Z_site) <- site_ids
+
+for (i in seq_along(site_ids)) {
+  site_id <- site_ids[i]
+  Z_site[cluster_data$site_id_l == site_id, i] <- 1
+}
+
+## -- Verify Z_family and Z_site reflect observed n families and n sites
+# Calculate sums using apply for Z_family and Z_site
+family_sums <- apply(Z_family, 2, sum)
+site_sums <- apply(Z_site, 2, sum)
+# Convert family_sums and site_sums to data frames for comparison
+family_sums_df <- data.frame(rel_family_id = names(family_sums), n_observations = family_sums)
+site_sums_df <- data.frame(site_id_l = names(site_sums), n_observations = site_sums)
+# Summarize by number of observations in each family
+family_summary <- cluster_data %>%
+  group_by(rel_family_id) %>%
+  summarize(n_observations = n()) %>%
+  arrange(desc(n_observations))
+# Summarize by number of observations in each site
+site_summary <- cluster_data %>%
+  group_by(site_id_l) %>%
+  summarize(n_observations = n()) %>%
+  arrange(desc(n_observations))
+# Compare the summaries with the sums
+compare_family <- merge(family_summary, family_sums_df, by = "rel_family_id", suffixes = c("_summary", "_apply"))
+compare_site <- merge(site_summary, site_sums_df, by = "site_id_l", suffixes = c("_summary", "_apply"))
+# Check if the summaries match
+all(compare_family$n_observations_summary == compare_family$n_observations_apply)
+all(compare_site$n_observations_summary == compare_site$n_observations_apply)
+# Print mismatches if any
+mismatched_families <- compare_family %>%
+  filter(n_observations_summary != n_observations_apply)
+mismatched_sites <- compare_site %>%
+  filter(n_observations_summary != n_observations_apply)
+cat("n mismatched families or sites:", nrow(mismatched_families) + nrow(mismatched_sites))
+
+## -- Map Family to Site
+# Compute the transpose of Z_family
+Z_family_transpose <- t(Z_family)
+# Perform matrix multiplication
+Z_family_to_site <- Z_family_transpose %*% Z_site
+
+# Convert matrices to data frames
+Z_site_df <- as.data.frame(Z_site)
+Z_family_df <- as.data.frame(Z_family)
+Z_family_to_site_df <- as.data.frame(Z_family_to_site)
+
+# Add the first column as specified
+Z_site_df$src_subject_id <- rownames(Z_site_df)
+Z_family_df$src_subject_id <- rownames(Z_family_df)
+Z_family_to_site_df$rel_family_id <- rownames(Z_family_to_site_df)
+
+# Reorder columns to have the new column as the first column
+Z_site_df <- Z_site_df[, c(ncol(Z_site_df), 1:(ncol(Z_site_df)-1))]
+Z_family_df <- Z_family_df[, c(ncol(Z_family_df), 1:(ncol(Z_family_df)-1))]
+Z_family_to_site_df <- Z_family_to_site_df[, c(ncol(Z_family_to_site_df), 1:(ncol(Z_family_to_site_df)-1))]
+
+# Write data frames to CSV files with today's date prefix
+write.csv(Z_site_df, paste0("data/", out_date, "_Z_site.csv"), row.names = FALSE)
+write.csv(Z_family_df, paste0("data/", out_date, "_Z_family.csv"), row.names = FALSE)
+write.csv(Z_family_to_site_df, paste0("data/", out_date, "_Z_family_to_site.csv"), row.names = FALSE)
+
+# Append the data frames to the existing complete_data_list
+complete_data_list$Z_site <- Z_site_df
+complete_data_list$Z_family <- Z_family_df
+
+# Save the updated list as an RDS object
+saveRDS(complete_data_list, paste0("data/", out_date, "_complete_data_list.rds"))
+
+## -- Summarize Sample's Observational Clustering
 
 # Calculate the number of families in each site
 families_per_site <- cluster_data %>%
@@ -293,3 +411,19 @@ save_plot_with_date_initials <- function(plot, out_initials, out_dir = NULL, out
 
 # Example usage:
 save_plot_with_date_initials(grid_plots, out_initials = "AN", out_dir = figures_dir)
+
+# Create the table and summaries
+individuals_per_family_table <- table(individuals_per_family$n_individuals)
+individuals_per_site_summary <- summary(individuals_per_site$n_individuals)
+families_per_site_summary <- summary(families_per_site$n_families)
+
+# Convert them to data frames
+individuals_per_family_df <- as.data.frame(individuals_per_family_table)
+individuals_per_site_df <- as.data.frame(as.list(individuals_per_site_summary))
+families_per_site_df <- as.data.frame(as.list(families_per_site_summary))
+
+# Write data frames to CSV files with today's date prefix
+write.csv(individuals_per_family_df, paste0("data/", out_date, "_individuals_per_family_table.csv"), row.names = FALSE)
+write.csv(individuals_per_site_df, paste0("data/", out_date, "_individuals_per_site_summary.csv"), row.names = FALSE)
+write.csv(families_per_site_df, paste0("data/", out_date, "_families_per_site_summary.csv"), row.names = FALSE)
+

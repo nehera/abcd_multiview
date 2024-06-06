@@ -13,7 +13,7 @@ out_initials <- 'AN'
 
 ## -- Load Datasets
 
-load_sMRI_view <- function(data_dir) {
+load_sMRI_data <- function(data_dir) {
   
   ct_path <- file.path(data_dir, "imaging", "mri_y_smr_thk_dst.csv")
   ct_data <- read.csv(ct_path) %>%
@@ -27,26 +27,47 @@ load_sMRI_view <- function(data_dir) {
     # These represent mean SA in left hemisphere, right hemisphere, & brain overall respectively
     select(-mrisdp_451, -mrisdp_452, -mrisdp_453)
   
-  # Merge sMRI data, filter to baseline, & remove eventname since cross-sectional
-  smri_data <- merge(ct_data, sa_data) %>%
+  # Filter to baseline
+  ct_data <- ct_data %>%
     filter(eventname == "baseline_year_1_arm_1") %>%
     select(-eventname)
-  cat("Total n sMRI Scans Available at Baseline:", nrow(smri_data))
   
-  # Check for missing values in each column
-  missingness_summary <- smri_data %>%
+  sa_data <- sa_data %>%
+    filter(eventname == "baseline_year_1_arm_1") %>%
+    select(-eventname)
+  
+  cat("Total n sMRI Scans Available at Baseline (CT):", nrow(ct_data), "\n")
+  cat("Total n sMRI Scans Available at Baseline (SA):", nrow(sa_data), "\n")
+  
+  # Check for missing values in each column for ct_data
+  missingness_summary_ct <- ct_data %>%
     summarize_all(~ sum(is.na(.)))
   
-  # Print the summary of missing values
-  cat("The following variables have some missingness:",
-      (names(missingness_summary)[missingness_summary!=0]))
+  # Print the summary of missing values for ct_data
+  cat("The following variables in CT data have some missingness:",
+      (names(missingness_summary_ct)[missingness_summary_ct != 0]), "\n")
   
-  cat("n Missing for the variable with the most missingness:",
-      missingness_summary %>% max)
+  cat("n Missing for the variable with the most missingness in CT data:",
+      missingness_summary_ct %>% max, "\n")
   
-  return(smri_data)
+  # Check for missing values in each column for sa_data
+  missingness_summary_sa <- sa_data %>%
+    summarize_all(~ sum(is.na(.)))
   
+  # Print the summary of missing values for sa_data
+  cat("The following variables in SA data have some missingness:",
+      (names(missingness_summary_sa)[missingness_summary_sa != 0]), "\n")
+  
+  cat("n Missing for the variable with the most missingness in SA data:",
+      missingness_summary_sa %>% max, "\n")
+  
+  return(list(ct_data = ct_data, sa_data = sa_data))
 }
+
+# Example usage:
+# data_list <- load_sMRI_view("path_to_data_directory")
+# ct_data <- data_list$ct_data
+# sa_data <- data_list$sa_data
 
 load_fMRI_view <- function(data_dir) {
 
@@ -78,7 +99,9 @@ load_fMRI_view <- function(data_dir) {
 
 }
 
-smri_data <- load_sMRI_view(data_dir)
+smri_data <- load_sMRI_data(data_dir)
+
+attach(smri_data)
 
 fmri_data <- load_fMRI_view(data_dir)
 
@@ -153,14 +176,17 @@ ggplot(reshape2::melt(cor_matrix), aes(Var1, Var2, fill = value)) +
 # Use current date if out_date is NULL
 if (is.null(out_date)) { out_date <- Sys.Date() }
 
-# Construct the filename
-file_name <- sprintf("%s_%s_sMRI_view.csv", out_date, out_initials)
-# Define the output path
-output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
-# Write the smri_data to CSV file
-write_csv(smri_data, output_path)
-# Print the output path for verification
-print(paste("sMRI view written to:", output_path))
+# Write ct_data to CSV
+ct_file_name <- sprintf("%s_%s_CT_sMRI_view.csv", out_date, out_initials)
+ct_output_path <- ifelse(is.null(out_dir), ct_file_name, file.path(out_dir, ct_file_name))
+write_csv(ct_data, ct_output_path)
+print(paste("CT sMRI view written to:", ct_output_path))
+
+# Write sa_data to CSV
+sa_file_name <- sprintf("%s_%s_SA_sMRI_view.csv", out_date, out_initials)
+sa_output_path <- ifelse(is.null(out_dir), sa_file_name, file.path(out_dir, sa_file_name))
+write_csv(sa_data, sa_output_path)
+print(paste("SA sMRI view written to:", sa_output_path))
 
 # Construct the filename
 file_name <- sprintf("%s_%s_fMRI_view.csv", out_date, out_initials)

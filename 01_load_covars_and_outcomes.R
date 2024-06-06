@@ -263,8 +263,12 @@ abcd_data <- abcd_data %>%
          Missing_ethn_and_race = if_else(is.na(Missing_ethn_and_race) == T, 1, Missing_ethn_and_race),
          # mark all NAs in race/ethnicity variables as 0
          across(c(White_race, Black_race, AIAN_race, NHPI_race, Asian_race, Other_race, demo_ethn_v2),
-                       ~ if_else(is.na(.), 0, .)),
-         Indigenous_race = if_else(AIAN_race == 1 | NHPI_race == 1, 1, 0))
+                       ~ if_else(is.na(.), 0, .))
+         # We do not consider indigenous as a superset in our analysis. 
+         # ,
+         # Indigenous_race = if_else(AIAN_race == 1 | NHPI_race == 1, 1, 0)
+         )
+
 # Recode Puberty Variable
 abcd_data <- abcd_data %>%
   mutate(pubertal_status = if_else(demo_sex_v2 == '1' | demo_sex_v2 == '3',
@@ -351,9 +355,14 @@ file_name <- sprintf("%s_%s_covariates.csv", out_date, out_initials)
 # Define the output path
 output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
 write_csv(covariates, output_path)
+# Print the output path for verification
+print(paste("Covariates written to:", output_path))
+
 
 # Construct the filename
 file_name <- sprintf("%s_%s_outcomes.csv", out_date, out_initials)
 # Define the output path
 output_path <- ifelse(is.null(out_dir), file_name, file.path(out_dir, file_name))
 write_csv(outcomes, output_path)
+# Print the output path for verification
+print(paste("Outcomes written to:", output_path))
