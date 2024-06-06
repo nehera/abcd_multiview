@@ -28,7 +28,7 @@ double rinvgamma_cpp(double shape, double scale) {
 }
 
 // [[Rcpp::export]]
-List gibbs_sampler_nested(const vec& y, const mat& W, arma::mat Z_family, arma::mat Z_site, arma::mat Z_family_to_site, int n_iter, const vec& mu_beta, const vec& beta_prior_var, double sigma_ksi_prior_a, double sigma_ksi_prior_b, double sigma_theta_prior_a, double sigma_theta_prior_b, double sigma_prior_a, double sigma_prior_b) {
+List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, arma::mat Z_family_to_site, int n_iter, const vec& mu_beta, const vec& beta_prior_var, double sigma_ksi_prior_a, double sigma_ksi_prior_b, double sigma_theta_prior_a, double sigma_theta_prior_b, double sigma_prior_a, double sigma_prior_b) {
   
   // Set GSL random number generator seed
   // long seed=1;
@@ -43,13 +43,12 @@ List gibbs_sampler_nested(const vec& y, const mat& W, arma::mat Z_family, arma::
   vec y_tilde(N_obs);
   
   // Initialize parameters
-  double sigma2_ksi = 1.0;
+  double sigma2_ksi = rinvgamma_cpp(sigma_ksi_prior_a, sigma_ksi_prior_b);
   vec sigma2_theta = ones(N_sites);  
-  double sigma2 = 1.0;
-  vec beta = zeros(n_beta);
-  vec ksi = zeros(N_sites);
+  double sigma2 = rinvgamma_cpp(sigma_prior_a, sigma_prior_b);
+  vec beta = mvnrnd(mu_beta, beta_prior_var);
+  vec ksi = rnorm_cpp(N_sites, 0, std::sqrt(sigma2_ksi));
   vec theta = zeros(N_families);
-  ksi = rnorm_cpp(N_sites, 0, std::sqrt(sigma2_ksi));
   for(int s = 0; s < N_sites; s++) {
     arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
     for (int f : indices_family_in_site) {
@@ -67,20 +66,30 @@ List gibbs_sampler_nested(const vec& y, const mat& W, arma::mat Z_family, arma::
   
   for (int iter = 0; iter < n_iter; iter++) {
     // Sample alpha_0
-    double alpha_0 = 1; // UNFIX
+    y_tilde = y - W*beta - Z_family*theta; // R_alpha0
+    double V_alpha0 = 1.0/(1/100 + N_obs/sigma2);
+    double m_alpha0 = V_alpha0*sum(y_tilde)/sigma2;
+    double alpha_0 = as_scalar(rnorm_cpp(1, m_alpha0, std::sqrt(V_alpha0)));
+    y = y_tilde + W*beta + Z_family*theta;
     
     // Sample beta
-    y_tilde = y - alpha_0 - Z_family*theta;
-    mat V_beta = inv(W.t()*W/sigma2 + diagmat(1.0/beta_prior_var));
-    vec m_beta = V_beta * (W.t() * (y_tilde / sigma2 + mu_beta / beta_prior_var));
+    y_tilde = y - alpha_0 - Z_family*theta; // R_beta
+    mat V_beta = inv(trans(W)*W/sigma2 + inv(beta_prior_var));
+    vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(beta_prior_var)*mu_beta);
+    
     beta = mvnrnd(m_beta, V_beta);
+
+    y = y_tilde + alpha_0 + Z_family*theta;
+    
+    // R_theta
+    y_tilde = y - alpha_0 - W*beta;
     
     // Sample sigma2_ksi
     double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
     double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi))/2.0;
     sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);
     
-    for (int s = 0; s < N_sites; ++s) {
+    for (int s = 0; s < N_sites; s++) {
       // Sample site-level intercepts ksi
       arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
       double sum_theta = sum(theta.elem(families_in_s));
@@ -106,19 +115,22 @@ List gibbs_sampler_nested(const vec& y, const mat& W, arma::mat Z_family, arma::
     }
     
     // Sample sigma
-    y_tilde = y - alpha_0*ones(N_obs) - Z_family*theta;
+    y = y_tilde + alpha_0*ones(N_obs) + W*beta;
+    y_tilde = y - alpha_0*ones(N_obs) - Z_family*theta; // R_sigma
     double a_sigma = sigma_prior_a + N_obs/2.0;
     double b_sigma = sigma_prior_b + sum(square(y - Z_family*theta))/2.0;
     sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
     
+    y = y_tilde + alpha_0*ones(N_obs) + Z_family*theta;
+    
     // Store samples
-    beta_samples.row(iter) = beta.t();
+    beta_samples.row(iter) = trans(beta);
     ksi_samples.row(iter) = ksi.t();
     theta_samples.row(iter) = theta.t();
     sigma2_ksi_samples(iter) = sigma2_ksi;
     sigma2_theta_samples.row(iter) = sigma2_theta.t();
     sigma2_samples(iter) = sigma2;
-  
+  }
   
   // Return samples as a list
   return List::create(
@@ -129,7 +141,6 @@ List gibbs_sampler_nested(const vec& y, const mat& W, arma::mat Z_family, arma::
     Named("sigma2_theta_samples") = sigma2_theta_samples,
     Named("sigma2_samples") = sigma2_samples
   );
-}
 }
 
 /*** R
@@ -281,7 +292,7 @@ simulate_re_data_nested <- function(n_views=2, N_obs=200, p_m=10, r=4,
   epsilon <- matrix(rnorm(N_obs, sd = sqrt(sigma2)), nrow = N_obs)
   
   # Combine effects
-  Y <- alpha_0 + W%*%beta + Z_family %*% theta + epsilon # Add omics data
+  Y <- alpha_0 + W%*%beta + Z_family%*%theta + epsilon # Add omics data
   
   return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, Z_family_to_site=Z_family_to_site, ksi=ksi, theta=theta, 
               X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha_0=alpha_0, alpha=alpha, W=W, beta=beta,
@@ -313,7 +324,7 @@ combine_samples_nested <- function(samples_list, n_iter, n_chains) {
 }
 
 n_covars <- 1
-N_sites <- 6
+N_sites <- 10
 n_families_per_site <- 10
 n_individs_per_family <- 3
 
@@ -347,8 +358,8 @@ n_individs_per_family <- 3
 N_obs <- ncol(Z_family)
 
 n_chains <- 1
-n_iter <- 5000
-n_burnin <- floor(n_iter*0.5)
+n_iter <- 8000
+n_burnin <- floor(n_iter*0.75)
 
 # Priors
 priors <- list(mu_beta = rep(0, n_covars),
@@ -377,7 +388,7 @@ samples_list <- mclapply(seeds, function(seed) {
 }, mc.cores = n_chains)
 
 # Combine samples
-combined_samples <- combine_samples_nested(samples_list)
+combined_samples <- combine_samples_nested(samples_list, n_iter, n_chains)
 
 # Assign parameter names
 dimnames(combined_samples) <- list(
@@ -400,7 +411,7 @@ lower_bounds <- round(mcmc_summary$`2.5%`, 4)
 upper_bounds <- round(mcmc_summary$`97.5%`, 4)
 
 # Combine the true values into a single vector, ordered according to the MCMC parameters
-true_values <- c(beta_true, ksi_true, theta_true, sigma2_ksi_true, sigma2_true, sigma2_theta_true, N_sites)
+true_values <- c(beta_true, ksi_true, theta_true, sigma2_ksi_true, sigma2_true, sigma2_theta_true)
 
 # Parameter names
 param_names <- c(paste0("beta_", 1:ncol(samples_list[[1]]$beta_samples)),
@@ -563,7 +574,7 @@ for (i in seq_along(parameters_to_plot)) {
   
   for (chain in 1:n_chains_to_plot) {
     # Extract the values for the parameter and chain after burn-in
-    param_values <- combined_samples[(n_iter/2 + 1):n_iter, chain, which(dimnames(combined_samples)[[3]] == param)]
+    param_values <- combined_samples[(n_burnin + 1):n_iter, chain, which(dimnames(combined_samples)[[3]] == param)]
     
     # Create a dataframe for ggplot
     df <- data.frame(
