@@ -427,3 +427,68 @@ write.csv(individuals_per_family_df, paste0("data/", out_date, "_individuals_per
 write.csv(individuals_per_site_df, paste0("data/", out_date, "_individuals_per_site_summary.csv"), row.names = FALSE)
 write.csv(families_per_site_df, paste0("data/", out_date, "_families_per_site_summary.csv"), row.names = FALSE)
 
+# Split data into 80:20 train:test family-wise split stratified by study site
+
+# Date of the input - the subject ids included in the study sample
+input_date <- "2024-06-06"
+sample_key_path <- file.path("data", paste0(input_date, "_AN_sample_key.csv"))
+sample_key <- read.csv(sample_key_path) %>% pull("src_subject_id")
+# Set the path for raw data files
+data_dir <- '/Users/aidanneher/Library/CloudStorage/Box-Box/ABCD Tabulated Data/5.1/core'
+# Location of desired output directory - if NULL, will output into working directory
+out_dir <- '/Users/aidanneher/Documents/GitHub/abcd_multiview/data'
+# Date you used in output name - if NULL, will use output from Sys.Date() (current date)
+out_date <- Sys.Date()
+# Initials or other string you want in output naming - no NULL option here
+out_initials <- 'AN'
+# Extract clustering information
+path <- file.path(data_dir, "abcd-general", "abcd_y_lt.csv")
+cluster_data <- read.csv(path) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>%
+  select(src_subject_id, rel_family_id, site_id_l) %>%
+  arrange(site_id_l, rel_family_id) %>%
+  # Filter to those we are using for our analysis
+  filter(src_subject_id %in% sample_key)
+
+# Load data
+# cluster_data <- read.csv('path_to_cluster_data.csv')
+
+library(tidyverse)
+
+# Load data
+# cluster_data <- read.csv('path_to_cluster_data.csv')
+
+# Function to create train/test split for each site
+split_train_test <- function(data, train_frac = 0.8) {
+  set.seed(123) # For reproducibility
+  unique_families <- unique(data$rel_family_id)
+  train_families <- sample(unique_families, size = floor(train_frac * length(unique_families)))
+  train_data <- data %>% filter(rel_family_id %in% train_families)
+  test_data <- data %>% filter(!rel_family_id %in% train_families)
+  list(train = train_data, test = test_data)
+}
+
+# Split data by site
+split_by_site <- split(cluster_data, cluster_data$site_id_l)
+
+# Apply split function to each site
+split_data <- lapply(split_by_site, split_train_test)
+
+# Combine train and test sets
+train_data <- bind_rows(lapply(split_data, `[[`, "train"))
+test_data <- bind_rows(lapply(split_data, `[[`, "test"))
+
+# Verify the split
+train_data_summary <- train_data %>% group_by(site_id_l) %>% summarize(n_train = n())
+test_data_summary <- test_data %>% group_by(site_id_l) %>% summarize(n_test = n())
+
+# Print summaries
+print(train_data_summary)
+print(test_data_summary)
+
+# Check overall n's and split proportion
+n_train <- train_data_summary$n_train %>% sum
+n_test <- test_data_summary$n_test %>% sum
+cat("n_train:", n_train)
+cat("n_test:", n_test)
+cat("n_train + n_test:", n_train+n_test)

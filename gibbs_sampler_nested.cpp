@@ -67,19 +67,15 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
   for (int iter = 0; iter < n_iter; iter++) {
     // Sample alpha_0
     y_tilde = y - W*beta - Z_family*theta; // R_alpha0
-    double V_alpha0 = 1.0/(1/100 + N_obs/sigma2);
+    double V_alpha0 = 1.0/(1.0/100 + N_obs/sigma2);
     double m_alpha0 = V_alpha0*sum(y_tilde)/sigma2;
     double alpha_0 = as_scalar(rnorm_cpp(1, m_alpha0, std::sqrt(V_alpha0)));
-    y = y_tilde + W*beta + Z_family*theta;
     
     // Sample beta
     y_tilde = y - alpha_0 - Z_family*theta; // R_beta
     mat V_beta = inv(trans(W)*W/sigma2 + inv(beta_prior_var));
     vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(beta_prior_var)*mu_beta);
-    
     beta = mvnrnd(m_beta, V_beta);
-
-    y = y_tilde + alpha_0 + Z_family*theta;
     
     // R_theta
     y_tilde = y - alpha_0 - W*beta;
@@ -115,13 +111,10 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
     }
     
     // Sample sigma
-    y = y_tilde + alpha_0*ones(N_obs) + W*beta;
     y_tilde = y - alpha_0*ones(N_obs) - Z_family*theta; // R_sigma
     double a_sigma = sigma_prior_a + N_obs/2.0;
     double b_sigma = sigma_prior_b + sum(square(y - Z_family*theta))/2.0;
     sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
-    
-    y = y_tilde + alpha_0*ones(N_obs) + Z_family*theta;
     
     // Store samples
     beta_samples.row(iter) = trans(beta);
@@ -323,9 +316,11 @@ combine_samples_nested <- function(samples_list, n_iter, n_chains) {
   return(combined_array)
 }
 
+
+#### ---- USER ARGUMENTS TO SPECIFY DATA TO BE SIMULATED
 n_covars <- 1
-N_sites <- 10
-n_families_per_site <- 10
+N_sites <- 30
+n_families_per_site <- 30
 n_individs_per_family <- 3
 
 sigma2_ksi_true <- 1
@@ -353,13 +348,11 @@ Z_family_to_site <- simulation_results$Z_family_to_site
 y <- simulation_results$Y 
 
 N_sites <- ncol(Z_site)
-n_families_per_site <- 10
-n_individs_per_family <- 3
 N_obs <- ncol(Z_family)
 
 n_chains <- 1
-n_iter <- 8000
-n_burnin <- floor(n_iter*0.75)
+n_iter <- 5000
+n_burnin <- floor(n_iter*0.5)
 
 # Priors
 priors <- list(mu_beta = rep(0, n_covars),
