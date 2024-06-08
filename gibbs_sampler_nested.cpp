@@ -46,11 +46,21 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
   double sigma2_ksi = rinvgamma_cpp(sigma_ksi_prior_a, sigma_ksi_prior_b);
   vec sigma2_theta = ones(N_sites);  
   double sigma2 = rinvgamma_cpp(sigma_prior_a, sigma_prior_b);
-  vec beta = mvnrnd(mu_beta, beta_prior_var);
+  vec beta = mu_beta; //mvnrnd(mu_beta, diagmat(beta_prior_var));
   vec ksi = rnorm_cpp(N_sites, 0, std::sqrt(sigma2_ksi));
-  vec theta = zeros(N_families);
+  
+  // vec theta = zeros(N_families);
+  // for(int s = 0; s < N_sites; s++) {
+  //   arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
+  //   for (int f : indices_family_in_site) {
+  //     theta(f) = as_scalar(rnorm_cpp(1, ksi(s), std::sqrt(sigma2_theta(s))));
+  //   }
+  // }
+  
+  // ChatGPT suggestion
+  vec theta = zeros(N_families);  // Changed to initialize theta to zero
   for(int s = 0; s < N_sites; s++) {
-    arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
+    arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong to site s
     for (int f : indices_family_in_site) {
       theta(f) = as_scalar(rnorm_cpp(1, ksi(s), std::sqrt(sigma2_theta(s))));
     }
@@ -66,20 +76,21 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
   
   for (int iter = 0; iter < n_iter; iter++) {
     // Sample alpha_0
-    y_tilde = y - W*beta - Z_family*theta; // R_alpha0
-    double V_alpha0 = 1.0/(1.0/100 + N_obs/sigma2);
-    double m_alpha0 = V_alpha0*sum(y_tilde)/sigma2;
-    double alpha_0 = as_scalar(rnorm_cpp(1, m_alpha0, std::sqrt(V_alpha0)));
+    //y_tilde = y - W*beta - Z_family*theta; // R_alpha0
+    //double V_alpha0 = 1.0/(1.0/100 + N_obs/sigma2);
+    //double m_alpha0 = V_alpha0*sum(y_tilde)/sigma2;
+    //double alpha_0 = as_scalar(rnorm_cpp(1, m_alpha0, std::sqrt(V_alpha0)));
     
     // Sample beta
-    y_tilde = y - alpha_0 - Z_family*theta; // R_beta
-    mat V_beta = inv(trans(W)*W/sigma2 + inv(beta_prior_var));
-    vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(beta_prior_var)*mu_beta);
+    //y_tilde = y - alpha_0 - Z_family*theta; // R_beta
+    y_tilde = y - Z_family*theta; // R_beta
+    mat V_beta = inv(trans(W)*W/sigma2 + inv(diagmat(beta_prior_var)));
+    vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(diagmat(beta_prior_var))*mu_beta);
     
     beta = mvnrnd(m_beta, V_beta);
     
-    // R_theta
-    y_tilde = y - alpha_0 - W*beta;
+    // y_tilde = y - alpha_0 - W*beta; // R_theta
+    y_tilde = y - W*beta; // R_theta
     
     for (int s = 0; s < N_sites; s++) {
       // Sample site-level intercepts ksi
@@ -96,22 +107,33 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
         double sum_y_tilde = sum(y_tilde.elem(individuals_in_f));
         int n_sf = individuals_in_f.n_elem;
         double V_theta = 1.0 / (n_sf/sigma2 + 1.0/sigma2_theta(s));
-        double m_theta = V_theta*(sum_y_tilde/sigma2 + 1.0/sigma2_theta(s));
+        //double m_theta = V_theta*(sum_y_tilde/sigma2 + 1.0/sigma2_theta(s));
+        double m_theta = V_theta*(sum_y_tilde/sigma2 + ksi(s)/sigma2_theta(s));  // Corrected the mean calculation
         theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
       }
+      
+
+    }
+    
+    for (int s = 0; s < N_sites; s++) {
+      arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
+      //double sum_theta = sum(theta.elem(families_in_s));
+      int n_s = families_in_s.n_elem;
       
       // Sample sigma2_theta for s-th site
       double a_sigma_theta = sigma_theta_prior_a + n_s/2.0;
       double b_sigma_theta = sigma_theta_prior_b + sum(square(theta.elem(families_in_s) - ksi(s)*ones(n_s))) / 2.0;
-      sigma2_theta[s] = rinvgamma_cpp(a_sigma_theta, b_sigma_theta);
+      sigma2_theta[s] = rinvgamma_cpp(a_sigma_theta, b_sigma_theta);    
     }
+    
     // Sample sigma2_ksi
     double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
     double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi))/2.0;
     sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);    
     
     // Sample sigma
-    y_tilde = y - alpha_0*ones(N_obs) - W*beta - Z_family*theta; // R_sigma
+    // y_tilde = y - alpha_0*ones(N_obs) - W*beta - Z_family*theta; // R_sigma
+    y_tilde = y - W*beta - Z_family*theta; // R_sigma
     double a_sigma = sigma_prior_a + N_obs/2.0;
     double b_sigma = sigma_prior_b + sum(square(y_tilde))/2.0;
     sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
@@ -149,6 +171,7 @@ library(ggplot2)
 library(gridExtra)
 library(rstan)
 library(scales)
+library(lme4)
 
 simulate_A <- function(r, p_m, n_important_components, n_important_features) {
   A <- matrix(0, nrow = r, ncol = p_m) 
@@ -271,7 +294,7 @@ simulate_re_data_nested <- function(n_views=2, N_obs=200, p_m=10, r=4,
   # Family effects as a single vector
   theta <- as.vector(t(theta)) %>% matrix(ncol = 1)
   
-  W <- NULL
+  W <- rep(1, N_obs)
   
   if(n_covars > 0) {
     for(k in 1:n_covars) {
@@ -279,13 +302,14 @@ simulate_re_data_nested <- function(n_views=2, N_obs=200, p_m=10, r=4,
     }
   }
 
-  beta <- matrix(rep(5, n_covars), ncol = 1)
+  beta <- matrix(rep(1, 1+n_covars), ncol = 1)
   
   # Sample residuals
   epsilon <- matrix(rnorm(N_obs, sd = sqrt(sigma2)), nrow = N_obs)
   
   # Combine effects
-  Y <- alpha_0 + W%*%beta + Z_family%*%theta + epsilon # Add omics data
+  #Y <- alpha_0 + W%*%beta + Z_family%*%theta + epsilon # Add omics data
+  Y <- W%*%beta + Z_family%*%theta + epsilon # Add omics data
   
   return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, Z_family_to_site=Z_family_to_site, ksi=ksi, theta=theta, 
               X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha_0=alpha_0, alpha=alpha, W=W, beta=beta,
@@ -316,7 +340,7 @@ combine_samples_nested <- function(samples_list, n_iter, n_chains) {
   return(combined_array)
 }
 
-n_covars <- 1
+n_covars <- 2
 N_sites <- 30
 n_families_per_site <- 30
 n_individs_per_family <- 3
@@ -330,7 +354,8 @@ simulation_results <- simulate_re_data_nested(N_sites = N_sites,
                                               n_individs_per_family = n_individs_per_family,
                                               sigma2_ksi = sigma2_ksi_true, 
                                               sigma2_theta = sigma2_theta_true,
-                                              sigma2 = sigma2_true)
+                                              sigma2 = sigma2_true,
+                                              n_covars = n_covars)
 dataList <- list(simulation_results$X[[1]],
                  simulation_results$X[[2]],
                  simulation_results$Y)
@@ -340,6 +365,8 @@ theta_true <- simulation_results$theta
 beta_true <- simulation_results$beta
 
 W <- simulation_results$W
+W[,-1] <- scale(W[,-1])
+
 Z_site <- simulation_results$Z_site
 Z_family <- simulation_results$Z_family
 Z_family_to_site <- simulation_results$Z_family_to_site
@@ -351,18 +378,18 @@ n_individs_per_family <- 3
 N_obs <- ncol(Z_family)
 
 n_chains <- 1
-n_iter <- 5000
+n_iter <- 10000
 n_burnin <- floor(n_iter*0.75)
 
 # Priors
-priors <- list(mu_beta = rep(0, n_covars),
-               beta_prior_var = rep(100, n_covars),
-               sigma_ksi_prior_a = 2,
-               sigma_ksi_prior_b = 1,
-               sigma_theta_prior_a = 2,
-               sigma_theta_prior_b = 1,
-               sigma_prior_a = 2,
-               sigma_prior_b = 1)
+priors <- list(mu_beta = rep(0, 1+n_covars),
+               beta_prior_var = rep(1000, 1+n_covars),
+               sigma_ksi_prior_a = 3,
+               sigma_ksi_prior_b = 2,
+               sigma_theta_prior_a = 3,
+               sigma_theta_prior_b = 2,
+               sigma_prior_a = 3,
+               sigma_prior_b = 2)
 
 RE_df <- data.frame(y = y,
                     site = which(Z_site == 1, arr.ind = T)[,2],
@@ -605,6 +632,11 @@ for (i in seq_along(parameters_to_plot)) {
 
 # Arrange the plots into a grid
 grid_plots <- do.call(grid.arrange, c(plot_list, ncol = n_chains_to_plot))
+
+RE_df$w1 <- W[,2]
+RE_df$w2 <- W[,3]
+  
+summary(lmer(y~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
 
 # Observation: Fixed effect intercept & Site-level random intercepts 
 # seem to take longer to converge. This is likely attributable to 
