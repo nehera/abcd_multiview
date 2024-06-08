@@ -75,15 +75,11 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
     y_tilde = y - alpha_0 - Z_family*theta; // R_beta
     mat V_beta = inv(trans(W)*W/sigma2 + inv(beta_prior_var));
     vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(beta_prior_var)*mu_beta);
+    
     beta = mvnrnd(m_beta, V_beta);
     
     // R_theta
     y_tilde = y - alpha_0 - W*beta;
-    
-    // Sample sigma2_ksi
-    double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
-    double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi))/2.0;
-    sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);
     
     for (int s = 0; s < N_sites; s++) {
       // Sample site-level intercepts ksi
@@ -94,26 +90,30 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
       double m_ksi = V_ksi*sum_theta/sigma2_theta(s);
       ksi(s) = rnorm_cpp(1, m_ksi, sqrt(V_ksi))[0];
       
+      // Sample family-level intercepts theta
+      for (int f : families_in_s) {
+        arma::uvec individuals_in_f = arma::find(Z_family.col(f) == 1); // Get indices of observations that belong
+        double sum_y_tilde = sum(y_tilde.elem(individuals_in_f));
+        int n_sf = individuals_in_f.n_elem;
+        double V_theta = 1.0 / (n_sf/sigma2 + 1.0/sigma2_theta(s));
+        double m_theta = V_theta*(sum_y_tilde/sigma2 + 1.0/sigma2_theta(s));
+        theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
+      }
+      
       // Sample sigma2_theta for s-th site
       double a_sigma_theta = sigma_theta_prior_a + n_s/2.0;
       double b_sigma_theta = sigma_theta_prior_b + sum(square(theta.elem(families_in_s) - ksi(s)*ones(n_s))) / 2.0;
       sigma2_theta[s] = rinvgamma_cpp(a_sigma_theta, b_sigma_theta);
-      
-      // Sample family-level intercepts theta
-      for (int f : families_in_s) {
-        arma::uvec individuals_in_f = arma::find(Z_family.col(f) == 1); // Get indices of observations that belong
-        double sum_y = sum(y.elem(individuals_in_f));
-        int n_sf = individuals_in_f.n_elem;
-        double V_theta = 1.0 / (n_sf/sigma2 + 1.0/sigma2_theta(s));
-        double m_theta = V_theta*(sum_y/sigma2 + 1.0/sigma2_theta(s));
-        theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
-      }
     }
+    // Sample sigma2_ksi
+    double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
+    double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi))/2.0;
+    sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);    
     
     // Sample sigma
-    y_tilde = y - alpha_0*ones(N_obs) - Z_family*theta; // R_sigma
+    y_tilde = y - alpha_0*ones(N_obs) - W*beta - Z_family*theta; // R_sigma
     double a_sigma = sigma_prior_a + N_obs/2.0;
-    double b_sigma = sigma_prior_b + sum(square(y - Z_family*theta))/2.0;
+    double b_sigma = sigma_prior_b + sum(square(y_tilde))/2.0;
     sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
     
     // Store samples
@@ -279,7 +279,7 @@ simulate_re_data_nested <- function(n_views=2, N_obs=200, p_m=10, r=4,
     }
   }
 
-  beta <- matrix(rep(1, n_covars), ncol = 1)
+  beta <- matrix(rep(5, n_covars), ncol = 1)
   
   # Sample residuals
   epsilon <- matrix(rnorm(N_obs, sd = sqrt(sigma2)), nrow = N_obs)
@@ -316,8 +316,6 @@ combine_samples_nested <- function(samples_list, n_iter, n_chains) {
   return(combined_array)
 }
 
-
-#### ---- USER ARGUMENTS TO SPECIFY DATA TO BE SIMULATED
 n_covars <- 1
 N_sites <- 30
 n_families_per_site <- 30
@@ -348,11 +346,13 @@ Z_family_to_site <- simulation_results$Z_family_to_site
 y <- simulation_results$Y 
 
 N_sites <- ncol(Z_site)
+n_families_per_site <- 10
+n_individs_per_family <- 3
 N_obs <- ncol(Z_family)
 
 n_chains <- 1
 n_iter <- 5000
-n_burnin <- floor(n_iter*0.5)
+n_burnin <- floor(n_iter*0.75)
 
 # Priors
 priors <- list(mu_beta = rep(0, n_covars),
