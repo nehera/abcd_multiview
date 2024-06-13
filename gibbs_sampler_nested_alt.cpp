@@ -28,7 +28,7 @@ double rinvgamma_cpp(double shape, double scale) {
 }
 
 // [[Rcpp::export]]
-List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, arma::mat Z_family_to_site, int n_iter, const vec& mu_beta, const vec& beta_prior_var, double sigma_ksi_prior_a, double sigma_ksi_prior_b, double sigma_theta_prior_a, double sigma_theta_prior_b, double sigma_prior_a, double sigma_prior_b) {
+List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, arma::mat Z_family_to_site, int n_iter, double mu_prior_var, const vec& mu_beta, const vec& beta_prior_var, double sigma_ksi_prior_a, double sigma_ksi_prior_b, double sigma_theta_prior_a, double sigma_theta_prior_b, double sigma_prior_a, double sigma_prior_b) {
   
   // Set GSL random number generator seed
   // long seed=1;
@@ -43,6 +43,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
   vec y_tilde(N_obs);
   
   // Initialize parameters
+  double mu = as_scalar(rnorm_cpp(1, 0, std::sqrt(mu_prior_var)));
   double sigma2_ksi = rinvgamma_cpp(sigma_ksi_prior_a, sigma_ksi_prior_b);
   vec sigma2_theta = ones(N_sites);  
   double sigma2 = rinvgamma_cpp(sigma_prior_a, sigma_prior_b);
@@ -58,6 +59,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
   }
   
   // Store initial values
+  double mu_init = mu;
   vec beta_init = beta;
   vec ksi_init = ksi;
   vec theta_init = theta;
@@ -66,6 +68,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
   double sigma2_init = sigma2;  
   
   // Storage for samples
+  vec mu_samples(n_iter, fill::zeros);
   mat beta_samples(n_iter, n_beta, fill::zeros);
   mat ksi_samples(n_iter, N_sites, fill::zeros);
   mat theta_samples(n_iter, N_families, fill::zeros);
@@ -74,21 +77,25 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
   vec sigma2_samples(n_iter, fill::zeros);
   
   for (int iter = 0; iter < n_iter; iter++) {
-    // Sample alpha_0
+    // Sample mu
     //y_tilde = y - W*beta - Z_family*theta; // R_alpha0
     //double V_alpha0 = 1.0/(1.0/100 + N_obs/sigma2);
     //double m_alpha0 = V_alpha0*sum(y_tilde)/sigma2;
-    //double alpha_0 = as_scalar(rnorm_cpp(1, m_alpha0, std::sqrt(V_alpha0)));
+    //double mu = as_scalar(rnorm_cpp(1, m_alpha0, std::sqrt(V_alpha0)));
     
     // Sample beta
-    //y_tilde = y - alpha_0 - Z_family*theta; // R_beta
     y_tilde = y - Z_family*theta; // R_beta
     mat V_beta = inv(trans(W)*W/sigma2 + inv(diagmat(beta_prior_var)));
     vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(diagmat(beta_prior_var))*mu_beta);
     
     beta = mvnrnd(m_beta, V_beta);
     
-    // y_tilde = y - alpha_0 - W*beta; // R_theta
+    // Sample overall mean mu
+    double V_mu = 1.0/(1.0/mu_prior_var + N_sites/sigma2_ksi);
+    double m_mu = V_mu*(sum(ksi)/sigma2_ksi);
+    mu = as_scalar(rnorm_cpp(1, m_mu, std::sqrt(V_mu)));
+    
+    // y_tilde = y - mu - W*beta; // R_theta
     y_tilde = y - W*beta; // R_theta
     
     for (int s = 0; s < N_sites; s++) {
@@ -97,7 +104,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
       double sum_theta = sum(theta.elem(families_in_s));
       int n_s = families_in_s.n_elem;
       double V_ksi = 1.0 / (n_s/sigma2_theta(s) + 1.0/sigma2_ksi);
-      double m_ksi = V_ksi*sum_theta/sigma2_theta(s);
+      double m_ksi = V_ksi*(mu + sum_theta/sigma2_theta(s));
       ksi(s) = rnorm_cpp(1, m_ksi, sqrt(V_ksi))[0];
       
       // Sample family-level intercepts theta
@@ -127,17 +134,18 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
     
     // Sample sigma2_ksi
     double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
-    double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi))/2.0;
+    double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi - mu))/2.0;
     sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);    
     
     // Sample sigma
-    // y_tilde = y - alpha_0*ones(N_obs) - W*beta - Z_family*theta; // R_sigma
+    // y_tilde = y - mu*ones(N_obs) - W*beta - Z_family*theta; // R_sigma
     y_tilde = y - W*beta - Z_family*theta; // R_sigma
     double a_sigma = sigma_prior_a + N_obs/2.0;
     double b_sigma = sigma_prior_b + sum(square(y_tilde))/2.0;
     sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
     
     // Store samples
+    mu_samples(iter) = mu;
     beta_samples.row(iter) = trans(beta);
     ksi_samples.row(iter) = ksi.t();
     theta_samples.row(iter) = theta.t();
@@ -148,6 +156,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
   
   // Return samples as a list
   return List::create(
+    Named("mu_samples") = mu_samples,
     Named("beta_samples") = beta_samples,
     Named("ksi_samples") = ksi_samples,
     Named("theta_samples") = theta_samples,
@@ -155,6 +164,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site, ar
     Named("sigma2_theta_samples") = sigma2_theta_samples,
     Named("sigma2_samples") = sigma2_samples,
     Named("initial_values") = List::create(
+      Named("mu_init") = mu_init,
       Named("beta_init") = beta_init,
       Named("ksi_init") = ksi_init,
       Named("theta_init") = theta_init,
@@ -239,7 +249,7 @@ simulate_re_data_nested <- function(n_views=2, N_obs=200, p_m=10, r=4,
                                     sigma2_ksi=1, sigma2_theta=rep(1, 5),
                                     N_sites=5, n_families_per_site=3, 
                                     n_individs_per_family = 2,
-                                    n_covars=1, alpha_0=1, sigma2=1, seed=1,
+                                    n_covars=1, mu=1, sigma2=1, seed=1,
                                     balanced=T) {
   
   # Define default arguments in a list
@@ -256,7 +266,7 @@ simulate_re_data_nested <- function(n_views=2, N_obs=200, p_m=10, r=4,
     n_families_per_site=3, 
     n_individs_per_family = 2,
     n_covars=1, 
-    alpha_0=1, 
+    mu=1, 
     sigma2=1, 
     seed=1
   )
@@ -291,18 +301,18 @@ simulate_re_data_nested <- function(n_views=2, N_obs=200, p_m=10, r=4,
   Z_family_to_site <- t(Z_family) %*% Z_site
   
   # Simulate ksi_s ~ N(0, sigma2_ksi)
-  ksi <- rnorm(N_sites, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
+  ksi <- rnorm(N_sites, mu, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
   
   # Sample theta_sf|ksi_s ~ N(ksi_s, sigma2_theta_s)
   theta <- matrix(0, nrow = N_sites, ncol = n_families_per_site)
   for (s in 1:N_sites) {
-    theta[s, ] <- ksi[s] + rnorm(n_families_per_site, mean = 0, sd = sqrt(sigma2_theta[s]))
+    theta[s, ] <- rnorm(n_families_per_site, mean = ksi[s], sd = sqrt(sigma2_theta[s]))
   }
   
   # Family effects as a single vector
   theta <- as.vector(t(theta)) %>% matrix(ncol = 1)
   
-  W <- rep(1, N_obs)
+  W <- NULL
   
   if(n_covars > 0) {
     for(k in 1:n_covars) {
@@ -310,26 +320,28 @@ simulate_re_data_nested <- function(n_views=2, N_obs=200, p_m=10, r=4,
     }
   }
   
-  beta <- matrix(rep(1, 1+n_covars), ncol = 1)
+  beta <- matrix(rnorm(n_covars), ncol = 1)
   
   # Sample residuals
   epsilon <- matrix(rnorm(N_obs, sd = sqrt(sigma2)), nrow = N_obs)
   
   # Combine effects
-  #Y <- alpha_0 + W%*%beta + Z_family%*%theta + epsilon # Add omics data
   Y <- W%*%beta + Z_family%*%theta + epsilon # Add omics data
   
   return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, Z_family_to_site=Z_family_to_site, ksi=ksi, theta=theta, 
-              X=omics_data$X, U=omics_data$U, A=omics_data$A, alpha_0=alpha_0, alpha=alpha, W=W, beta=beta,
+              X=omics_data$X, U=omics_data$U, A=omics_data$A, mu=mu, alpha=alpha, W=W, beta=beta,
               gamma=omics_data$gamma, Eta=omics_data$Eta, nu2 = list(sigma2_ksi=sigma2_ksi_true, sigma2_theta=sigma2_theta_true)))
 }
 
 # Combine samples into a 3D array for rstan::monitor
 combine_samples_nested <- function(samples_list, n_iter, n_chains) {
-  n_params <- ncol(samples_list[[1]]$beta_samples) +              # FIGURE OUT WHAT TO DO ABOUT THIS IF THERE'S NO FIXED EFFECTS
+  n_params <- ncol(samples_list[[1]]$mu_samples) + 
+    ncol(samples_list[[1]]$beta_samples) +  # FIGURE OUT WHAT TO DO ABOUT THIS IF THERE'S NO FIXED EFFECTS
     ncol(samples_list[[1]]$ksi_samples) + 
     ncol(samples_list[[1]]$theta_samples) + 
-    2 + ncol(samples_list[[1]]$sigma2_theta_samples)  # beta, ksi, theta, sigma2_ksi, sigma2, sigma2_theta
+    ncol(samples_list[[1]]$sigma2_ksi_samples) + 
+    ncol(samples_list[[1]]$sigma2_samples) + 
+    ncol(samples_list[[1]]$sigma2_theta_samples)  # beta, ksi, theta, sigma2_ksi, sigma2, sigma2_theta
   
   # Create an empty array
   combined_array <- array(NA, dim = c(n_iter, n_chains, n_params))
@@ -337,27 +349,48 @@ combine_samples_nested <- function(samples_list, n_iter, n_chains) {
   # Fill in the array
   for (chain in 1:n_chains) {
     samples <- samples_list[[chain]]
-    combined_array[, chain, 1:ncol(samples$beta_samples)] <- samples$beta_samples
-    combined_array[, chain, (ncol(samples$beta_samples) + 1):(ncol(samples$beta_samples) + ncol(samples$ksi_samples))] <- samples$ksi_samples
-    combined_array[, chain, (ncol(samples$beta_samples) + ncol(samples$ksi_samples) + 1):(ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples))] <- samples$theta_samples
-    combined_array[, chain, ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 1] <- samples$sigma2_ksi_samples
-    combined_array[, chain, ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 2] <- samples$sigma2_samples
-    combined_array[, chain, (ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 3):(ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 2 + ncol(samples$sigma2_theta_samples))] <- samples$sigma2_theta_samples
+    combined_array[, chain, 1] <- samples$mu
+    combined_array[, chain, 2:(1 + ncol(samples$beta_samples))] <- samples$beta_samples
+    combined_array[, chain, (1 + ncol(samples$beta_samples) + 1):(1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples))] <- samples$ksi_samples
+    combined_array[, chain, (1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + 1):(1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples))] <- samples$theta_samples
+    combined_array[, chain, 1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 1] <- samples$sigma2_ksi_samples
+    combined_array[, chain, 1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 2] <- samples$sigma2_samples
+    combined_array[, chain, (1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 3):(1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 2 + ncol(samples$sigma2_theta_samples))] <- samples$sigma2_theta_samples
+    combined_array[, chain, 2:(1 + ncol(samples$beta_samples))] <- samples$beta_samples
+    combined_array[, chain, (1 + ncol(samples$beta_samples) + 1):(1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples))] <- samples$ksi_samples
+    combined_array[, chain, (1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + 1):(1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples))] <- samples$theta_samples
+    combined_array[, chain, 1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 1] <- samples$sigma2_ksi_samples
+    combined_array[, chain, 1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 2] <- samples$sigma2_samples
+    combined_array[, chain, (1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 3):(1 + ncol(samples$beta_samples) + ncol(samples$ksi_samples) + ncol(samples$theta_samples) + 2 + ncol(samples$sigma2_theta_samples))] <- samples$sigma2_theta_samples
   }
   
   return(combined_array)
 }
 
-
+# Priors
+priors <- list(mu_prior_var = 100,
+               mu_beta = rep(0, n_covars),
+               beta_prior_var = rep(100, n_covars),
+               sigma_ksi_prior_a = 3,
+               sigma_ksi_prior_b = 2,
+               sigma_theta_prior_a = 3,
+               sigma_theta_prior_b = 2,
+               sigma_prior_a = 3,
+               sigma_prior_b = 2)
 
 n_covars <- 2
 N_sites <- 30
 n_families_per_site <- 30
 n_individs_per_family <- 3
 
-sigma2_ksi_true <- 1
-sigma2_theta_true <- rep(1, N_sites)
-sigma2_true <- 1
+#sigma2_ksi_true <- 1
+#sigma2_theta_true <- rep(1, N_sites)
+#sigma2_true <- 1
+
+sigma2_ksi_true <- 1/rgamma(1, priors$sigma_ksi_prior_a, priors$sigma_ksi_prior_b)
+sigma2_theta_true <- 1/rgamma(N_sites, priors$sigma_theta_prior_a, priors$sigma_theta_prior_b)
+sigma2_true <- 1/rgamma(1, priors$sigma_prior_a, priors$sigma_prior_b)
+
 
 simulation_results <- simulate_re_data_nested(N_sites = N_sites, 
                                               n_families_per_site = n_families_per_site,
@@ -370,6 +403,7 @@ dataList <- list(simulation_results$X[[1]],
                  simulation_results$X[[2]],
                  simulation_results$Y)
 
+mu_true <- simulation_results$mu
 ksi_true <- simulation_results$ksi
 theta_true <- simulation_results$theta
 beta_true <- simulation_results$beta
@@ -390,16 +424,6 @@ n_chains <- 1
 n_iter <- 5000
 n_burnin <- floor(n_iter*0.5)
 
-# Priors
-priors <- list(mu_beta = rep(0, 1+n_covars),
-               beta_prior_var = c(1, rep(1000, n_covars)),
-               sigma_ksi_prior_a = 3,
-               sigma_ksi_prior_b = 2,
-               sigma_theta_prior_a = 3,
-               sigma_theta_prior_b = 2,
-               sigma_prior_a = 3,
-               sigma_prior_b = 2)
-
 RE_df <- data.frame(y = y,
                     site = which(Z_site == 1, arr.ind = T)[,2],
                     family = which(Z_family == 1, arr.ind = T)[,2])
@@ -410,7 +434,7 @@ RE_df <- data.frame(y = y,
 seeds <- 1:n_chains
 # Note, seed cannot be set in C++
 samples_list <- mclapply(seeds, function(seed) { 
-  gibbs_sampler_nested(y, W, Z_family, Z_site, Z_family_to_site, n_iter, priors$mu_beta, priors$beta_prior_var, 
+  gibbs_sampler_nested(y, W, Z_family, Z_site, Z_family_to_site, n_iter, priors$mu_prior_var, priors$mu_beta, priors$beta_prior_var, 
                        priors$sigma_ksi_prior_a, priors$sigma_ksi_prior_b, 
                        priors$sigma_theta_prior_a, priors$sigma_theta_prior_b, 
                        priors$sigma_prior_a, priors$sigma_prior_b)
@@ -418,6 +442,7 @@ samples_list <- mclapply(seeds, function(seed) {
 
 # Extract initial values
 init_values <- samples_list[[1]]$initial_values
+mu_init <- init_values$mu_init
 beta_init <- init_values$beta_init
 ksi_init <- init_values$ksi_init
 theta_init <- init_values$theta_init
@@ -428,19 +453,24 @@ sigma2_init <- init_values$sigma2_init
 # Combine samples
 combined_samples <- combine_samples_nested(samples_list, n_iter, n_chains)
 
-# Assign parameter names
-dimnames(combined_samples) <- list(
-  iterations = NULL,
-  chains = NULL,
-  parameters = c(paste0("beta_", 1:ncol(samples_list[[1]]$beta_samples)),
+# Parameter names
+param_names <- c("mu", 
+                 paste0("beta_", 1:ncol(samples_list[[1]]$beta_samples)),
                  paste0("ksi_", 1:ncol(samples_list[[1]]$ksi_samples)),
                  paste0("theta_", 1:ncol(samples_list[[1]]$theta_samples)),
                  "sigma2_ksi", "sigma2",
                  paste0("sigma2_theta_", 1:ncol(samples_list[[1]]$sigma2_theta_samples)))
+
+# Assign parameter names
+dimnames(combined_samples) <- list(
+  iterations = NULL,
+  chains = NULL,
+  parameters = param_names
 )
 
 # Use rstan::monitor
 mcmc_summary <- monitor(combined_samples)
+
 
 # Extract summary statistics
 mean_values <- round(mcmc_summary$mean, 4)
@@ -449,17 +479,11 @@ lower_bounds <- round(mcmc_summary$`2.5%`, 4)
 upper_bounds <- round(mcmc_summary$`97.5%`, 4)
 
 # Combine the true values into a single vector, ordered according to the MCMC parameters
-true_values <- c(beta_true, ksi_true, theta_true, sigma2_ksi_true, sigma2_true, sigma2_theta_true)
+true_values <- c(mu_true, beta_true, ksi_true, theta_true, sigma2_ksi_true, sigma2_true, sigma2_theta_true)
 
-# Parameter names
-param_names <- c(paste0("beta_", 1:ncol(samples_list[[1]]$beta_samples)),
-                 paste0("ksi_", 1:ncol(samples_list[[1]]$ksi_samples)),
-                 paste0("theta_", 1:ncol(samples_list[[1]]$theta_samples)),
-                 "sigma2_ksi", "sigma2",
-                 paste0("sigma2_theta_", 1:ncol(samples_list[[1]]$sigma2_theta_samples)))
 
 # Initial values
-initial_values <- c(beta_init, ksi_init, theta_init, 
+initial_values <- c(mu_init, beta_init, ksi_init, theta_init, 
                     sigma2_ksi_init, sigma2_theta_init, sigma2_init)
 
 # Initialize a dataframe to hold the comparisons
@@ -482,7 +506,7 @@ cat("% of all parameters within credible interval: ", mean(comparison$within_cre
 print("Fixed Effect Estimation vs. Truth:")
 
 # Filter for fixed effect parameters
-fixed_effect_comparison <- comparison %>% filter(grepl("^beta_", param_name))
+fixed_effect_comparison <- comparison %>% filter(grepl("^mu|^beta_", param_name))
 
 # Print the result to check fixed effect parameters
 print(fixed_effect_comparison)
@@ -520,6 +544,7 @@ n_chains_to_plot <- min(n_chains, 1)
 
 # Define the parameters to plot
 parameters_to_plot <- c(
+  "mu",
   paste0("beta_", 1:ncol(samples_list[[1]]$beta_samples)),
   paste0("ksi_", 1),
   paste0("theta_", 1),
@@ -530,6 +555,7 @@ parameters_to_plot <- c(
 
 ################################################################################
 parameter_groups <- list(
+  mu = "mu",
   FE = c(paste0("beta_", 1:ncol(samples_list[[1]]$beta_samples))),
   site_intercepts = c(paste0("ksi_", 1:N_sites)),
   family_intercepts = c(paste0("theta_", 1:N_families)),
@@ -539,6 +565,7 @@ parameter_groups <- list(
 )
 
 parameter_group_true_values <- list(
+  mu = mu_true,
   FE = beta_true, 
   site_intercepts = ksi_true, 
   family_intercepts = theta_true, 
@@ -548,6 +575,7 @@ parameter_group_true_values <- list(
 )
 
 CI_list <- list(
+  mu = comparison %>% filter(grepl("^mu", param_name)) %>% select(lower, upper), 
   FE = comparison %>% filter(grepl("^beta_", param_name)) %>% select(lower, upper), 
   site_intercepts = comparison %>% filter(grepl("^ksi_", param_name)) %>% select(lower, upper), 
   family_intercepts = comparison %>% filter(grepl("^theta_", param_name)) %>% select(lower, upper), 
@@ -561,6 +589,7 @@ CI_list <- list(
 
 # True values for the parameters
 true_values <- c(
+  mu_true,
   beta_true, 
   ksi_true[1], 
   theta_true[1], 
@@ -570,6 +599,7 @@ true_values <- c(
 )
 
 # Determine the x-axis limits for each class of parameters
+mu_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^mu", dimnames(combined_samples)[[3]])])
 beta_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^beta_", dimnames(combined_samples)[[3]])])
 u_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^ksi_", dimnames(combined_samples)[[3]])])
 v_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^theta_", dimnames(combined_samples)[[3]])])
@@ -613,7 +643,7 @@ for(g in seq_along(parameter_groups)) {
         geom_line() +
         geom_hline(yintercept = true_value, linetype = "dashed", color = "black") +
         geom_vline(xintercept = n_burnin, linetype = "dashed", color = "darkred") +
-        labs(x = ifelse(param == tail(parameters_to_plot, 1), "Iteration", ""), y = ifelse(chain == 1, bquote(.(param)), "")) +
+        labs(x = ifelse(param == tail(param, 1), "Iteration", ""), y = ifelse(chain == 1, bquote(.(param)), "")) +
         theme_minimal() +
         theme(legend.position = "none")
       
@@ -637,7 +667,9 @@ for(g in seq_along(parameter_groups)) {
     CI <- as.data.frame(CI_list[[g]])[i,]
     
     # Determine x-axis limits based on parameter class
-    if (grepl("^beta_", param)) {
+    if (grepl("^mu", param)) {
+      x_limits <- mu_limits
+    } else if (grepl("^beta_", param)) {
       x_limits <- beta_limits
     } else if (grepl("^ksi_", param)) {
       x_limits <- u_limits
@@ -672,15 +704,11 @@ for(g in seq_along(parameter_groups)) {
       # Create the density plot
       p <- ggplot(df_density, aes(x = x, y = y, fill = chain)) +
         geom_line(aes(color = chain), size = 1) +
-        geom_vline(xintercept = true_value, linetype = "dashed", color = "black") +
-        geom_segment(aes(x = CI$lower, y = 0, 
-                         xend = CI$upper, yend = 0), color = "black", size = 1) +
-        annotate("path", x = c(CI$lower, CI$lower),
-                         y = c(0, 0.1),
-                         color = "black", size = 1.5) +
-        annotate("path", x = c(CI$upper, CI$upper),
-                         y = c(0, 0.1),
-                         color = "black", size = 1.5) +
+        geom_vline(xintercept = true_value, linetype = "dashed", color = "black", size = 1) +
+        annotate("segment", x = CI$lower, xend = CI$upper,
+                         y = 0.5, yend = 0.5,
+                         color = "black", size = 1.5,
+                 arrow = arrow(ends = "both", angle = 90, length = unit(.2,"cm"))) +
         scale_x_continuous(limits = x_limits, labels = label_number(accuracy = 0.1)) +
         scale_y_continuous(limits = y_limits, labels = label_number(accuracy = 0.1)) +
         labs(x = ifelse(param == tail(parameters_to_plot, 1), "Value", ""), y = ifelse(chain == 1, param, "")) +
