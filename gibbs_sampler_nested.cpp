@@ -588,7 +588,7 @@ for(g in seq_along(parameter_groups)) {
   }
 
   # Determine x-axis limits based on parameter class
-  x_limits <- combined_samples[, chain, which(dimnames(combined_samples)[[3]] %in% parameter_groups[[g]][display_index])]
+  x_limits <- range(combined_samples[(n_burnin+1):n_iter, , which(dimnames(combined_samples)[[3]] %in% parameter_groups[[g]][display_index])])
   
   # Prepare a list to store ggplot objects
   plot_list <- list()
@@ -645,27 +645,10 @@ for(g in seq_along(parameter_groups)) {
     true_value <- parameter_group_true_values[[g]][i]
     CI <- as.data.frame(CI_list[[g]])[i,]
 
-    # Determine x-axis limits based on parameter class
-    if (grepl("^mu", param)) {
-      x_limits <- mu_limits
-    } else if (grepl("^beta_", param)) {
-      x_limits <- beta_limits
-    } else if (grepl("^ksi_", param)) {
-      x_limits <- ksi_limits
-    } else if (grepl("^theta_", param)) {
-      x_limits <- theta_limits
-    } else if (grepl("^sigma2_ksi", param)) {
-      x_limits <- sigma2_ksi_limits
-    } else if (grepl("^sigma2$", param)) {
-      x_limits <- sigma2_limits
-    } else if (grepl("^sigma2_theta_", param)) {
-      x_limits <- sigma2_theta_limits
-    }
-
     for (chain in 1:n_chains_to_plot) {
       # Extract the values for the parameter and chain after burn-in
       param_values <- combined_samples[(n_burnin + 1):n_iter, chain, which(dimnames(combined_samples)[[3]] == param)]
-
+      
       # Create a dataframe for ggplot
       df <- data.frame(
         value = param_values,
@@ -716,6 +699,11 @@ plot_list <- list()
 library(mvtnorm)
 #ldmvnorm()
 
+simulation_settings <- data.frame(
+  variable = c("# of Sites", "# of Families", "# of Observations", "# of Iterations"),
+  value = c(N_sites, N_families, N_obs, n_iter)
+)
+
 RE_df$w1 <- W[,1]
 RE_df$w2 <- W[,2]
 
@@ -726,16 +714,13 @@ summary(lmer(y~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
 # anti-correlation between the Fixed effect intercept & 
 # Site-level random intercepts, which is apparent in the traceplots. 
 
+#rm(list = ls(sigma2_init))
+
 sprintf("BIP duration: %f", end_time-start_time)
 cat("% of all parameters within credible interval: ", mean(comparison$within_credible_interval), "\n")
 cat("% of random intercept parameters within credible interval: ", mean(random_intercept_comparison$within_credible_interval), "\n")
 cat("% of random intercept parameters with correct sign: ", mean(random_intercept_comparison$correct_sign), "\n")
 cat("% of variance parameters within credible interval: ", mean(variance_comparison$within_credible_interval), "\n")
-
-simulation_settings <- data.frame(
-  variable = c("# of Sites", "# of Families", "# of Observations", "# of Iterations"),
-  value = c(N_sites, N_families, N_obs, n_iter)
-)
 
 print(simulation_settings)
 */
