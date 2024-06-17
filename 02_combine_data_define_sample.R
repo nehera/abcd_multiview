@@ -282,9 +282,6 @@ write.csv(Z_family_to_site_df, paste0("data/", out_date, "_Z_family_to_site.csv"
 complete_data_list$Z_site <- Z_site_df
 complete_data_list$Z_family <- Z_family_df
 
-# Save the updated list as an RDS object
-saveRDS(complete_data_list, paste0("data/", out_date, "_complete_data_list.rds"))
-
 ## -- Summarize Sample's Observational Clustering
 
 # Calculate the number of families in each site
@@ -492,3 +489,26 @@ n_test <- test_data_summary$n_test %>% sum
 cat("n_train:", n_train)
 cat("n_test:", n_test)
 cat("n_train + n_test:", n_train+n_test)
+
+# Assuming you have train_data and test_data data frames with 'src_subject_id'
+train_ids <- pull(train_data, src_subject_id)
+test_ids <- pull(test_data, src_subject_id)
+
+# Split complete_data_list into train and test lists
+split_data <- function(df, train_ids, test_ids) {
+  train_df <- df %>% filter(src_subject_id %in% train_ids)
+  test_df <- df %>% filter(src_subject_id %in% test_ids)
+  list(train = train_df, test = test_df)
+}
+
+# Assuming complete_data_list is your list of data frames
+split_lists <- lapply(complete_data_list, split_data, train_ids = train_ids, test_ids = test_ids)
+
+# Extract train and test lists
+train_list <- lapply(split_lists, `[[`, "train")
+test_list <- lapply(split_lists, `[[`, "test")
+
+# Save the split lists as RDS objects
+out_date <- Sys.Date()
+saveRDS(train_list, paste0("data/", out_date, "_train_list.rds"))
+saveRDS(test_list, paste0("data/", out_date, "_test_list.rds"))
