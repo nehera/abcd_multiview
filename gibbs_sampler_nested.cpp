@@ -49,14 +49,19 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
   vec y_tilde(N_obs);
   
   //
-  arma::mat Sigma_0_inv = inv(U*eye(r, r)*trans(U) + eye(N_obs, N_obs));
+  //arma::mat Sigma_0_inv = inv(U*eye(r, r)*trans(U) + eye(N_obs, N_obs));
+  arma::mat D = eye(r, r);
+  arma::mat Sigma_0_inv = eye(N_obs, N_obs) - U*inv(inv(D) + U.t()*U)*U.t();
   
   // Initialize parameters
   double mu = as_scalar(rnorm_cpp(1, 0, std::sqrt(mu_prior_var)));
   double sigma2_ksi = rinvgamma_cpp(sigma_ksi_prior_a, sigma_ksi_prior_b);
   vec sigma2_theta = zeros(N_sites);
-  double sigma2 = rinvgamma_cpp(sigma_prior_a, sigma_prior_b);
-  vec beta = mvnrnd(mu_beta, diagmat(beta_prior_var));
+  
+  //double sigma2 = rinvgamma_cpp(sigma_prior_a, sigma_prior_b);
+  
+  // vec beta = mvnrnd(mu_beta, diagmat(beta_prior_var));
+  
   vec ksi = rnorm_cpp(N_sites, 0, std::sqrt(sigma2_ksi));
   
   vec theta = zeros(N_families);  // Changed to initialize theta to zero
@@ -68,6 +73,10 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
     }
   }
   
+  y_tilde = y - Z_family*theta - U*alpha;
+  vec beta = inv(trans(W)*W)*trans(W)*y_tilde;
+  double sigma2 = arma::dot(trans(y-W*beta), (y-W*beta))/(N_obs - W.n_cols);
+    
   // Store initial values
   double mu_init = mu;
   vec beta_init = beta;
@@ -94,22 +103,10 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
     
     beta = mvnrnd(m_beta, V_beta);
     
-    // Sample overall mean mu
-    double V_mu = 1.0/(1.0/mu_prior_var + N_sites/sigma2_ksi);
-    double m_mu = V_mu*(sum(ksi)/sigma2_ksi);
-    mu = as_scalar(rnorm_cpp(1, m_mu, std::sqrt(V_mu)));
-    
-    // y_tilde = y - mu - W*beta; // R_theta
+    // Sample random effects
     y_tilde = y - W*beta - U*alpha; // R_theta
-    
     for (int s = 0; s < N_sites; s++) {
-      // Sample site-level intercepts ksi
       arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
-      double sum_theta = sum(theta.elem(families_in_s));
-      int n_s = families_in_s.n_elem;
-      double V_ksi = 1.0 / (n_s/sigma2_theta(s) + 1.0/sigma2_ksi);
-      double m_ksi = V_ksi*(mu + sum_theta/sigma2_theta(s));
-      ksi(s) = rnorm_cpp(1, m_ksi, sqrt(V_ksi))[0];
       
       // Sample family-level intercepts theta
       for (int f : families_in_s) {
@@ -121,18 +118,24 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
         theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
       }
       
-      
-    }
-    
-    for (int s = 0; s < N_sites; s++) {
-      arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
+      // Sample site-level intercepts ksi
+      double sum_theta = sum(theta.elem(families_in_s));
       int n_s = families_in_s.n_elem;
+      double V_ksi = 1.0 / (n_s/sigma2_theta(s) + 1.0/sigma2_ksi);
+      double m_ksi = V_ksi*(mu + sum_theta/sigma2_theta(s));
+      ksi(s) = as_scalar(rnorm_cpp(1, m_ksi, sqrt(V_ksi)));
       
       // Sample sigma2_theta for s-th site
       double a_sigma_theta = sigma_theta_prior_a + n_s/2.0;
       double b_sigma_theta = sigma_theta_prior_b + sum(square(theta.elem(families_in_s) - ksi(s)*ones(n_s))) / 2.0;
       sigma2_theta[s] = rinvgamma_cpp(a_sigma_theta, b_sigma_theta);    
+      
     }
+    
+    // Sample overall mean mu
+    double V_mu = 1.0/(1.0/mu_prior_var + N_sites/sigma2_ksi);
+    double m_mu = V_mu*(sum(ksi)/sigma2_ksi);
+    mu = as_scalar(rnorm_cpp(1, m_mu, std::sqrt(V_mu)));
     
     // Sample sigma2_ksi
     double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
@@ -140,9 +143,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
     sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);    
     
     // Sample sigma
-    // y_tilde = y - mu*ones(N_obs) - W*beta - Z_family*theta; // R_sigma
     y_tilde = y - W*beta - Z_family*theta; // R_sigma
-    //Sigma_0_inv = U*eye(r, r)*trans(U) + eye(N_obs, N_obs);
     double a_sigma = sigma_prior_a + N_obs/2.0;
     double b_sigma = sigma_prior_b + arma::dot(y_tilde, Sigma_0_inv*y_tilde)/2.0;
     sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
@@ -370,7 +371,7 @@ combine_samples_nested <- function(samples_list, n_iter, n_chains) {
 n_covars <- 2
 N_sites <- 30
 n_families_per_site <- 30
-n_individs_per_family <- 3
+n_individs_per_family <- 10
 
 # Priors
 priors <- list(mu_prior_var = 100,
@@ -389,8 +390,8 @@ priors <- list(mu_prior_var = 100,
 
 sigma2_ksi_true <- 1/rgamma(1, priors$sigma_ksi_prior_a, priors$sigma_ksi_prior_b)
 sigma2_theta_true <- 1/rgamma(N_sites, priors$sigma_theta_prior_a, priors$sigma_theta_prior_b)
-#sigma2_true <- 1/rgamma(1, priors$sigma_prior_a, priors$sigma_prior_b)
-sigma2_true <- 1
+sigma2_true <- 1/rgamma(1, priors$sigma_prior_a, priors$sigma_prior_b)
+#sigma2_true <- 1
 
 r <- 4
 
@@ -422,7 +423,7 @@ y <- simulation_results$Y
 
 N_sites <- ncol(Z_site)
 N_families <- ncol(Z_family)
-N_obs <- ncol(Z_family)
+N_obs <- nrow(Z_family)
 
 n_chains <- 1
 n_iter <- 5000
@@ -436,6 +437,9 @@ RE_df <- data.frame(y = y,
 
 # Run Gibbs sampler in parallel
 seeds <- 1:n_chains
+
+start_time <- Sys.time()
+
 # Note, seed cannot be set in C++
 samples_list <- mclapply(seeds, function(seed) { 
   gibbs_sampler_nested(y, W, Z_family, Z_site, Z_family_to_site, n_iter, priors$mu_prior_var, priors$mu_beta, priors$beta_prior_var, 
@@ -444,6 +448,8 @@ samples_list <- mclapply(seeds, function(seed) {
                        priors$sigma_prior_a, priors$sigma_prior_b,
                        r, U_true, alpha_true)
 }, mc.cores = n_chains)
+
+end_time <- Sys.time()
 
 # Extract initial values
 init_values <- samples_list[[1]]$initial_values
@@ -506,9 +512,6 @@ comparison <- data.frame(
 # Add a logical vector to see if true values are within the credible intervals
 comparison$within_credible_interval <- with(comparison, true_value >= lower & true_value <= upper)
 
-# % of all parameters within credible interval
-cat("% of all parameters within credible interval: ", mean(comparison$within_credible_interval), "\n")
-
 print("Fixed Effect Estimation vs. Truth:")
 
 # Filter for fixed effect parameters
@@ -522,12 +525,8 @@ print("Random Intercept Estimation vs. Truth:")
 # Filter for random intercept parameters (those starting with "ksi_")
 random_intercept_comparison <- comparison %>% filter(grepl("^ksi_|^theta_", param_name))
 
-# % of random intercept parameters within credible interval
-cat("% of random intercept parameters within credible interval: ", mean(random_intercept_comparison$within_credible_interval), "\n")
-
 # % of random intercept parameters with correct sign
 random_intercept_comparison$correct_sign <- sign(random_intercept_comparison$mean) == sign(random_intercept_comparison$true_value)
-cat("% of random intercept parameters with correct sign: ", mean(random_intercept_comparison$correct_sign), "\n")
 
 # Print the result to check random intercept parameters
 print(random_intercept_comparison)
@@ -539,9 +538,6 @@ variance_comparison <- comparison %>% filter(grepl("^sigma2$|^sigma2_ksi$|^sigma
 
 # Print the filtered result to check each variance parameter
 print(variance_comparison)
-
-# % of variance parameters within credible interval
-cat("% of variance parameters within credible interval: ", mean(variance_comparison$within_credible_interval), "\n")
 
 # Set the number of chains to plot
 n_chains_to_plot <- min(n_chains, 1)
@@ -579,82 +575,76 @@ CI_list <- list(
 
 ################################################################################
 
-# Determine the x-axis limits for each class of parameters
-mu_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^mu$", dimnames(combined_samples)[[3]])])
-beta_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^beta_", dimnames(combined_samples)[[3]])])
-ksi_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^ksi_", dimnames(combined_samples)[[3]])])
-theta_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^theta_", dimnames(combined_samples)[[3]])])
-sigma2_ksi_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^sigma2_ksi", dimnames(combined_samples)[[3]])])
-sigma2_theta_limits <- c(0, 25)  # Truncate to a maximum of 25
-sigma2_limits <- range(combined_samples[(n_burnin + 1):n_iter, , grep("^sigma2$", dimnames(combined_samples)[[3]])])
-
 # Determine the y-axis limits to be (0, 1) for all density plots
 y_limits <- c(0, 1)
 
 for(g in seq_along(parameter_groups)) {
   number_displayed <- 8
-  
+
   if(length(parameter_groups[[g]]) > number_displayed) {
     display_index <- sort(sample(seq_along(parameter_groups[[g]]), number_displayed))
   } else {
     display_index <- seq_along(parameter_groups[[g]])
   }
+
+  # Determine x-axis limits based on parameter class
+  x_limits <- combined_samples[, chain, which(dimnames(combined_samples)[[3]] %in% parameter_groups[[g]][display_index])]
   
   # Prepare a list to store ggplot objects
   plot_list <- list()
-  
+
   # Create trace plots for each parameter in each chain
   for (i in display_index) {
     param <- parameter_groups[[g]][i]
     true_value <- parameter_group_true_values[[g]][i]
     initial <- init_values[[g]][i]
     CI <- as.data.frame(CI_list[[g]])[i,]
-    
+
     for (chain in 1:n_chains_to_plot) {
       # Extract the values for the parameter and chain
       param_values <- combined_samples[, chain, which(dimnames(combined_samples)[[3]] == param)]
-      
+
       # Create a dataframe for ggplot
       df <- data.frame(
         iter = 1:n_iter,
         value = param_values,
         chain = factor(chain)
       )
-      
+
       # Create the trace plot
       p <- ggplot(df, aes(x = iter, y = value, color = chain)) +
         geom_line() +
-        geom_hline(yintercept = true_value, linetype = "dashed", color = "black", 
+        geom_hline(yintercept = true_value, linetype = "dashed", color = "black",
                    linewidth = (1 + 1/(8*number_displayed))) +
-        geom_vline(xintercept = n_burnin, linetype = "dashed", color = "darkred", 
+        geom_vline(xintercept = n_burnin, linetype = "dashed", color = "darkred",
                    linewidth = (1 + 1/(8*number_displayed))) +
         annotate("segment", x = 0, xend = 0,
                  y = CI$lower, yend = CI$upper,
                  color = "black", linewidth = (1 + 1/(8*number_displayed)),
                  arrow = arrow(ends = "both", angle = 90, length = unit(.2,"cm"))) +
-        labs(x = ifelse(param == tail(param, 1), "Iteration", ""), y = ifelse(chain == 1, bquote(.(param)), "")) +
+        labs(x = ifelse(param == tail(parameter_groups[[g]], 1), "Iteration", ""), y = ifelse(chain == 1, bquote(.(param)), "")) +
         theme_minimal() +
         theme(legend.position = "none")
-      
+
       # Remove y-axis label for chains > 1
       if (chain > 1) {
         p <- p + theme(axis.title.y = element_blank())
       }
-      
+
       # Add the plot to the list
       plot_list[[paste(param, chain, sep = "_")]] <- p
     }
   }
-  
+
   # Arrange the trace plots into a grid
   grid_plots <- do.call(grid.arrange, c(plot_list, ncol = n_chains_to_plot))
-  
+
   # Create density plots for each parameter in each chain after burn-in
   for (i in display_index) {
     param <- parameter_groups[[g]][i]
     true_value <- parameter_group_true_values[[g]][i]
     CI <- as.data.frame(CI_list[[g]])[i,]
-    
+
     # Determine x-axis limits based on parameter class
     if (grepl("^mu", param)) {
       x_limits <- mu_limits
@@ -671,17 +661,17 @@ for(g in seq_along(parameter_groups)) {
     } else if (grepl("^sigma2_theta_", param)) {
       x_limits <- sigma2_theta_limits
     }
-    
+
     for (chain in 1:n_chains_to_plot) {
       # Extract the values for the parameter and chain after burn-in
       param_values <- combined_samples[(n_burnin + 1):n_iter, chain, which(dimnames(combined_samples)[[3]] == param)]
-      
+
       # Create a dataframe for ggplot
       df <- data.frame(
         value = param_values,
         chain = factor(chain)
       )
-      
+
       # Compute the density
       density_values <- density(param_values)
       df_density <- data.frame(
@@ -689,7 +679,7 @@ for(g in seq_along(parameter_groups)) {
         y = density_values$y / max(density_values$y),  # Normalize the density to unit scale
         chain = factor(chain)
       )
-      
+
       # Create the density plot
       p <- ggplot(df_density, aes(x = x, y = y, fill = chain)) +
         geom_line(aes(color = chain), linewidth = 1) +
@@ -698,37 +688,36 @@ for(g in seq_along(parameter_groups)) {
                  y = 0.5, yend = 0.5,
                  color = "black", linewidth = (1 + 1/(8*number_displayed)),
                  arrow = arrow(ends = "both", angle = 90, length = unit(.2,"cm"))) +
-        scale_x_continuous(limits = x_limits, labels = label_number(accuracy = 0.1)) +
-        scale_y_continuous(limits = y_limits, labels = label_number(accuracy = 0.1)) +
-        labs(x = ifelse(param == tail(param, 1), "Value", ""), y = ifelse(chain == 1, param, "")) +
+        scale_x_continuous(limits = x_limits, labels = label_number(accuracy = 0.01)) +
+        scale_y_continuous(limits = y_limits, labels = label_number(accuracy = 0.01)) +
+        labs(x = ifelse(param == tail(parameter_groups[[g]], 1), "Value", ""), y = ifelse(chain == 1, param, "")) +
         theme_minimal() +
         theme(legend.position = "none", axis.title.y = element_text(size = 8))
-      
+
       # Remove y-axis label for chains > 1
       if (chain > 1) {
         p <- p + theme(axis.title.y = element_blank())
       }
-      
+
       # Add the plot to the list
       plot_list[[paste(param, chain, sep = "_")]] <- p
     }
   }
-  
+
   # Arrange the plots into a grid
   grid_plots <- do.call(grid.arrange, c(plot_list, ncol = n_chains_to_plot))
-  
+
 }
 
 # Prepare a list to store ggplot objects
 plot_list <- list()
 
-
 # Traceplot of joint ksi prior
 library(mvtnorm)
 #ldmvnorm()
 
-RE_df$w1 <- W[,2]
-RE_df$w2 <- W[,3]
+RE_df$w1 <- W[,1]
+RE_df$w2 <- W[,2]
 
 summary(lmer(y~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
 
@@ -736,4 +725,17 @@ summary(lmer(y~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
 # seem to take longer to converge. This is likely attributable to 
 # anti-correlation between the Fixed effect intercept & 
 # Site-level random intercepts, which is apparent in the traceplots. 
+
+sprintf("BIP duration: %f", end_time-start_time)
+cat("% of all parameters within credible interval: ", mean(comparison$within_credible_interval), "\n")
+cat("% of random intercept parameters within credible interval: ", mean(random_intercept_comparison$within_credible_interval), "\n")
+cat("% of random intercept parameters with correct sign: ", mean(random_intercept_comparison$correct_sign), "\n")
+cat("% of variance parameters within credible interval: ", mean(variance_comparison$within_credible_interval), "\n")
+
+simulation_settings <- data.frame(
+  variable = c("# of Sites", "# of Families", "# of Observations", "# of Iterations"),
+  value = c(N_sites, N_families, N_obs, n_iter)
+)
+
+print(simulation_settings)
 */
