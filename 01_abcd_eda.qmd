@@ -42,7 +42,7 @@ We are performing variable selection jointly with prediction in relation to the 
 -   cognitive flexibility, and
 -   inhibitory control
 
-We consider the first two internalizing problems and externalizing problems primary outcomes and cognitive flexibility and inhibitory control secondary outcomes since the former are seemingly clinical outcomes and the latter are explanatory of the primary outcomes (Brieant et al. 2023). 
+We consider the first two internalizing problems and externalizing problems primary outcomes and cognitive flexibility and inhibitory control secondary outcomes since the former are seemingly clinical outcomes and the latter are explanatory of the primary outcomes (Brieant et al. 2023).
 
 We control for common covariates \* sex \* age \* race \* ...
 
@@ -209,7 +209,7 @@ print(paste("N Variables with zero variance:", sum(non_zero_data$prop_non_zero =
 
 ```
 
-We notice a number of these variables included in the Orendain et al paper do not have event rates larger than 0.05, which is a quality control step implemented in the Brieant et al. 2023 paper. 
+We notice a number of these variables included in the Orendain et al paper do not have event rates larger than 0.05, which is a quality control step implemented in the Brieant et al. 2023 paper.
 
 We consider relationships between the ELA features by looking at polychoric correlations and TSNE plots. Note, for the polychoric correlation analysis, we filter to complete cases and also exclude the variables with five levels to only explore the binary variables (for now). In those with five levels, 1 = Strongly Disagree; 2 = Disagree; 3 = Neutral (neither agree nor disagree); 4 = Agree; 5 = Strongly Agree. It's not clear how best to binarize/ handle these 5-level variables in the context of polychoric correlation calculation.
 
@@ -251,9 +251,9 @@ high_correlation_pairs %>%
   print
 ```
 
-10 binary features included in Orendain et al paper's analysis have high polychoric correlation. I'm wondering if the data processing in Brieant et al. 2023 paper is preferrable as a result in that they consolidated survey items that were highly correlated into composite scores. 
+10 binary features included in Orendain et al paper's analysis have high polychoric correlation. I'm wondering if the data processing in Brieant et al. 2023 paper is preferrable as a result in that they consolidated survey items that were highly correlated into composite scores.
 
-Below is an exploratory tsne plot to demonstrate the heterogeneity in our sample's ELA data at baseline. To ultimately generate this plot, we had to remove a large number of duplicates in our binary data. 
+Below is an exploratory tsne plot to demonstrate the heterogeneity in our sample's ELA data at baseline. To ultimately generate this plot, we had to remove a large number of duplicates in our binary data.
 
 ```{r}
 # Remove duplicate rows
@@ -280,7 +280,7 @@ ggplot(tsne_data, aes(x = TSNE1, y = TSNE2)) +
        y = "t-SNE Dimension 2")
 ```
 
-On attempting to make a tsne plot, we recognize that there are 7,900 duplicate rows in our binary data representative of 9,971 observations at baseline. This raises the question of what the characteristics are of these duplicates, are there specific classes of duplicates in our binary data e.g. the vast majority report no to all questions? 
+On attempting to make a tsne plot, we recognize that there are 7,900 duplicate rows in our binary data representative of 9,971 observations at baseline. This raises the question of what the characteristics are of these duplicates, are there specific classes of duplicates in our binary data e.g. the vast majority report no to all questions?
 
 Note, 2,071 observations are included in the `duplicate_summary` below, which means we have only 2,071 unique survey responses and 7,900 duplicate responses for a sample size in these binary baseline data of 9,071.
 
@@ -326,20 +326,20 @@ Features related to drug use and ptsd seem to be most absent in our duplicated b
 
 #### Orendain et al. 2023 vs. Brieant et al. 2023
 
-Noticing the discrepancy in the polychoric correlations allowed for between Orendain et al. 2023 (no polychoric correlation filtering/ feature composition), and Brieant et al. 2023 (features with polychoric correlation > 0.75 were transformed into composites to avoid potential collinearity concerns), we decide to compare and contrast the features included in each analysis.
+Noticing the discrepancy in the polychoric correlations allowed for between Orendain et al. 2023 (no polychoric correlation filtering/ feature composition), and Brieant et al. 2023 (features with polychoric correlation \> 0.75 were transformed into composites to avoid potential collinearity concerns), we decide to compare and contrast the features included in each analysis.
 
-In Orendain et al. 2023, 
+In Orendain et al. 2023,
 
-  - "All adversity variables were binarized to indicate the presence or absence of exposure". Did they binarize all features, including the neighborhood safety questions which has a scale from 1-5 available? If so, how did they do this? 
-  - 17 additional features are reported in their Table S2 that were excluded from the final exploratory factor analysis because of a low factor loading (below 0.4). Might we include these? My initial thought is yes. 
-  
+-   "All adversity variables were binarized to indicate the presence or absence of exposure". Did they binarize all features, including the neighborhood safety questions which has a scale from 1-5 available? If so, how did they do this?
+-   17 additional features are reported in their Table S2 that were excluded from the final exploratory factor analysis because of a low factor loading (below 0.4). Might we include these? My initial thought is yes.
+
 Authors included 47 adversity features of which 30 were found to be "important" in their exploratory factor analysis. These 30 features are those that have been characterized thus far in this report.
 
-In Brieant et al. 2023, 
+In Brieant et al. 2023,
 
-Authors identify 139 ELA features that they then filter those with >50% missingness and <0.05% endorsement to pass 79 to a polychoric correlation matrix calculation. 26 were removed that had high correlation with other variables, and composites were added for a total of 60 variables to be used in the factor analysis/ Bayesian linear modeling. 
+Authors identify 139 ELA features that they then filter those with \>50% missingness and \<0.05% endorsement to pass 79 to a polychoric correlation matrix calculation. 26 were removed that had high correlation with other variables, and composites were added for a total of 60 variables to be used in the factor analysis/ Bayesian linear modeling.
 
-We adapt code from Brieant et al. 2023's Open Science Foundation (OSF) project 01_data_preparation/01_pull_variables.Rmd (https://osf.io/28cb7/?view_only=b7789e2eb92d40d290358a5ad623ac65) to extract the 79 variables that passed the >50% missingness and <0.05% endorsement filtering steps. Note, seemingly authors count "src_subject_id" and "rel_family_id" as 2 of these 79 variables.
+We adapt code from Brieant et al. 2023's Open Science Foundation (OSF) project 01_data_preparation/01_pull_variables.Rmd (https://osf.io/28cb7/?view_only=b7789e2eb92d40d290358a5ad623ac65) to extract the 79 variables that passed the \>50% missingness and \<0.05% endorsement filtering steps. Note, seemingly authors count "src_subject_id" and "rel_family_id" as 2 of these 79 variables.
 
 ```{r}
 # Read in family variables
@@ -438,7 +438,7 @@ ela_data_brieant <- full_join(fhx, asr) %>%
 print(paste("ncols of ELA data used for Brieant el al. 2023 analysis:", ncol(ela_data_brieant)))
 ```
 
-We see the extent to which the variables included by Brient and colleagues overlap with the 60 considered important by Orendain et al. 2023. 
+We see the extent to which the variables included by Brient and colleagues overlap with the 60 considered important by Orendain et al. 2023.
 
 ```{r}
 # Exclude specified variables and extract variable names from each dataset
@@ -476,12 +476,12 @@ grid.draw(venn.plot)
 
 ```
 
-We discover these studies chose quite different sets of ELA variables for their analyses with only 14 shared between the two. This makes me wonder two things, 
+We discover these studies chose quite different sets of ELA variables for their analyses with only 14 shared between the two. This makes me wonder two things,
 
-1. Would the amount of overlap be different had we included variables from upstream in these authors respective data processing and analysis pipelines? 
-2. What accounts for the limited overlap in the variables used for each analysis? Could it be that variables included by Orendain et al. 2023 would have been excluded by Brieant et al. 2023's missingness and <0.05% endorsement filters? What explains the 63 variables included by strictly Brieant et al. 2023? Is subjective judgement to blame, or are there other justifications available? 
+1.  Would the amount of overlap be different had we included variables from upstream in these authors respective data processing and analysis pipelines?
+2.  What accounts for the limited overlap in the variables used for each analysis? Could it be that variables included by Orendain et al. 2023 would have been excluded by Brieant et al. 2023's missingness and \<0.05% endorsement filters? What explains the 63 variables included by strictly Brieant et al. 2023? Is subjective judgement to blame, or are there other justifications available?
 
-Let's consider the variables that would be included should we keep with the <0.05% endorsement filter. This would mean certain variables from the Orendain et. al. 2023 paper would be excluded. 
+Let's consider the variables that would be included should we keep with the \<0.05% endorsement filter. This would mean certain variables from the Orendain et. al. 2023 paper would be excluded.
 
 ```{r}
 # Filter the tibble to include only those with prop_non_zero less than 0.05%
@@ -505,7 +505,7 @@ print(paste("ncols of ELA data for analysis:",
                 -rel_family_id))))
 ```
 
-^Some of these ELA features include "demo_..." features e.g. "demo_prnt_marital_v2" and "demo_prnt_ed_v2". These features are typically considered covariates. I am leaning towards putting this information in the covariate matrix and exluding from the ELA view.
+\^Some of these ELA features include "demo\_..." features e.g. "demo_prnt_marital_v2" and "demo_prnt_ed_v2". These features are typically considered covariates. I am leaning towards putting this information in the covariate matrix and exluding from the ELA view.
 
 ### Covariates and Outcomes
 
@@ -1002,7 +1002,7 @@ abcd_data.selected_time <- abcd_data %>%
   filter(eventname %in% timepoint_list)
 ```
 
-Write out a combined data.frame of covariates and outcome variables. 
+Write out a combined data.frame of covariates and outcome variables.
 
 ```{r write dataset}
 # Creates name based on date and initials/string passed in by user. If no date given, use the current date
@@ -1019,7 +1019,7 @@ csv_out_name <- paste0(out_dir,'/',out_date,'_',out_initials,'.csv')
 write.csv(abcd_data.selected_time, csv_out_name, row.names = FALSE) 
 ```
 
-Here we checkout the columns included in the `abcd_data.selected_time` object. Ideally we would have separate data.frames/ matrices of covariates and outcomes. Furthermore, we  observe covariates and outcomes extraneous to our questions, so these need to be removed/ cleaned up to reflect our question.
+Here we checkout the columns included in the `abcd_data.selected_time` object. Ideally we would have separate data.frames/ matrices of covariates and outcomes. Furthermore, we observe covariates and outcomes extraneous to our questions, so these need to be removed/ cleaned up to reflect our question.
 
 ```{r}
 colnames(abcd_data.selected_time)

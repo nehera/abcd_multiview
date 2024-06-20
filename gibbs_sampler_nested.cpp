@@ -95,16 +95,22 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
   mat sigma2_theta_samples(n_iter, N_sites, fill::zeros);
   vec sigma2_samples(n_iter, fill::zeros);
   
+  // Initialize intermediates
+  vec y_lessUalpha(N_obs);
+  
   for (int iter = 0; iter < n_iter; iter++) {
+    
+    y_lessUalpha = y - U*alpha;
+    
     // Sample beta
-    y_tilde = y - Z_family*theta - U*alpha; // R_beta
+    y_tilde = y_lessUalpha - Z_family*theta; // R_beta
     mat V_beta = inv(trans(W)*W/sigma2 + inv(diagmat(beta_prior_var)));
     vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(diagmat(beta_prior_var))*mu_beta);
     
     beta = mvnrnd(m_beta, V_beta);
     
     // Sample random effects
-    y_tilde = y - W*beta - U*alpha; // R_theta
+    y_tilde = y_lessUalpha - W*beta; // R_theta
     for (int s = 0; s < N_sites; s++) {
       arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
       
