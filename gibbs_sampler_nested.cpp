@@ -100,6 +100,8 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
   
   for (int iter = 0; iter < n_iter; iter++) {
     
+    ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (BELOW) /////
+    
     y_lessUalpha = y - U*alpha;
     
     // Sample beta
@@ -147,6 +149,8 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
     double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
     double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi - mu))/2.0;
     sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);    
+    
+    ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (ABOVE) /////
     
     // Sample sigma
     y_tilde = y - W*beta - Z_family*theta; // R_sigma
