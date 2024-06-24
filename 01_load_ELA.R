@@ -217,9 +217,6 @@ vars_to_include <- non_zero_data %>%
 endorsed_data <- combined_data %>%
   select(all_of(c("src_subject_id", "eventname", vars_to_include)))
 print(paste("n Columns of Well-Endorsed Data:", ncol(endorsed_data)))
-      
-# TODO Filter highly correlated features from Orendain
-# TODO Interpret 1-5 greatest to least flip
 
 # Remove redundant columns
 no_covariate_data <- endorsed_data %>%

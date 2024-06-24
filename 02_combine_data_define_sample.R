@@ -1,12 +1,15 @@
 library(tidyverse)
-library(table1)
 library(htmltools)
 library(gridExtra)
+library(tableone)
+library(knitr)
+library(kableExtra)
+library(extrafont)
 
 # Define the directory, date, processor, and file suffixes
 data_dir <- "data"
 figures_dir <- "figures"
-data_processing_date <- "2024-06-06"
+data_processing_date <- "2024-06-24"
 data_processor <- "AN"
 file_suffix <- c("outcomes", "covariates", "ela_view", "SA_sMRI_view", "CT_sMRI_view", "fMRI_view")
 
@@ -78,37 +81,43 @@ complete_data_list <- lapply(data_list, function(df) df %>% drop_na())
 
 # Find the intersection of src_subject_id across all complete data frames
 common_subjects <- reduce(complete_data_list, function(df1, df2) inner_join(df1, df2, by = "src_subject_id")) %>%
-  select(src_subject_id)
+  pull(src_subject_id)
+
+# Exclude Inter-Sex Individual
+inter_sex_index <- which(complete_data_list$covariates$demo_sex_v2==3)
+inter_sex_id <- complete_data_list$covariates$src_subject_id[inter_sex_index]
+
+study_subjects <- common_subjects[!(common_subjects %in% inter_sex_id)]
 
 # filter all data frames in list to common_subjects
-complete_data_list <- lapply(complete_data_list, function(df) df[df$src_subject_id %in% common_subjects$src_subject_id, ])
+complete_data_list <- lapply(complete_data_list, function(df) df[df$src_subject_id %in% study_subjects, ])
 
 # Print the number of common subjects
-cat("n Common Subjects Across Complete Case Outcomes, Covariates, & Views:", nrow(common_subjects), "\n")
+cat("n Common Subjects Across Complete Case Outcomes, Covariates, & Views:", unique(sapply(complete_data_list, nrow)), "\n")
 
-# Save the common_subjects to a CSV file
+# Save the study_subjects to a CSV file
 sample_key_path <- file.path(data_dir, paste0(data_processing_date, "_", data_processor, "_sample_key.csv"))
-write_csv(common_subjects, sample_key_path)
+write_csv(data.frame(src_subject_id=study_subjects), sample_key_path)
 
 ## -- Summarize Sample's Outcomes & Covariates
 
-# Merge outcomes and covariates data frames and filter to common subjects
+# Merge outcomes and covariates data frames and filter to study subjects
 merged_data <- inner_join(data_list$outcomes, data_list$covariates, by = "src_subject_id") %>%
-  filter(src_subject_id %in% common_subjects$src_subject_id)
+  filter(src_subject_id %in% study_subjects)
 
 # Convert all columns except 'src_subject_id' to numeric
 merged_data <- merged_data %>%
   mutate_at(vars(-src_subject_id), as.numeric)
 
-# Relevel race variables to be factors with levels "No" and "Yes"
-race_vars <- colnames(merged_data)[grepl("_race$", colnames(merged_data))]
+# Relevel race and ethnicity variables to be factors with levels "No" and "Yes"
+race_vars <- c(colnames(merged_data)[grepl("_race$", colnames(merged_data))], "demo_ethn_v2")
 merged_data <- merged_data %>%
   mutate_at(vars(one_of(race_vars)), ~ factor(., levels = c(0, 1), labels = c("No", "Yes")))
 
 # Relevel demo_sex_v2
 merged_data <- merged_data %>%
-  mutate(demo_sex_v2 = factor(demo_sex_v2, levels = c(1, 2, 3, 4), labels = c(
-    "Male", "Female", "Intersex-Male", "Intersex-Female"
+  mutate(demo_sex_v2 = factor(demo_sex_v2, levels = c(1, 2), labels = c(
+    "Male", "Female"
   )))
 
 # Define labels
@@ -117,16 +126,13 @@ table1_labels <- c(
   "Externalizing Problems (Raw)",
   "Sex (At Birth)",
   "Age (Months)",
-  "White (Yes/No)",
-  "Black (Yes/No)",
   "American Indian or Native American (Yes/No)",
-  "Native Hawaiian or Pacific Islander (Yes/No)",
   "Asian (Yes/No)",
-  "Other Race (Yes/No)",
-  "Missing Race & Ethnicity (Yes/No)",
-  # We do not consider indigenous race superset in our analysis. 
-  # "Indigenous Race (Yes/No)",
+  "Black (Yes/No)",
   "Hispanic/Latinx (Yes/No)",
+  "Native Hawaiian or Pacific Islander (Yes/No)",
+  "Other Race (Yes/No)",
+  "White (Yes/No)",
   "Total Family Income (Past 12 Months)",
   "Highest Parent Education Completed",
   "Parent Marital Status"
@@ -135,20 +141,6 @@ table1_labels <- c(
 # Define factor levels and labels
 merged_data <- merged_data %>%
   mutate(
-    # We now treat income and highest education as continuous random variables
-    # demo_comb_income_v2_bl = factor(demo_comb_income_v2_bl, levels = 1:10, labels = c(
-    #   "Less than $5,000", "$5,000 through $11,999", "$12,000 through $15,999", 
-    #   "$16,000 through $24,999", "$25,000 through $34,999", "$35,000 through $49,999",
-    #   "$50,000 through $74,999", "$75,000 through $99,999", "$100,000 through $199,999",
-    #   "$200,000 and greater")),
-    # highest_demo_ed_bl = factor(highest_demo_ed_bl, levels = c(1:22), labels = c(
-    #   "1st grade", "2nd grade", "3rd grade", "4th grade", "5th grade", 
-    #   "6th grade", "7th grade", "8th grade", "9th grade", "10th grade", "11th grade", 
-    #   "12th grade, no diploma", "High school graduate", "GED or equivalent", 
-    #   "Less than 1 year of college credit/post-secondary education", "One year or more of college credit, no degree", 
-    #   "Associate degree: Occupational, Technical, or Vocational", "Associate degree: Academic Program", 
-    #   "Bachelor's degree (e.g., BA, AB, BS, BBA)", "Master's degree (e.g., MA, MS, MEng, MEd, MBA)", 
-    #   "Professional School degree (e.g., MD, DDS, DVM, JD)", "Doctoral degree (e.g., PhD, EdD)")),
     demo_prnt_marital_v2_bl = factor(demo_prnt_marital_v2_bl, levels = c(1:6), labels = c(
       "Married", "Widowed", "Divorced", "Separated", "Never married", "Living with partner"))
   )
@@ -156,23 +148,23 @@ merged_data <- merged_data %>%
 # Apply labels to variables
 colnames(merged_data)[-1] <- table1_labels
 
-# Create Table 1 using the table1 package
-# caption <- "Table 1. Summary statistics of outcomes Internalizing Problems (Raw) and Externalizing Problems (Raw) and covariates for study sample."
-table1_object <- table1(~ . , data = merged_data[, -1]) # , caption = caption)
+# Create Table 1 using the tableone package
+table1_object <- CreateTableOne(vars = colnames(merged_data)[-1], data = merged_data)
 
-# Save the table1 object as an HTML file
-html_output_path <- file.path(figures_dir, paste0(data_processing_date, "_", data_processor, "_table1.html"))
-save_html(table1_object, file = html_output_path)
+# Load fonts for all devices (this includes macOS)
+loadfonts(device = "all")
 
-# Function to save table1 object to HTML
-save_html <- function(table1_object, file) {
-  html <- as.character(table1_object)
-  write(html, file)
-}
+# Print Table 1 with formatting
+table1_object %>%
+  print(showAllLevels = TRUE) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, font_size = 12, extra_css = "font-family: 'Times New Roman';") %>%
+  column_spec(1:3, extra_css = "font-family: 'Times New Roman';")
 
 # Date of the input - the subject ids included in the study sample
-input_date <- "2024-06-06"
-sample_key_path <- file.path("data", paste0(input_date, "_AN_sample_key.csv"))
+data_processing_date <- "2024-06-24"
+sample_key_path <- file.path("data", paste0(data_processing_date, "_AN_sample_key.csv"))
 sample_key <- read.csv(sample_key_path) %>% pull("src_subject_id")
 
 ## -- User Arguments
@@ -427,8 +419,7 @@ write.csv(families_per_site_df, paste0("data/", out_date, "_families_per_site_su
 # Split data into 80:20 train:test family-wise split stratified by study site
 
 # Date of the input - the subject ids included in the study sample
-input_date <- "2024-06-06"
-sample_key_path <- file.path("data", paste0(input_date, "_AN_sample_key.csv"))
+sample_key_path <- file.path("data", paste0(data_processing_date, "_AN_sample_key.csv"))
 sample_key <- read.csv(sample_key_path) %>% pull("src_subject_id")
 # Set the path for raw data files
 data_dir <- '/Users/aidanneher/Library/CloudStorage/Box-Box/ABCD Tabulated Data/5.1/core'
@@ -446,14 +437,6 @@ cluster_data <- read.csv(path) %>%
   arrange(site_id_l, rel_family_id) %>%
   # Filter to those we are using for our analysis
   filter(src_subject_id %in% sample_key)
-
-# Load data
-# cluster_data <- read.csv('path_to_cluster_data.csv')
-
-library(tidyverse)
-
-# Load data
-# cluster_data <- read.csv('path_to_cluster_data.csv')
 
 # Function to create train/test split for each site
 split_train_test <- function(data, train_frac = 0.8) {
@@ -512,3 +495,4 @@ test_list <- lapply(split_lists, `[[`, "test")
 out_date <- Sys.Date()
 saveRDS(train_list, paste0("data/", out_date, "_train_list.rds"))
 saveRDS(test_list, paste0("data/", out_date, "_test_list.rds"))
+

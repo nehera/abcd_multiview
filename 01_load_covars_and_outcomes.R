@@ -246,28 +246,17 @@ abcd_data <- abcd_data %>%
   mutate(demo_ethn_v2 = abs(demo_ethn_v2 - 2), # change "2" to 0 to match other vars 
          White_race = demo_race_a_p___10,
          Black_race = demo_race_a_p___11,
-         AIAN_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 12:13)))
-                             >=1, 1, 0),
-         NHPI_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 14:17)))
-                             >=1, 1, 0),
-         Asian_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 18:24)))
-                              >=1, 1, 0),
-         Other_race = demo_race_a_p___25,
-         # demo_race_a_p___99==1 "Don't Know" & demo_race_a_p___77==1 "Refused to Answer"
-         Missing_ethn_and_race = if_else( ( demo_race_a_p___99 == 1 | demo_race_a_p___77 == 1 ) |
-                                   # if participant did not endorse any of these, mark as missing
-                                   ( White_race != 1 & Black_race != 1 & AIAN_race != 1 &
-                                       NHPI_race != 1 & Asian_race != 1 & Other_race != 1 & 
-                                       demo_ethn_v2 != 1 ), 1, 0),
-         # mark all NAs in missing race as 1
-         Missing_ethn_and_race = if_else(is.na(Missing_ethn_and_race) == T, 1, Missing_ethn_and_race),
-         # mark all NAs in race/ethnicity variables as 0
-         across(c(White_race, Black_race, AIAN_race, NHPI_race, Asian_race, Other_race, demo_ethn_v2),
-                       ~ if_else(is.na(.), 0, .))
-         # We do not consider indigenous as a superset in our analysis. 
-         # ,
-         # Indigenous_race = if_else(AIAN_race == 1 | NHPI_race == 1, 1, 0)
-         )
+         AIAN_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 12:13))) >= 1, 1, 0),
+         NHPI_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 14:17))) >= 1, 1, 0),
+         Asian_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 18:24))) >= 1, 1, 0),
+         Other_race = demo_race_a_p___25)
+
+race_vars <- c(colnames(abcd_data)[grepl("_race$", colnames(abcd_data))], "demo_ethn_v2")
+# Create a flag for any race endorsed
+any_race_endorsed <- if_else(rowSums(select(abcd_data, all_of(race_vars)), na.rm = TRUE) >= 1, 1, 0)
+# Recode NA responses to 0 if at least one race has been endorsed
+abcd_data <- abcd_data %>%
+  mutate(across(all_of(race_vars), ~ if_else(is.na(.) & any_race_endorsed == 1, 0, .)))
 
 # Recode Puberty Variable
 abcd_data <- abcd_data %>%
