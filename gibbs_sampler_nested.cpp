@@ -34,12 +34,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
                           double sigma_ksi_prior_a, double sigma_ksi_prior_b, 
                           double sigma_theta_prior_a, double sigma_theta_prior_b, 
                           double sigma_prior_a, double sigma_prior_b, 
-                          int r, mat U, vec alpha) {
-  
-  // Set GSL random number generator seed
-  // long seed=1;
-  // gsl_rng * rr = gsl_rng_alloc (gsl_rng_rand48);
-  // gsl_rng_set (rr, seed);
+                          int r, mat U_mat, vec alpha_vec) {
   
   // Calculates the number of clusters
   int N_sites = Z_site.n_cols;
@@ -48,19 +43,13 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
   int n_beta = W.n_cols;
   vec y_tilde(N_obs);
   
-  //
-  //arma::mat Sigma_0_inv = inv(U*eye(r, r)*trans(U) + eye(N_obs, N_obs));
   arma::mat D = eye(r, r);
-  arma::mat Sigma_0_inv = eye(N_obs, N_obs) - U*inv(inv(D) + U.t()*U)*U.t();
+  arma::mat Sigma_0_inv = eye(N_obs, N_obs) - U_mat*inv(inv(D) + U_mat.t()*U_mat)*U_mat.t();
   
   // Initialize parameters
   double mu = as_scalar(rnorm_cpp(1, 0, std::sqrt(mu_prior_var)));
   double sigma2_ksi = rinvgamma_cpp(sigma_ksi_prior_a, sigma_ksi_prior_b);
   vec sigma2_theta = zeros(N_sites);
-  
-  //double sigma2 = rinvgamma_cpp(sigma_prior_a, sigma_prior_b);
-  
-  // vec beta = mvnrnd(mu_beta, diagmat(beta_prior_var));
   
   vec ksi = rnorm_cpp(N_sites, 0, std::sqrt(sigma2_ksi));
   
@@ -73,7 +62,7 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
     }
   }
   
-  y_tilde = y - Z_family*theta - U*alpha;
+  y_tilde = y - Z_family*theta - U_mat*alpha_vec;
   vec beta = inv(trans(W)*W)*trans(W)*y_tilde;
   double sigma2 = arma::dot(trans(y-W*beta), (y-W*beta))/(N_obs - W.n_cols);
     
@@ -98,11 +87,11 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
   // Initialize intermediates
   vec y_lessUalpha(N_obs);
   
-  for (int iter = 0; iter < n_iter; iter++) {
+  for (int t = 0; t < n_iter; t++) {
     
     ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (BELOW) /////
     
-    y_lessUalpha = y - U*alpha;
+    y_lessUalpha = y - U_mat*alpha_vec;
     
     // Sample beta
     y_tilde = y_lessUalpha - Z_family*theta; // R_beta
@@ -159,13 +148,13 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
     sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
     
     // Store samples
-    mu_samples(iter) = mu;
-    beta_samples.row(iter) = trans(beta);
-    ksi_samples.row(iter) = ksi.t();
-    theta_samples.row(iter) = theta.t();
-    sigma2_ksi_samples(iter) = sigma2_ksi;
-    sigma2_theta_samples.row(iter) = sigma2_theta.t();
-    sigma2_samples(iter) = sigma2;
+    mu_samples(t) = mu;
+    beta_samples.row(t) = trans(beta);
+    ksi_samples.row(t) = ksi.t();
+    theta_samples.row(t) = theta.t();
+    sigma2_ksi_samples(t) = sigma2_ksi;
+    sigma2_theta_samples.row(t) = sigma2_theta.t();
+    sigma2_samples(t) = sigma2;
   }
   
   // Return samples as a list
@@ -190,10 +179,6 @@ List gibbs_sampler_nested(vec y, mat W, arma::mat Z_family, arma::mat Z_site,
 }
 
 /*** R
-# Install Rcpp and RcppArmadillo if you haven't already
-# install.packages("Rcpp")
-# install.packages("RcppArmadillo")
-
 library(Rcpp)
 library(RcppArmadillo)
 library(parallel)
@@ -442,8 +427,6 @@ n_burnin <- floor(n_iter*0.5)
 RE_df <- data.frame(y = y,
                     site = which(Z_site == 1, arr.ind = T)[,2],
                     family = which(Z_family == 1, arr.ind = T)[,2])
-# Source the C++ code
-# sourceCpp("gibbs_sampler_nested.cpp")
 
 # Run Gibbs sampler in parallel
 seeds <- 1:n_chains
@@ -616,13 +599,13 @@ for(g in seq_along(parameter_groups)) {
 
       # Create a dataframe for ggplot
       df <- data.frame(
-        iter = 1:n_iter,
+        t = 1:n_iter,
         value = param_values,
         chain = factor(chain)
       )
 
       # Create the trace plot
-      p <- ggplot(df, aes(x = iter, y = value, color = chain)) +
+      p <- ggplot(df, aes(x = t, y = value, color = chain)) +
         geom_line() +
         geom_hline(yintercept = true_value, linetype = "dashed", color = "black",
                    linewidth = (1 + 1/(8*number_displayed))) +
