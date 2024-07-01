@@ -1733,13 +1733,13 @@ N_sites <- 30
 n_families_per_site <- 30
 n_individs_per_family <- 3
 
-sigma2_ksi_true <- 2 # Site Variance
-sigma2_theta_true <- rep(1.5, N_sites) # Family:Site Variances
-sigma2_true <- 0.5
+sigma2_ksi_true <- 1 # Site Variance
+sigma2_theta_true <- rep(2, N_sites) # Family:Site Variances
+sigma2_true <- 1
 
 # User Arguments for Parameter Estimation
 n_chains <- 1
-n_iter <- 5000
+n_iter <- 10000
 n_burnin <- floor(n_iter*0.5)
 n_sample <- n_iter - n_burnin
 
@@ -2103,7 +2103,7 @@ samples_list[[1]]$EstLoad[1:2]
 print("True Loadings:")
 simulation_results$A
 print("Element-wise mean absolute error between true U and estimated U:")
-mean(simulation_results$U - samples_list[[1]]$EstU)
+mean(abs(simulation_results$U - samples_list[[1]]$EstU))
 print("Estimated Sig2:")
 samples_list[[1]]$EstSig2
 
@@ -2405,4 +2405,9 @@ cat("% of random intercept parameters with correct sign: ", mean(random_intercep
 cat("% of variance parameters within credible interval: ", mean(variance_comparison$within_credible_interval), "\n")
 
 print(simulation_settings)
+
+# # Run Vanilla BIP to estimate variance
+# vanilla_result <- BIPnet::BIP(dataList = dataList, IndicVar = IndicVar, Method = "BIP", 
+#             nbrcomp = r, sample = n_sample+1, burnin = n_burnin)
+# vanilla_result$EstSig2
 */
