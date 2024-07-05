@@ -98,18 +98,30 @@ arma::mat extract_U_mat(double** U, int n, int r) {
   return U_mat; // Return the populated matrix
 }
 
-arma::vec extract_alpha_vec(double*** A, arma::vec IndVar, int Np, int r) {
-  std::vector<double> temp_alpha; // Temporary vector to store the elements before converting to arma::vec
+arma::vec extract_alpha_vec(double*** A, vec IndVar, int Np, int r) {
+  arma::vec alpha_vec(r);
   for (int m = 0; m < Np; ++m) {
     if (IndVar[m] == 1) {
       for (int l = 0; l < r; ++l) {
-        temp_alpha.push_back(A[m][l][0]); // Extract A[m][l][0] where IndVar[m] == 1
+        alpha_vec(l) = A[m][l][0]; // Extract A[m][l][0] where IndVar[m] == 1
       }
     }
   }
-  // Convert the std::vector to arma::vec
-  arma::vec alpha_vec(temp_alpha);
+  
   return alpha_vec;
+}
+
+arma::vec extract_gamma_vec(bool** rhoest, arma::vec IndVar, int Np, int r) {
+  arma::vec gamma_vec = zeros(r);
+  for (int m = 0; m < Np; ++m) {
+    if (IndVar[m] == 1) {
+      for (int l = 0; l < r; ++l) {
+        gamma_vec(l) = rhoest[m][l]; // Extract rhoest[m][l] where IndVar[m] == 1
+      }
+    }
+  }
+  
+  return gamma_vec;
 }
 
 double extract_sigma2(double** s2, arma::vec IndVar, int Np) {
@@ -672,7 +684,7 @@ void GroupEffect(int l,gsl_rng * rr,bool rho,int K,int p, bool * R,double *A,dou
   } // End for else if (rho==0)
 }
 
-void LoadAOther(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau,double ** A, double ** U,double ** X,double* s2,bool ** Gam){
+void  LoadAOther(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau,double ** A, double ** U,double ** X,double* s2,bool ** Gam){
   int s,s1,j,i;
   for (j=0;j<p;j++){
     for (s=0;s<r;s++){
@@ -768,7 +780,7 @@ void EstimateLoad(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau,doub
 
 
 
-void proposal(int n,bool R[n],bool R1[n],float phi, gsl_rng * r) {
+void proposal(int n,bool *R,bool *R1,float phi, gsl_rng * r) {
   int i;
   for (i=0; i<n;i++) R1[i]=R[i];
   
@@ -918,9 +930,10 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                         arma::vec EstLoad, int nbrmodel1, arma::vec postgam, arma::vec priorcompsel, arma::vec priorcompselo,
                         arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel,
                         arma::mat Z_family, arma::mat Z_site, arma::mat Z_family_to_site,
-                        double mu_prior_var, arma::vec mu_beta, arma::vec beta_prior_var,
+                        double mu_prior_var, arma::vec mu_beta, arma::vec beta_prior_var, arma::mat W,
                         double sigma_ksi_prior_a, double sigma_ksi_prior_b,
-                        double sigma_theta_prior_a, double sigma_theta_prior_b) {
+                        double sigma_theta_prior_a, double sigma_theta_prior_b,
+                        double sigma_prior_a, double sigma_prior_b) {
 
   setvbuf(stdout, NULL, _IONBF, 0);
   
@@ -937,6 +950,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     Rcpp::Rcout << "sigma_ksi_prior_b: " << sigma_ksi_prior_b << "\n";
     Rcpp::Rcout << "sigma_theta_prior_a: " << sigma_theta_prior_a << "\n";
     Rcpp::Rcout << "sigma_theta_prior_b: " << sigma_theta_prior_b << "\n";
+    Rcpp::Rcout << "sigma_prior_a: " << sigma_prior_a << "\n";
+    Rcpp::Rcout << "sigma_prior_b: " << sigma_prior_b << "\n";
   }
   
   int i,l,j,k;
@@ -1025,7 +1040,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   
   
   // Define hyperparameters
-  double a0=1; double b0=1;
+  //double a0=1; double b0=1;
   double alphab=priorb[0]; double betab=priorb[1];
   double al=priorcompsel[0]; double bl=priorcompsel[1]; // Hyper for q
   double al0=priorcompselo[0]; double bl0=priorcompselo[1]; // Hyper for q in the outcome
@@ -1166,9 +1181,10 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   
   // Initialize outcome parameter sampling data structures
   arma::vec y = extract_y_vec(X, IndVar, Np, n);
-  arma::mat W = extract_W_mat(X, IndVar, P, Np, n); 
+  //arma::mat W = extract_W_mat(X, IndVar, P, Np, n); 
   arma::mat U_mat = extract_U_mat(U, n, r);
   arma::vec alpha_vec = extract_alpha_vec(A, IndVar, Np, r);
+  arma::vec gamma_vec = extract_gamma_vec(rhoest, IndVar, Np, r);
   
   Rcpp::Rcout << "First element of y: " << y(0) << "\n";
   Rcpp::Rcout << "First element of W: " << W(0,0) << "\n";  // First element in matrix W
@@ -1182,26 +1198,32 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   int N_obs = y.n_elem;
   int n_beta = W.n_cols;
   vec y_tilde(N_obs);
-  arma::mat D = eye(r, r);
-  arma::mat Sigma_0_inv = eye(N_obs, N_obs) - U_mat*inv(inv(D) + U_mat.t()*U_mat)*U_mat.t();
+  int n_active_comp = sum(gamma_vec);
+  uvec active_comp = find(gamma_vec == 1);
+  
+  arma::mat D = eye(n_active_comp, n_active_comp);
+  arma::mat Sigma_0_inv = eye(N_obs, N_obs) - U_mat.cols(active_comp)*inv(inv(D) + U_mat.cols(active_comp).t()*U_mat.cols(active_comp))*U_mat.cols(active_comp).t();
+  vec n_inds_per_site = trans(sum(Z_site, dim = 0));
+  
   // Initialize parameters
-  double mu = as_scalar(rnorm_cpp(1, 0, std::sqrt(mu_prior_var)));
-  double sigma2_ksi = rinvgamma_cpp(sigma_ksi_prior_a, sigma_ksi_prior_b);
-  vec sigma2_theta = zeros(N_sites);
-  vec ksi = rnorm_cpp(N_sites, 0, std::sqrt(sigma2_ksi));
+  double mu = mean(y);
+  //double sigma2_ksi = var(inv_sympd(Z_site.t()*Z_site)*Z_site.t()*y);
+  double sigma2_ksi = sigma_ksi_prior_b/(sigma_ksi_prior_a - 1);
+  vec sigma2_theta(N_sites, fill::value(sigma_theta_prior_b/(sigma_theta_prior_a - 1)));
+  vec ksi = rnorm_cpp(N_sites, mu, std::sqrt(sigma2_ksi));
   vec theta = zeros(N_families);  // Changed to initialize theta to zero
   for(int s = 0; s < N_sites; s++) {
-    sigma2_theta(s) = rinvgamma_cpp(sigma_theta_prior_a, sigma_theta_prior_b);
+    //sigma2_theta(s) = rinvgamma_cpp(sigma_theta_prior_a, sigma_theta_prior_b);
     arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong to site s
     for (int f : indices_family_in_site) {
       theta(f) = as_scalar(rnorm_cpp(1, ksi(s), std::sqrt(sigma2_theta(s))));
     }
   }
-  y_tilde = y - Z_family*theta - U_mat*alpha_vec;
-  vec beta = inv(trans(W)*W)*trans(W)*y_tilde;
+  y_tilde = y - Z_family*theta - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
+  vec beta = inv_sympd(trans(W)*W)*trans(W)*y_tilde;
+  
   // double sigma2 = arma::dot(trans(y-W*beta), (y-W*beta))/(N_obs - W.n_cols);
-  double sigma2 = 0.1;
-  Rcpp::Rcout << "sigma2 initial: " << sigma2;
+  double sigma2 = sigma_prior_b/(sigma_prior_a - 1);
   
   // Store initial values
   double mu_init = mu;
@@ -1241,48 +1263,47 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
           
           U_mat = extract_U_mat(U, n, r);
           alpha_vec = extract_alpha_vec(A, IndVar, Np, r);
-          sigma2 = extract_sigma2(s2, IndVar, Np);
+          
+          // Sample sigma
+          y_tilde = y - W*beta - Z_family*theta - U_mat.cols(active_comp)*alpha_vec.elem(active_comp); // R_sigma
+          D = eye(n_active_comp, n_active_comp);
+          Sigma_0_inv = eye(N_obs, N_obs) - U_mat.cols(active_comp)*inv(inv(D) + U_mat.cols(active_comp).t()*U_mat.cols(active_comp))*U_mat.cols(active_comp).t();
+          double a_sigma = sigma_prior_a + N_obs/2.0;
+          double b_sigma = sigma_prior_b + arma::dot(y_tilde, Sigma_0_inv*y_tilde)/2.0;
+          sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
+          //sigma2 = extract_sigma2(s2, IndVar, Np);
+          
           // Rcpp::Rcout << "One value of U_mat: " << U_mat(0, 0) << "\n";
           // Rcpp::Rcout << "One value of alpha_vec: " << alpha_vec(0) << "\n";
           // Rcpp::Rcout << "sigma2_t: " << sigma2 << "\n";
           
           ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (BELOW) /////
           
-          y_lessUalpha = y - U_mat*alpha_vec;
+          y_lessUalpha = y - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
           
           // Sample beta
           y_tilde = y_lessUalpha - Z_family*theta; // R_beta
           mat V_beta = inv(trans(W)*W/sigma2 + inv(diagmat(beta_prior_var)));
           vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(diagmat(beta_prior_var))*mu_beta);
-          
-          // ////// beta sampling debugging:
-          // // Calculate trans(W)*W and print
-          // arma::mat WtW = trans(W) * W;
-          // Rcpp::Rcout << "trans(W)*W: \n" << WtW << "\n";
-          // // Calculate trans(W)*W/sigma2 and print
-          // arma::mat WtW_sigma2 = WtW / sigma2;
-          // Rcpp::Rcout << "trans(W)*W / sigma2: \n" << WtW_sigma2 << "\n";
-          // // Calculate inv(diagmat(beta_prior_var)) and print
-          // arma::mat inv_beta_prior_var = inv(diagmat(beta_prior_var));
-          // Rcpp::Rcout << "inv(diagmat(beta_prior_var)): \n" << inv_beta_prior_var << "\n";
-          // // Calculate W.t() * y_tilde and print
-          // arma::vec Wty = trans(W) * y_tilde;
-          // Rcpp::Rcout << "W.t() * y_tilde: \n" << Wty << "\n";
-          // // Calculate W.t() * y_tilde / sigma2 and print
-          // arma::vec Wty_sigma2 = Wty / sigma2;
-          // Rcpp::Rcout << "W.t() * y_tilde / sigma2: \n" << Wty_sigma2 << "\n";
-          // // Calculate inv(diagmat(beta_prior_var)) * mu_beta and print
-          // arma::vec inv_beta_prior_mu_beta = inv_beta_prior_var * mu_beta;
-          // Rcpp::Rcout << "inv(diagmat(beta_prior_var)) * mu_beta: \n" << inv_beta_prior_mu_beta << "\n";
-          // Rcpp::Rcout << "m_beta: " << m_beta.t() << "\n";  // Transpose for easier reading if it's a column vector
-          // Rcpp::Rcout << "V_beta: \n" << V_beta << "\n";
-          
           beta = mvnrnd(m_beta, V_beta);
           
           // Sample random effects
           y_tilde = y_lessUalpha - W*beta; // R_theta
+          
+          // Sample overall mean mu
+          double V_mu = 1.0/(1.0/mu_prior_var + N_sites/sigma2_ksi);
+          double m_mu = V_mu*(sum(ksi)/sigma2_ksi);
+          mu = as_scalar(rnorm_cpp(1, m_mu, std::sqrt(V_mu)));
+          
           for (int s = 0; s < N_sites; s++) {
             arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
+            
+            // Sample site-level intercepts ksi
+            double sum_theta = sum(theta.elem(families_in_s));
+            int n_s = families_in_s.n_elem;
+            double V_ksi = 1.0 / (n_s/sigma2_theta(s) + 1.0/sigma2_ksi);
+            double m_ksi = V_ksi*(mu + sum_theta/sigma2_theta(s));
+            ksi(s) = as_scalar(rnorm_cpp(1, m_ksi, sqrt(V_ksi)));
             
             // Sample family-level intercepts theta
             for (int f : families_in_s) {
@@ -1294,29 +1315,17 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
               theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
             }
             
-            // Sample site-level intercepts ksi
-            double sum_theta = sum(theta.elem(families_in_s));
-            int n_s = families_in_s.n_elem;
-            double V_ksi = 1.0 / (n_s/sigma2_theta(s) + 1.0/sigma2_ksi);
-            double m_ksi = V_ksi*(mu + sum_theta/sigma2_theta(s));
-            ksi(s) = as_scalar(rnorm_cpp(1, m_ksi, sqrt(V_ksi)));
-            
             // Sample sigma2_theta for s-th site
             double a_sigma_theta = sigma_theta_prior_a + n_s/2.0;
             double b_sigma_theta = sigma_theta_prior_b + sum(square(theta.elem(families_in_s) - ksi(s)*ones(n_s))) / 2.0;
             sigma2_theta[s] = rinvgamma_cpp(a_sigma_theta, b_sigma_theta);    
             
           }
-          
-          // Sample overall mean mu
-          double V_mu = 1.0/(1.0/mu_prior_var + N_sites/sigma2_ksi);
-          double m_mu = V_mu*(sum(ksi)/sigma2_ksi);
-          mu = as_scalar(rnorm_cpp(1, m_mu, std::sqrt(V_mu)));
-          
+
           // Sample sigma2_ksi
           double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
           double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi - mu))/2.0;
-          sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);    
+          sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);
           
           ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (ABOVE) /////
           
@@ -1404,7 +1413,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         SamplerhoGamma(rr,r, n,IndVar[m],P[m],rhoest[m],Tau[m], U,X1[m],qv[m],q[m],s2[m],quadForm[m],Gam[m],loggauss[m]);
       }
       
-      sample_sigma2(rr,  P[m],n,a0, b0,quadForm[m],s2[m]);
+      sample_sigma2(rr,  P[m],n,sigma_prior_a, sigma_prior_b,quadForm[m],s2[m]);
       LoadAOther(rr,r, n,P[m],rhoest[m],Tau[m],A[m],U,X1[m],s2[m],Gam[m]);
       
       for (l=0;l<r;l++){
@@ -1714,23 +1723,20 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
 /*** R
 # Load Libraries
-library(MASS)
 library(Rcpp)
 library(RcppArmadillo)
 library(parallel)
-library(dplyr)
-library(ggplot2)
 library(gridExtra)
 library(rstan)
 library(scales)
-library(lme4)
+library(tidyverse)
 library(coda)
 
 # User Arguments for Data Simulation
 r <- 4
 n_covars <- 2
-N_sites <- 30
-n_families_per_site <- 30
+N_sites <- 20
+n_families_per_site <- 20
 n_individs_per_family <- 3
 
 sigma2_ksi_true <- 1 # Site Variance
@@ -1739,20 +1745,9 @@ sigma2_true <- 1
 
 # User Arguments for Parameter Estimation
 n_chains <- 1
-n_iter <- 10000
+n_iter <- 5000
 n_burnin <- floor(n_iter*0.5)
 n_sample <- n_iter - n_burnin
-
-# Priors
-priors <- list(mu_prior_var = 100,
-               mu_beta = rep(0, n_covars),
-               beta_prior_var = rep(100, n_covars),
-               sigma_ksi_prior_a = 3,
-               sigma_ksi_prior_b = 2,
-               sigma_theta_prior_a = 3,
-               sigma_theta_prior_b = 2,
-               sigma_prior_a = 3,
-               sigma_prior_b = 2)
 
 # Simulate Data
 simulate_A <- function(r, p_m, n_important_components, n_important_features) {
@@ -1842,10 +1837,10 @@ simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
   
   # Sample latent factor loadings
   alpha <- matrix(0, nrow = r, ncol = 1)
-  #alpha[omics_data$index_important_components, ] <- rnorm(length(omics_data$index_important_components))
-  alpha <- rnorm(r, 0, sqrt(sigma2))
+  alpha[omics_data$index_important_components, ] <- rnorm(length(omics_data$index_important_components), 0, sqrt(sigma2))
+  #alpha <- rnorm(r, 0, sqrt(sigma2))
   
-  # Simulate ksi_s ~ N(0, sigma2_ksi)
+  # Simulate ksi_s ~ N(mu, sigma2_ksi)
   ksi <- rnorm(N_sites, mu, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
   
   # Sample theta_sf|ksi_s ~ N(ksi_s, sigma2_theta_s)
@@ -1865,7 +1860,7 @@ simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
     }
   }
   
-  beta <- matrix(rnorm(n_covars), ncol = 1)
+  beta <- matrix(rep(1, n_covars), ncol = 1)
   
   # Sample residuals
   epsilon <- matrix(rnorm(N_obs, sd = sqrt(sigma2)), nrow = N_obs)
@@ -1896,7 +1891,7 @@ U_true <- simulation_results$U
 alpha_true <- simulation_results$alpha
 
 W <- simulation_results$W
-W[,-1] <- scale(W[,-1])
+W <- scale(W)
 Z_site <- simulation_results$Z_site
 Z_family <- simulation_results$Z_family
 Z_family_to_site <- simulation_results$Z_family_to_site
@@ -1908,18 +1903,29 @@ RE_df <- data.frame(y = y,
                     site = which(Z_site == 1, arr.ind = T)[,2],
                     family = which(Z_family == 1, arr.ind = T)[,2])
 
+# Priors
+priors <- list(mu_prior_var = 100,
+               mu_beta = rep(0, n_covars),
+               beta_prior_var = rep(100, n_covars),
+               sigma_ksi_prior_a = 2+(mean(ksi_true))^2/var(ksi_true),
+               sigma_ksi_prior_b = mean(ksi_true)*(1+(mean(ksi_true))^2/var(ksi_true)),
+               sigma_theta_prior_a = 2+(mean(theta_true))^2/var(theta_true),
+               sigma_theta_prior_b = mean(theta_true)*(1+(mean(theta_true))^2/var(theta_true)),
+               sigma_prior_a = 2+(mean(y))^2/var(y),
+               sigma_prior_b = mean(y)*(1+(mean(y))^2/var(y)))
+
 # TODO Generalize datalist extraction to more than one view
-dataList <- list(simulation_results$X[[1]],
-                 simulation_results$Y, W)
-IndicVar <- c(0, 1, 2)
+dataList <- list(simulation_results$Y,
+                 simulation_results$X[[1]],
+                 W)
+IndicVar <- c(1, 0)
 
 # Define R wrapper
 BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL, 
                 Method=Method, nbrcomp=4, sample=5000, burnin=1000, nbrmaxmodels=50,
                 priorcompselv=c(1,1), priorcompselo=c(1,1), priorb0=c(2,2), priorb=c(1,1), priorgrpsel=c(1,1), probvarsel=0.05,
                 Z_family, Z_site, Z_family_to_site,
-                mu_prior_var, mu_beta, beta_prior_var, sigma_ksi_prior, sigma_theta_prior
-                ) {
+                mu_prior_var, mu_beta, beta_prior_var, sigma_ksi_prior, sigma_theta_prior, sigma_prior) {
   
   if (sample < burnin){
     stop("Argument burnin must be smaller than or equal to sample, the number of MCMC iterations to accept.")
@@ -1948,7 +1954,7 @@ BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL,
     stop("You must provide Method = BIP, BIPnet, or BIPmixed")
   }
   
-  Np=length(dataList)
+  Np=length(IndicVar)
   P=NULL
   n=nrow(dataList[[1]])
   P=NULL
@@ -2000,11 +2006,13 @@ BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL,
     priorcompselo = priorcompselo, priorb0 = priorb0, priorb = as.double(priorb), 
     priorgrpsel = priorgrpsel, probvarsel = as.double(probvarsel), 
     Z_family, Z_site, Z_family_to_site,
-    mu_prior_var, mu_beta, beta_prior_var,
+    mu_prior_var, mu_beta, beta_prior_var, W,
     sigma_ksi_prior_a = sigma_ksi_prior[1],
     sigma_ksi_prior_b = sigma_ksi_prior[2],
     sigma_theta_prior_a = sigma_theta_prior[1],
-    sigma_theta_prior_b = sigma_theta_prior[2]
+    sigma_theta_prior_b = sigma_theta_prior[2],
+    sigma_prior_a = sigma_prior[1],
+    sigma_prior_b = sigma_prior[2]
   )
   
   reseffect=result$EstLoadMod
@@ -2088,7 +2096,8 @@ samples_list <- mclapply(seeds, function(seed) {
       mu_prior_var = priors$mu_prior_var, mu_beta = priors$mu_beta, 
       beta_prior_var = priors$beta_prior_var, 
       sigma_ksi_prior = c(priors$sigma_ksi_prior_a, priors$sigma_ksi_prior_b), 
-      sigma_theta_prior = c(priors$sigma_theta_prior_a, priors$sigma_theta_prior_b))
+      sigma_theta_prior = c(priors$sigma_theta_prior_a, priors$sigma_theta_prior_b),
+      sigma_prior = c(priors$sigma_prior_a, priors$sigma_prior_b))
 }, mc.cores = n_chains)
 end_time <- Sys.time()
 
@@ -2374,13 +2383,6 @@ for(g in seq_along(parameter_groups)) {
   
 }
 
-# Prepare a list to store ggplot objects
-plot_list <- list()
-
-# Traceplot of joint ksi prior
-library(mvtnorm)
-#ldmvnorm()
-
 simulation_settings <- data.frame(
   variable = c("# of Sites", "# of Families", "# of Observations", "# of Iterations"),
   value = c(N_sites, N_families, N_obs, n_iter)
@@ -2389,6 +2391,7 @@ simulation_settings <- data.frame(
 RE_df$w1 <- W[,1]
 RE_df$w2 <- W[,2]
 
+library(lme4)
 summary(lmer(y~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
 
 # Observation: Fixed effect intercept & Site-level random intercepts 
@@ -2398,7 +2401,7 @@ summary(lmer(y~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
 
 #rm(list = ls(sigma2_init))
 
-sprintf("BIP duration: %f", end_time-start_time)
+sprintf("BIP duration: %f minutes", difftime(end_time, start_time, "mins"))
 cat("% of all parameters within credible interval: ", mean(comparison$within_credible_interval), "\n")
 cat("% of random intercept parameters within credible interval: ", mean(random_intercept_comparison$within_credible_interval), "\n")
 cat("% of random intercept parameters with correct sign: ", mean(random_intercept_comparison$correct_sign), "\n")
