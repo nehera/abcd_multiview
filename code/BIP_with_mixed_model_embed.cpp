@@ -99,7 +99,7 @@ arma::mat extract_U_mat(double** U, int n, int r) {
 }
 
 arma::vec extract_alpha_vec(double*** A, vec IndVar, int Np, int r) {
-    arma::vec alpha_vec(r);
+    arma::vec alpha_vec = zeros(r);
     for (int m = 0; m < Np; ++m) {
         if (IndVar[m] == 1) {
             for (int l = 0; l < r; ++l) {
@@ -1119,6 +1119,11 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
             if (IndVar[m]==1){ //Response
                 Gam[m][0][l]=rhoest[m][l];
+                if(Gam[m][0][l]==1) {
+                    A[m][l][0]=0.1;
+                } else{
+                    A[m][l][0]=0;
+                }
             } else if (IndVar[m]==2){ //Clinical factors
                 rhoest[m][l]=1;
                 for (j=0;j<P[m];j++) {
@@ -1238,7 +1243,9 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
     // Storage for samples
     vec mu_samples(n_iter, fill::zeros);
+    mat alpha_samples(n_iter, r, fill::zeros);
     mat beta_samples(n_iter, n_beta, fill::zeros);
+    mat gamma_samples(n_iter, r, fill::zeros);
     mat ksi_samples(n_iter, N_sites, fill::zeros);
     mat theta_samples(n_iter, N_families, fill::zeros);
     vec sigma2_ksi_samples(n_iter, fill::zeros);
@@ -1264,17 +1271,12 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                 if (Method==2) {
 
                     U_mat = extract_U_mat(U, n, r);
+                    gamma_vec = extract_gamma_vec(rhoest, IndVar, Np, r);
                     alpha_vec = extract_alpha_vec(A, IndVar, Np, r);
                     n_active_comp = sum(gamma_vec);
                     active_comp = find(gamma_vec == 1);
 
-                    // Sample sigma
-                    // y_tilde = y - W*beta - Z_family*theta - U_mat.cols(active_comp)*alpha_vec.elem(active_comp); // R_sigma
-                    // D = eye(n_active_comp, n_active_comp);
-                    // Sigma_0_inv = eye(N_obs, N_obs) - U_mat.cols(active_comp)*inv(inv(D) + U_mat.cols(active_comp).t()*U_mat.cols(active_comp))*U_mat.cols(active_comp).t();
-                    // double a_sigma = sigma_prior_a + N_obs/2.0;
-                    // double b_sigma = sigma_prior_b + arma::dot(y_tilde, Sigma_0_inv*y_tilde)/2.0;
-                    // sigma2 = rinvgamma_cpp(a_sigma, b_sigma);
+                    // Grab sigma2
                     sigma2 = extract_sigma2(s2, IndVar, Np);
 
                     // Rcpp::Rcout << "One value of U_mat: " << U_mat(0, 0) << "\n";
@@ -1335,19 +1337,17 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
                     // Store samples
                     mu_samples(t) = mu;
-                    beta_samples.row(t) = trans(beta);
+                    alpha_samples.row(t) = alpha_vec.t();
+                    beta_samples.row(t) = beta.t();
+                    gamma_samples.row(t) = gamma_vec.t();
                     ksi_samples.row(t) = ksi.t();
                     theta_samples.row(t) = theta.t();
                     sigma2_ksi_samples(t) = sigma2_ksi;
                     sigma2_theta_samples.row(t) = sigma2_theta.t();
-
-                    // Store sigma2
                     sigma2_samples(t) = sigma2;
 
                     // Update intercept
                     //intercp = mu;
-                    // Print intercept
-                    // Rcpp::Rcout << "Intercept: " << intercp << "\n";
 
                     // Update residualization
                     arma::vec Wbeta = W*beta;
@@ -1651,7 +1651,6 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
             }
         }
     }
-
     free_dmatrix(rhomean,0,Np-1,0,r-1);
 
     for (m=0;m<Np;m++){
@@ -1706,23 +1705,23 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         Rcpp::Named("EstSig2") = EstSig2,
         Rcpp::Named("EstLoadMod") = EstLoadMod,
         Rcpp::Named("nbrmodel1") = nbrmodel1,
-        Named("mu_samples") = mu_samples,
-        Named("beta_samples") = beta_samples,
-        Named("ksi_samples") = ksi_samples,
-        Named("theta_samples") = theta_samples,
-        Named("sigma2_ksi_samples") = sigma2_ksi_samples,
-        Named("sigma2_theta_samples") = sigma2_theta_samples,
-        Named("sigma2_samples") = sigma2_samples,
-        Named("initial_values") = List::create(
-            Named("mu_init") = mu_init,
-            Named("alpha_init") = alpha_init,
-            Named("beta_init") = beta_init,
-            Named("gamma_init") = gamma_init,
-            Named("ksi_init") = ksi_init,
-            Named("theta_init") = theta_init,
-            Named("sigma2_ksi_init") = sigma2_ksi_init,
-            Named("sigma2_theta_init") = sigma2_theta_init,
-            Named("sigma2_init") = sigma2_init
+        Rcpp::Named("mu_samples") = mu_samples,
+        Rcpp::Named("beta_samples") = beta_samples,
+        Rcpp::Named("ksi_samples") = ksi_samples,
+        Rcpp::Named("theta_samples") = theta_samples,
+        Rcpp::Named("sigma2_ksi_samples") = sigma2_ksi_samples,
+        Rcpp::Named("sigma2_theta_samples") = sigma2_theta_samples,
+        Rcpp::Named("sigma2_samples") = sigma2_samples,
+        Rcpp::Named("initial_values") = List::create(
+            Rcpp::Named("mu_init") = mu_init,
+            Rcpp::Named("alpha_init") = alpha_init,
+            Rcpp::Named("beta_init") = beta_init,
+            Rcpp::Named("gamma_init") = gamma_init,
+            Rcpp::Named("ksi_init") = ksi_init,
+            Rcpp::Named("theta_init") = theta_init,
+            Rcpp::Named("sigma2_ksi_init") = sigma2_ksi_init,
+            Rcpp::Named("sigma2_theta_init") = sigma2_theta_init,
+            Rcpp::Named("sigma2_init") = sigma2_init
         )
     );
 }
@@ -1743,7 +1742,7 @@ r <- 4
 n_covars <- 2
 N_sites <- 30
 n_families_per_site <- 30
-n_individs_per_family <- 3
+n_individs_per_family <- 10
 
 sigma2_ksi_true <- 1 # Site Variance
 sigma2_theta_true <- rep(2, N_sites) # Family:Site Variances
@@ -1751,18 +1750,20 @@ sigma2_true <- 1
 
 # User Arguments for Parameter Estimation
 n_chains <- 1
-n_iter <- 7000
+n_iter <- 5000
 n_burnin <- floor(n_iter*0.5)
 n_sample <- n_iter - n_burnin
+# n_sample <- 2000
+# n_burnin <- n_iter - n_sample
 
 # Simulate Data
-simulate_A <- function(r, p_m, n_important_components, n_important_features) {
+simulate_A <- function(r, p_m, n_important_components, n_important_features, sigma2) {
     A <- matrix(0, nrow = r, ncol = p_m)
     if (n_important_components > 0) {
         index_important_components <- seq(to = n_important_components)
         index_important_features <- seq(to = n_important_features)
         n_nonzero_a <- n_important_components * n_important_features
-        nonzero_a <- matrix(rnorm(n_nonzero_a),
+        nonzero_a <- matrix(rnorm(n_nonzero_a, sd = sqrt(sigma2)),
                             nrow = n_important_components,
                             ncol = n_important_features)
         A[index_important_components, index_important_features] <- nonzero_a
@@ -1794,7 +1795,7 @@ simulate_omics_data <- function(n_views=2, N_obs=200, p_m=10, r=4,
     E_list <- list()
 
     for (m in 1:n_views) {
-        A_list[[m]] <- simulate_A(r, p_m, n_important_components, n_important_features)
+        A_list[[m]] <- simulate_A(r, p_m, n_important_components, n_important_features, sigma2)
         E_list[[m]] <- matrix(data = rnorm(N_obs*p_m, sd = sqrt(sigma2)), nrow = N_obs, ncol = p_m)
         X_list[[m]] <- U %*% A_list[[m]] + E_list[[m]]
     }
@@ -1933,9 +1934,9 @@ BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL,
                 Z_family, Z_site, Z_family_to_site,
                 mu_prior_var, mu_beta, beta_prior_var, sigma_ksi_prior, sigma_theta_prior, sigma_prior) {
 
-    if (sample < burnin){
-        stop("Argument burnin must be smaller than or equal to sample, the number of MCMC iterations to accept.")
-    }
+    # if (sample < burnin){
+    #     stop("Argument burnin must be smaller than or equal to sample, the number of MCMC iterations to accept.")
+    # }
     if (sample<=20){
         stop("Please specify a larger number of MCMC iterations")
     }
@@ -2074,7 +2075,9 @@ BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL,
                  nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,
                  PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD,
                  mu_samples = result$mu_samples,
+                 #alpha_samples = result$alpha_samples,
                  beta_samples = result$beta_samples,
+                 #gamma_samples = result$gamma$samples,
                  ksi_samples = result$ksi_samples,
                  theta_samples = result$theta_samples,
                  sigma2_ksi_samples = result$sigma2_ksi_samples,
