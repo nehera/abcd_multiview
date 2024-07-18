@@ -1802,7 +1802,7 @@ simulate_A <- function(r, p_m, n_important_components, n_important_features, sig
 # activation pattern is same across views
 simulate_omics_data <- function(n_views=2, N_obs=200, p_m=10, r=4,
                                 prob_feature_importance=0.5,
-                                prob_component_importance=0.5,
+                                prob_component_importance=0.25,
                                 sigma2=1) {
 
     n_important_features <- floor(prob_feature_importance*p_m)
@@ -1838,7 +1838,7 @@ simulate_omics_data <- function(n_views=2, N_obs=200, p_m=10, r=4,
 # Simulates omics data and then outcome data with random effects
 simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
                                     prob_feature_importance=0.5,
-                                    prob_component_importance=0.5,
+                                    prob_component_importance=0.25,
                                     sigma2_ksi=1, sigma2_theta=rep(1, 5),
                                     N_sites=5, n_families_per_site=3,
                                     n_individs_per_family = 2,
@@ -2473,7 +2473,7 @@ ggplot(mcmc_summary, aes(x = parameter_type, y = Rhat)) +
 # Create a data frame with the iteration index and sigma2_non_outcome_samples values
 traceplot_data <- tibble(
   iteration = seq_along(samples_list[[1]]$sigma2_non_outcome_samples[,1]),
-  sigma2_non_outcome = samples_list[[1]]$sigma2_non_outcome_samples[,2]
+  sigma2_non_outcome = samples_list[[1]]$sigma2_non_outcome_samples[,3]
 )
 
 # Create the traceplot using ggplot2
