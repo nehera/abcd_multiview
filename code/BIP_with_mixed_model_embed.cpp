@@ -962,7 +962,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
     printf("Number of burn-in is %d\n",burninsample);
 
-    printf("Number of samples is %d\n",n);
+    printf("Number of observations is %d\n",n);
 
     for (m=0;m<Np;m++){
         int n_markers = P[m];
@@ -1165,6 +1165,10 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
             quadForm[m][j]=Gamvs[m][j]=0;
             mj+=1;
         }
+        
+        if (IndVar[m] ==1) {
+          s2[m][j]=1.0;
+        }
     }
 
     // Dim of a model
@@ -1213,22 +1217,29 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     // Initialize parameters
     double mu = mean(y);
     //double sigma2_ksi = var(inv_sympd(Z_site.t()*Z_site)*Z_site.t()*y);
-    double sigma2_ksi = sigma_ksi_prior_b/(sigma_ksi_prior_a - 1);
-    vec sigma2_theta(N_sites, fill::value(sigma_theta_prior_b/(sigma_theta_prior_a - 1)));
-    vec ksi = rnorm_cpp(N_sites, mu, std::sqrt(sigma2_ksi));
-    vec theta = zeros(N_families);  // Changed to initialize theta to zero
-    for(int s = 0; s < N_sites; s++) {
-        //sigma2_theta(s) = rinvgamma_cpp(sigma_theta_prior_a, sigma_theta_prior_b);
-        arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong to site s
-        for (int f : indices_family_in_site) {
-            theta(f) = as_scalar(rnorm_cpp(1, ksi(s), std::sqrt(sigma2_theta(s))));
-        }
-    }
+    //double sigma2_ksi = sigma_ksi_prior_b/(sigma_ksi_prior_a - 1);
+    double sigma2_ksi = 1.0;
+    
+    //vec sigma2_theta(N_sites, fill::value(sigma_theta_prior_b/(sigma_theta_prior_a - 1)));
+    vec sigma2_theta(N_sites, fill::value(0.5));
+    
+    // vec ksi = rnorm_cpp(N_sites, mu, std::sqrt(sigma2_ksi));
+    // Initialize random effects at to zero
+    vec ksi = zeros(N_sites);
+    vec theta = zeros(N_families);  
+    // for(int s = 0; s < N_sites; s++) {
+    //     //sigma2_theta(s) = rinvgamma_cpp(sigma_theta_prior_a, sigma_theta_prior_b);
+    //     arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong to site s
+    //     for (int f : indices_family_in_site) {
+    //         theta(f) = as_scalar(rnorm_cpp(1, ksi(s), std::sqrt(sigma2_theta(s))));
+    //     }
+    // }
     y_tilde = y - Z_family*theta - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
     vec beta = inv_sympd(trans(W)*W)*trans(W)*y_tilde;
 
     // double sigma2 = arma::dot(trans(y-W*beta), (y-W*beta))/(N_obs - W.n_cols);
-    double sigma2 = sigma_prior_b/(sigma_prior_a - 1);
+    // double sigma2 = sigma_prior_b/(sigma_prior_a - 1);
+    double sigma2 = 1.0;
 
     // Store initial values
     double mu_init = mu;
@@ -1251,6 +1262,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     vec sigma2_ksi_samples(n_iter, fill::zeros);
     mat sigma2_theta_samples(n_iter, N_sites, fill::zeros);
     vec sigma2_samples(n_iter, fill::zeros);
+    mat sigma2_non_outcome_samples(n_iter, 10, fill::zeros); // Let's start by looking at convergence of 1 of these params
 
     // Initialize intermediates
     vec y_lessUalpha(N_obs);
@@ -1265,89 +1277,11 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
     // Begin MCMC
     for (t=0;t<n_iter;t++){
+      
         for (m=0;m<Np;m++){
             if (IndVar[m]==1){
 
                 if (Method==2) {
-
-                    U_mat = extract_U_mat(U, n, r);
-                    gamma_vec = extract_gamma_vec(rhoest, IndVar, Np, r);
-                    alpha_vec = extract_alpha_vec(A, IndVar, Np, r);
-                    n_active_comp = sum(gamma_vec);
-                    active_comp = find(gamma_vec == 1);
-
-                    // Grab sigma2
-                    sigma2 = extract_sigma2(s2, IndVar, Np);
-
-                    // Rcpp::Rcout << "One value of U_mat: " << U_mat(0, 0) << "\n";
-                    // Rcpp::Rcout << "One value of alpha_vec: " << alpha_vec(0) << "\n";
-                    // Rcpp::Rcout << "sigma2_t: " << sigma2 << "\n";
-
-                    ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (BELOW) /////
-
-                    y_lessUalpha = y - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
-
-                    // Sample beta
-                    y_tilde = y_lessUalpha - Z_family*theta; // R_beta
-                    mat V_beta = inv(trans(W)*W/sigma2 + inv(diagmat(beta_prior_var)));
-                    vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(diagmat(beta_prior_var))*mu_beta);
-                    beta = mvnrnd(m_beta, V_beta);
-
-                    // Sample random effects
-                    y_tilde = y_lessUalpha - W*beta; // R_theta
-
-                    // Sample overall mean mu
-                    double V_mu = 1.0/(1.0/mu_prior_var + N_sites/sigma2_ksi);
-                    double m_mu = V_mu*(sum(ksi)/sigma2_ksi);
-                    mu = as_scalar(rnorm_cpp(1, m_mu, std::sqrt(V_mu)));
-
-                    for (int s = 0; s < N_sites; s++) {
-                        arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
-
-                        // Sample site-level intercepts ksi
-                        double sum_theta = sum(theta.elem(families_in_s));
-                        int n_s = families_in_s.n_elem;
-                        double V_ksi = 1.0 / (n_s/sigma2_theta(s) + 1.0/sigma2_ksi);
-                        double m_ksi = V_ksi*(mu + sum_theta/sigma2_theta(s));
-                        ksi(s) = as_scalar(rnorm_cpp(1, m_ksi, sqrt(V_ksi)));
-
-                        // Sample family-level intercepts theta
-                        for (int f : families_in_s) {
-                            arma::uvec individuals_in_f = arma::find(Z_family.col(f) == 1); // Get indices of observations that belong
-                            double sum_y_tilde = sum(y_tilde.elem(individuals_in_f));
-                            int n_sf = individuals_in_f.n_elem;
-                            double V_theta = 1.0 / (n_sf/sigma2 + 1.0/sigma2_theta(s));
-                            double m_theta = V_theta*(sum_y_tilde/sigma2 + ksi(s)/sigma2_theta(s));  // Corrected the mean calculation
-                            theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
-                        }
-
-                        // Sample sigma2_theta for s-th site
-                        double a_sigma_theta = sigma_theta_prior_a + n_s/2.0;
-                        double b_sigma_theta = sigma_theta_prior_b + sum(square(theta.elem(families_in_s) - ksi(s)*ones(n_s))) / 2.0;
-                        sigma2_theta[s] = rinvgamma_cpp(a_sigma_theta, b_sigma_theta);
-
-                    }
-
-                    // Sample sigma2_ksi
-                    double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
-                    double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi - mu))/2.0;
-                    sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);
-
-                    ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (ABOVE) /////
-
-                    // Store samples
-                    mu_samples(t) = mu;
-                    alpha_samples.row(t) = alpha_vec.t();
-                    beta_samples.row(t) = beta.t();
-                    gamma_samples.row(t) = gamma_vec.t();
-                    ksi_samples.row(t) = ksi.t();
-                    theta_samples.row(t) = theta.t();
-                    sigma2_ksi_samples(t) = sigma2_ksi;
-                    sigma2_theta_samples.row(t) = sigma2_theta.t();
-                    sigma2_samples(t) = sigma2;
-
-                    // Update intercept
-                    //intercp = mu;
 
                     // Update residualization
                     arma::vec Wbeta = W*beta;
@@ -1436,6 +1370,87 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         }
 
         SampleUU(rr,r,n,Np,P,A,U,X1,s2);
+      
+      if (Method==2) {
+        U_mat = extract_U_mat(U, n, r);
+        gamma_vec = extract_gamma_vec(rhoest, IndVar, Np, r);
+        alpha_vec = extract_alpha_vec(A, IndVar, Np, r);
+        n_active_comp = sum(gamma_vec);
+        active_comp = find(gamma_vec == 1);
+        
+        // Grab sigma2
+        sigma2 = extract_sigma2(s2, IndVar, Np);
+        
+        // Rcpp::Rcout << "One value of U_mat: " << U_mat(0, 0) << "\n";
+        // Rcpp::Rcout << "One value of alpha_vec: " << alpha_vec(0) << "\n";
+        // Rcpp::Rcout << "sigma2_t: " << sigma2 << "\n";
+        
+        ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (BELOW) /////
+        
+        y_lessUalpha = y - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
+        
+        // Sample beta
+        y_tilde = y_lessUalpha - Z_family*theta; // R_beta
+        mat V_beta = inv(trans(W)*W/sigma2 + inv(diagmat(beta_prior_var)));
+        vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(diagmat(beta_prior_var))*mu_beta);
+        beta = mvnrnd(m_beta, V_beta);
+        
+        // Sample random effects
+        y_tilde = y_lessUalpha - W*beta; // R_theta
+        
+        // Sample overall mean mu
+        double V_mu = 1.0/(1.0/mu_prior_var + N_sites/sigma2_ksi);
+        double m_mu = V_mu*(sum(ksi)/sigma2_ksi);
+        mu = as_scalar(rnorm_cpp(1, m_mu, std::sqrt(V_mu)));
+        
+        for (int s = 0; s < N_sites; s++) {
+          arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
+          
+          // Sample site-level intercepts ksi
+          double sum_theta = sum(theta.elem(families_in_s));
+          int n_s = families_in_s.n_elem;
+          double V_ksi = 1.0 / (n_s/sigma2_theta(s) + 1.0/sigma2_ksi);
+          double m_ksi = V_ksi*(mu + sum_theta/sigma2_theta(s));
+          ksi(s) = as_scalar(rnorm_cpp(1, m_ksi, sqrt(V_ksi)));
+          
+          // Sample family-level intercepts theta
+          for (int f : families_in_s) {
+            arma::uvec individuals_in_f = arma::find(Z_family.col(f) == 1); // Get indices of observations that belong
+            double sum_y_tilde = sum(y_tilde.elem(individuals_in_f));
+            int n_sf = individuals_in_f.n_elem;
+            double V_theta = 1.0 / (n_sf/sigma2 + 1.0/sigma2_theta(s));
+            double m_theta = V_theta*(sum_y_tilde/sigma2 + ksi(s)/sigma2_theta(s));  // Corrected the mean calculation
+            theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
+          }
+          
+          // Sample sigma2_theta for s-th site
+          double a_sigma_theta = sigma_theta_prior_a + n_s/2.0;
+          double b_sigma_theta = sigma_theta_prior_b + sum(square(theta.elem(families_in_s) - ksi(s)*ones(n_s))) / 2.0;
+          sigma2_theta[s] = rinvgamma_cpp(a_sigma_theta, b_sigma_theta);
+          
+        }
+        
+        // Sample sigma2_ksi
+        double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
+        double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi - mu))/2.0;
+        sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);
+        
+        ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (ABOVE) /////
+        
+        // Store samples
+        mu_samples(t) = mu;
+        alpha_samples.row(t) = alpha_vec.t();
+        beta_samples.row(t) = beta.t();
+        gamma_samples.row(t) = gamma_vec.t();
+        ksi_samples.row(t) = ksi.t();
+        theta_samples.row(t) = theta.t();
+        sigma2_ksi_samples(t) = sigma2_ksi;
+        sigma2_theta_samples.row(t) = sigma2_theta.t();
+        sigma2_samples(t) = sigma2;
+        for (j=0;j<10;j++) {
+          sigma2_non_outcome_samples(t,j) = s2[1][j]; // Takes the 1st feature from the 2nd view, and non-outcome assuming outcome is 1st
+        }
+      }
 
         if (t>=burninsample){
             InterceptMean+=intercp/nbrsample;
@@ -1722,7 +1737,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
             Rcpp::Named("sigma2_ksi_init") = sigma2_ksi_init,
             Rcpp::Named("sigma2_theta_init") = sigma2_theta_init,
             Rcpp::Named("sigma2_init") = sigma2_init
-        )
+        ),
+      Rcpp::Named("sigma2_non_outcome_samples") = sigma2_non_outcome_samples
     );
 }
 
@@ -1745,11 +1761,11 @@ n_families_per_site <- 30
 n_individs_per_family <- 10
 
 sigma2_ksi_true <- 1 # Site Variance
-sigma2_theta_true <- rep(2, N_sites) # Family:Site Variances
+sigma2_theta_true <- rep(0.5, N_sites) # Family:Site Variances
 sigma2_true <- 1
 
 # User Arguments for Parameter Estimation
-n_chains <- 1
+n_chains <- 2
 n_iter <- 5000
 n_burnin <- floor(n_iter*0.5)
 n_sample <- n_iter - n_burnin
@@ -1760,13 +1776,24 @@ n_sample <- n_iter - n_burnin
 simulate_A <- function(r, p_m, n_important_components, n_important_features, sigma2) {
     A <- matrix(0, nrow = r, ncol = p_m)
     if (n_important_components > 0) {
-        index_important_components <- seq(to = n_important_components)
-        index_important_features <- seq(to = n_important_features)
-        n_nonzero_a <- n_important_components * n_important_features
-        nonzero_a <- matrix(rnorm(n_nonzero_a, sd = sqrt(sigma2)),
-                            nrow = n_important_components,
-                            ncol = n_important_features)
-        A[index_important_components, index_important_features] <- nonzero_a
+      #In general, you can generate N random numbers in the interval (a,b)
+      #with the formula r = a + (b-a).*rand(N,1).
+      a1=-.5;
+      b1=-.3;
+      # a2=.5;
+      # b2=.3;
+      #latent component
+      V1a=matrix(0, n_important_components, n_important_features) # V1b=
+      for (l in 1:n_important_components){
+        V1a[l,]=runif(n_important_features, a1, b1) # TODO: Remove hardcoding
+        # V1b[l,]=runif(n_important_features-3, b2, a2) # TODO: Remove hardcoding
+         # rbind(V1a,V1b)
+      }
+      nonzero_a = V1a
+      index_important_components <- seq(to = n_important_components)
+      index_important_features <- seq(to = n_important_features)
+      A[index_important_components, index_important_features] <- nonzero_a
+      A[abs(A)<=10^-8] <- 0
     }
     return(A)
 }
@@ -1844,7 +1871,8 @@ simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
 
     # Sample latent factor loadings
     alpha <- matrix(0, nrow = r, ncol = 1)
-    alpha[omics_data$index_important_components, ] <- rnorm(length(omics_data$index_important_components), 0, sqrt(sigma2))
+    n_important_components <- floor(prob_component_importance*r)
+    alpha[omics_data$index_important_components, ] <- rep(1, n_important_components) # rnorm(length(omics_data$index_important_components), 0, sqrt(sigma2))
     #alpha <- rnorm(r, 0, sqrt(sigma2))
 
     # Simulate ksi_s ~ N(mu, sigma2_ksi)
@@ -1910,6 +1938,12 @@ RE_df <- data.frame(y = y,
                     site = which(Z_site == 1, arr.ind = T)[,2],
                     family = which(Z_family == 1, arr.ind = T)[,2])
 
+# TODO Generalize datalist extraction to more than one view
+dataList <- list(simulation_results$Y,
+                 simulation_results$X[[1]],
+                 W)
+IndicVar <- c(1, 0)
+
 # Priors
 priors <- list(mu_prior_var = 100,
                mu_beta = rep(0, n_covars),
@@ -1920,12 +1954,6 @@ priors <- list(mu_prior_var = 100,
                sigma_theta_prior_b = mean(theta_true)*(1+(mean(theta_true))^2/var(theta_true)),
                sigma_prior_a = 2+(mean(y))^2/var(y),
                sigma_prior_b = mean(y)*(1+(mean(y))^2/var(y)))
-
-# TODO Generalize datalist extraction to more than one view
-dataList <- list(simulation_results$Y,
-                 simulation_results$X[[1]],
-                 W)
-IndicVar <- c(1, 0)
 
 # Define R wrapper
 BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL,
@@ -2077,13 +2105,16 @@ BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL,
                  mu_samples = result$mu_samples,
                  #alpha_samples = result$alpha_samples,
                  beta_samples = result$beta_samples,
-                 #gamma_samples = result$gamma$samples,
+                 gamma_samples = result$gamma_samples,
                  ksi_samples = result$ksi_samples,
                  theta_samples = result$theta_samples,
                  sigma2_ksi_samples = result$sigma2_ksi_samples,
                  sigma2_theta_samples = result$sigma2_theta_samples,
                  sigma2_samples = result$sigma2_samples,
-                 initial_values = result$initial_values))
+                 initial_values = result$initial_values,
+                 sigma2_non_outcome_samples = result$sigma2_non_outcome_samples
+                )
+    )
 }
 
 # # Simulate data & estimate associated parameters
@@ -2420,8 +2451,42 @@ cat("% of variance parameters within credible interval: ", mean(variance_compari
 
 print(simulation_settings)
 
-# # Run Vanilla BIP to estimate variance
+# Run Vanilla BIP to estimate variance
 # vanilla_result <- BIPnet::BIP(dataList = dataList, IndicVar = IndicVar, Method = "BIP",
 #             nbrcomp = r, sample = n_sample+1, burnin = n_burnin)
 # vanilla_result$EstSig2
+
+# Let's understand the convergence summary statistics
+# Extract parameter type from row names
+mcmc_summary$parameter_type <- gsub("^([^_]+).*", "\\1", rownames(mcmc_summary))
+# Extract the Rhat value for "sigma2"
+rhat_sigma2 <- mcmc_summary["sigma2", "Rhat"]
+# Create boxplot
+ggplot(mcmc_summary, aes(x = parameter_type, y = Rhat)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Rhat by Parameter Type", x = "Parameter Type", y = "Rhat") +
+  theme_minimal() +
+  annotate("text", x = "sigma2", y = max(mcmc_summary$Rhat) + 0.1, 
+           label = paste("Rhat for sigma2: ", round(rhat_sigma2, 3)), 
+           color = "red", size = 3)
+
+# Create a data frame with the iteration index and sigma2_non_outcome_samples values
+traceplot_data <- tibble(
+  iteration = seq_along(samples_list[[1]]$sigma2_non_outcome_samples[,1]),
+  sigma2_non_outcome = samples_list[[1]]$sigma2_non_outcome_samples[,2]
+)
+
+# Create the traceplot using ggplot2
+traceplot <- ggplot(traceplot_data, aes(x = iteration, y = sigma2_non_outcome)) +
+  geom_line() +
+  labs(
+    title = "Traceplot of sigma2_non_outcome_samples",
+    x = "MCMC Iteration",
+    y = "sigma2_non_outcome"
+  ) +
+  theme_minimal()
+
+# Print the traceplot
+print(traceplot)
+
 */

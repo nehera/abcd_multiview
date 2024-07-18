@@ -26,6 +26,18 @@ using namespace Rcpp;
 #include <RcppGSL.h>
 // [[Rcpp::depends(RcppGSL)]]
 
+double extract_sigma2(double** s2, arma::vec IndVar, int Np) {
+  for (int m = 0; m < Np; ++m) {
+    if (IndVar[m] == 1) {
+      // Rcpp::Rcout << "Extracted sigma2: " << s2[m][0] << "\n";
+      return s2[m][0]; // Return the first s2[m][0] where IndVar[m] == 1
+    }
+  }
+  
+  // Handle case where no matching element is found
+  return NA_REAL; // or some other appropriate default value
+}
+
 ///// myfunction.c subroutines
 
 void SampleIntercept(gsl_rng * rr,int n, int r, double * intercept, double* sigma2, double sigma20,double ** U, double ** A, double **y){
@@ -819,6 +831,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                   arma::vec IntGrpMean, arma::vec EstU, arma::vec EstSig2, double InterceptMean, arma::vec EstLoadMod,
                   arma::vec EstLoad, int nbrmodel1, arma::vec postgam, arma::vec priorcompsel, arma::vec priorcompselo,
                   arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel) {
+  
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (Method==1)
@@ -1054,7 +1067,14 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     rhomodel[t]= static_cast<bool*>(malloc(dim*sizeof(bool)));
   }
   
+  // Let's checkout convergence in original BIP
+  vec sigma2_samples(N, fill::zeros);
+  
   for (t=0;t<N;t++){
+    
+    // Grab sigma2
+    sigma2_samples(t) = extract_sigma2(s2, IndVar, Np);
+    
     for (m=0;m<Np;m++){
       if (IndVar[m]==1){
         SampleIntercept(rr,n, r, &intercp, s2[m], 100.0,U, A[m], X[m]);
@@ -1383,7 +1403,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     Rcpp::Named("IntGrpMean") = IntGrpMean,
     Rcpp::Named("EstSig2") = EstSig2,
     Rcpp::Named("EstLoadMod") = EstLoadMod,
-    Rcpp::Named("nbrmodel1") = nbrmodel1
+    Rcpp::Named("nbrmodel1") = nbrmodel1,
+    Rcpp::Named("sigma2_samples") = sigma2_samples
   );
 }
 
@@ -1518,7 +1539,12 @@ BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Metho
 
   }
 
-  return (list(EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,CompoSelMean=CompoSelMean,GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,IntGrpMean=IntGrpMean,EstLoad=EstLoad,EstLoadModel=EstLoadModel,nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD))
+  return (list(EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,
+               CompoSelMean=CompoSelMean,GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,
+               IntGrpMean=IntGrpMean,EstLoad=EstLoad,EstLoadModel=EstLoadModel,
+               nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,
+               PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,
+               SDData=SD, sigma2_samples = result$sigma2_samples))
 }
 
 # Simulate data & estimate associated parameters
@@ -1544,4 +1570,54 @@ print("Element-wise mean absolute error between true U and estimated U:")
 mean(simulation_results$U - BA$EstU)
 print("Estimated Sig2:")
 BA$EstSig2
+
+# Create a data frame with the iteration index and sigma2_non_outcome_samples values
+traceplot_data <- tibble(
+  iteration = seq_along(BA$sigma2_samples),
+  sigma2 = BA$sigma2_samples
+)
+
+# Create the traceplot using ggplot2
+traceplot <- ggplot(traceplot_data, aes(x = iteration, y = sigma2)) +
+  geom_line() +
+  labs(
+    title = "Traceplot of sigma2",
+    x = "MCMC Iteration",
+    y = "sigma2"
+  ) +
+  theme_minimal()
+
+# Print the traceplot
+print(traceplot)
+
+# Run MCMC sampler in parallel
+r <- 4
+n_chains <- 2
+n_sample <- 5000
+n_burnin <- n_sample-1
+n_iter <- n_sample + n_burnin
+seeds <- 1:n_chains
+start_time <- Sys.time()
+# Note, seed is not set in C++
+samples_list <- mclapply(seeds, function(seed) {
+  BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", 
+      nbrcomp=r, sample=n_sample, burnin=n_burnin)
+}, mc.cores = n_chains)
+end_time <- Sys.time()
+
+# Initialize a 3-dimensional array with dimensions (n_iter, n_chains, 1)
+sigma2_array <- array(NA, dim = c(n_iter, n_chains, 1))
+
+# Fill the array with sigma2_samples from each chain
+for (chain in seq_len(n_chains)) {
+  sigma2_array[, chain, 1] <- samples_list[[chain]]$sigma2_samples
+}
+
+# Check the dimensions and the content of the array
+print(dim(sigma2_array))
+print(sigma2_array)
+
+# Checkout convergence statistics
+rstan::monitor(sigma2_array)
+
 */
