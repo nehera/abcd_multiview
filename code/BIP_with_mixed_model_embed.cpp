@@ -1752,6 +1752,7 @@ library(rstan)
 library(scales)
 library(tidyverse)
 library(coda)
+library(MASS)
 
 # User Arguments for Data Simulation
 r <- 4
@@ -1761,7 +1762,7 @@ n_families_per_site <- 30
 n_individs_per_family <- 10
 
 sigma2_ksi_true <- 1 # Site Variance
-sigma2_theta_true <- rep(0.5, N_sites) # Family:Site Variances
+sigma2_theta_true <- rep(0.25, N_sites) # Family:Site Variances
 sigma2_true <- 1
 
 # User Arguments for Parameter Estimation
@@ -1773,7 +1774,7 @@ n_sample <- n_iter - n_burnin
 # n_burnin <- n_iter - n_sample
 
 # Simulate Data
-simulate_A <- function(r, p_m, n_important_components, n_important_features, sigma2) {
+simulate_A <- function(r, p_m, n_important_components, n_important_features) {
     A <- matrix(0, nrow = r, ncol = p_m)
     if (n_important_components > 0) {
       #In general, you can generate N random numbers in the interval (a,b)
@@ -1822,9 +1823,12 @@ simulate_omics_data <- function(n_views=2, N_obs=200, p_m=10, r=4,
     E_list <- list()
 
     for (m in 1:n_views) {
-        A_list[[m]] <- simulate_A(r, p_m, n_important_components, n_important_features, sigma2)
-        E_list[[m]] <- matrix(data = rnorm(N_obs*p_m, sd = sqrt(sigma2)), nrow = N_obs, ncol = p_m)
-        X_list[[m]] <- U %*% A_list[[m]] + E_list[[m]]
+        A <- simulate_A(r, p_m, n_important_components, n_important_features)
+        print(sigma2)
+        Psi <- diag(sigma2, p_m) 
+        Sigma <- Psi # + t(A) %*% A
+        X_list[[m]] <- mvrnorm(n = N_obs, mu = rep(0, p_m), Sigma)
+        A_list[[m]] <- A
     }
 
     omics_results <- list(X=X_list, U=U, A=A_list,
@@ -1873,7 +1877,10 @@ simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
     alpha <- matrix(0, nrow = r, ncol = 1)
     n_important_components <- floor(prob_component_importance*r)
     alpha[omics_data$index_important_components, ] <- rep(1, n_important_components) # rnorm(length(omics_data$index_important_components), 0, sqrt(sigma2))
-    #alpha <- rnorm(r, 0, sqrt(sigma2))
+
+    Psi <- diag(sigma2, 1) 
+    Sigma <- Psi # + t(alpha) %*% alpha
+    y_tilde <- mvrnorm(n = N_obs, mu = 0, Sigma)
 
     # Simulate ksi_s ~ N(mu, sigma2_ksi)
     ksi <- rnorm(N_sites, mu, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
@@ -1898,10 +1905,10 @@ simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
     beta <- matrix(rep(1, n_covars), ncol = 1)
 
     # Sample residuals
-    epsilon <- matrix(rnorm(N_obs, sd = sqrt(sigma2)), nrow = N_obs)
+    # epsilon <- matrix(rnorm(N_obs, sd = sqrt(sigma2)), nrow = N_obs)
 
     # Combine effects
-    Y <- W%*%beta + Z_family%*%theta + U%*%alpha + epsilon # Add omics data
+    Y <- y_tilde + W%*%beta + Z_family%*%theta # + U%*%alpha + epsilon # Add omics data
 
     return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, Z_family_to_site=Z_family_to_site, ksi=ksi, theta=theta,
                 X=omics_data$X, U=omics_data$U, A=omics_data$A, mu=mu, alpha=alpha, W=W, beta=beta,
@@ -2295,13 +2302,13 @@ parameter_group_true_values <- list(
 )
 
 CI_list <- list(
-    mu = comparison %>% filter(grepl("^mu", param_name)) %>% select(lower, upper),
-    FE = comparison %>% filter(grepl("^beta_", param_name)) %>% select(lower, upper),
-    site_intercepts = comparison %>% filter(grepl("^ksi_", param_name)) %>% select(lower, upper),
-    family_intercepts = comparison %>% filter(grepl("^theta_", param_name)) %>% select(lower, upper),
-    site_variance = comparison %>% filter(grepl("^sigma2_ksi", param_name)) %>% select(lower, upper),
-    family_variance = comparison %>% filter(grepl("^sigma2_theta_", param_name)) %>% select(lower, upper),
-    error_variance = comparison %>% filter(grepl("^sigma2$", param_name)) %>% select(lower, upper)
+    mu = comparison %>% filter(grepl("^mu", param_name)) %>% dplyr::select(lower, upper),
+    FE = comparison %>% filter(grepl("^beta_", param_name)) %>% dplyr::select(lower, upper),
+    site_intercepts = comparison %>% filter(grepl("^ksi_", param_name)) %>% dplyr::select(lower, upper),
+    family_intercepts = comparison %>% filter(grepl("^theta_", param_name)) %>% dplyr::select(lower, upper),
+    site_variance = comparison %>% filter(grepl("^sigma2_ksi", param_name)) %>% dplyr::select(lower, upper),
+    family_variance = comparison %>% filter(grepl("^sigma2_theta_", param_name)) %>% dplyr::select(lower, upper),
+    error_variance = comparison %>% filter(grepl("^sigma2$", param_name)) %>% dplyr::select(lower, upper)
 )
 
 ################################################################################
