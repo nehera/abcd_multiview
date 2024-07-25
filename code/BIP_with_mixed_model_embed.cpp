@@ -1239,7 +1239,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
     // double sigma2 = arma::dot(trans(y-W*beta), (y-W*beta))/(N_obs - W.n_cols);
     // double sigma2 = sigma_prior_b/(sigma_prior_a - 1);
-    double sigma2 = 1.0;
+    double sigma2 = 3.0;
 
     // Store initial values
     double mu_init = mu;
@@ -1351,7 +1351,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
                 SamplerhoGamma(rr,r, n,IndVar[m],P[m],rhoest[m],Tau[m], U,X1[m],qv[m],q[m],s2[m],quadForm[m],Gam[m],loggauss[m]);
             }
 
-            sample_sigma2(rr,  P[m],n,sigma_prior_a, sigma_prior_b,quadForm[m],s2[m]);
+            sample_sigma2(rr, P[m], n, sigma_prior_a, sigma_prior_b,quadForm[m],s2[m]);
             LoadAOther(rr,r, n,P[m],rhoest[m],Tau[m],A[m],U,X1[m],s2[m],Gam[m]);
 
             for (l=0;l<r;l++){
@@ -1755,7 +1755,7 @@ library(coda)
 library(MASS)
 
 # User Arguments for Data Simulation
-r <- 4
+r <- 2
 n_covars <- 2
 N_sites <- 30
 n_families_per_site <- 30
@@ -1763,32 +1763,24 @@ n_individs_per_family <- 10
 
 sigma2_ksi_true <- 1 # Site Variance
 sigma2_theta_true <- rep(0.25, N_sites) # Family:Site Variances
-sigma2_true <- 1
+sigma2_true <- 0.25
 
 # User Arguments for Parameter Estimation
 n_chains <- 2
 n_iter <- 5000
 n_burnin <- floor(n_iter*0.5)
 n_sample <- n_iter - n_burnin
-# n_sample <- 2000
-# n_burnin <- n_iter - n_sample
 
 # Simulate Data
 simulate_A <- function(r, p_m, n_important_components, n_important_features) {
     A <- matrix(0, nrow = r, ncol = p_m)
     if (n_important_components > 0) {
-      #In general, you can generate N random numbers in the interval (a,b)
-      #with the formula r = a + (b-a).*rand(N,1).
       a1=-.5;
       b1=-.3;
-      # a2=.5;
-      # b2=.3;
-      #latent component
-      V1a=matrix(0, n_important_components, n_important_features) # V1b=
+      V1a=matrix(0, n_important_components, n_important_features) 
       for (l in 1:n_important_components){
-        V1a[l,]=runif(n_important_features, a1, b1) # TODO: Remove hardcoding
-        # V1b[l,]=runif(n_important_features-3, b2, a2) # TODO: Remove hardcoding
-         # rbind(V1a,V1b)
+        # V1a[l,]=runif(n_important_features, a1, b1) 
+        V1a[l,]=1
       }
       nonzero_a = V1a
       index_important_components <- seq(to = n_important_components)
@@ -1801,10 +1793,9 @@ simulate_A <- function(r, p_m, n_important_components, n_important_features) {
 
 # Simulates omics data assuming features are active in balanced fashion i.e.
 # activation pattern is same across views
-simulate_omics_data <- function(n_views=2, N_obs=200, p_m=10, r=4,
-                                prob_feature_importance=0.5,
-                                prob_component_importance=0.25,
-                                sigma2=1) {
+simulate_omics_data <- function(n_views, N_obs, p_m, r,
+                                prob_feature_importance,
+                                prob_component_importance, sigma2) {
 
     n_important_features <- floor(prob_feature_importance*p_m)
     n_important_components <- floor(prob_component_importance*r)
@@ -1824,10 +1815,8 @@ simulate_omics_data <- function(n_views=2, N_obs=200, p_m=10, r=4,
 
     for (m in 1:n_views) {
         A <- simulate_A(r, p_m, n_important_components, n_important_features)
-        print(sigma2)
-        Psi <- diag(sigma2, p_m) 
-        Sigma <- Psi # + t(A) %*% A
-        X_list[[m]] <- mvrnorm(n = N_obs, mu = rep(0, p_m), Sigma)
+        epsilon <- rnorm(N_obs*p_m, 0, sd = sqrt(sigma2)) %>% matrix(nrow = N_obs, ncol = p_m)
+        X_list[[m]] <- U %*% A + epsilon
         A_list[[m]] <- A
     }
 
@@ -1840,29 +1829,27 @@ simulate_omics_data <- function(n_views=2, N_obs=200, p_m=10, r=4,
 }
 
 # Simulates omics data and then outcome data with random effects
-simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
-                                    prob_feature_importance=0.5,
-                                    prob_component_importance=0.25,
-                                    sigma2_ksi=1, sigma2_theta=rep(1, 5),
-                                    N_sites=5, n_families_per_site=3,
-                                    n_individs_per_family = 2,
-                                    n_covars=1, mu=1, sigma2=1, seed=1,
-                                    balanced=T) {
+simulate_re_data_nested <- function(n_views, p_m, r,
+                                    prob_feature_importance,
+                                    prob_component_importance,
+                                    sigma2_ksi, sigma2_theta,
+                                    N_sites, n_families_per_site,
+                                    n_individs_per_family,
+                                    n_covars, mu, sigma2, 
+                                    seed=1, balanced=T) {
 
     # Outcome model
     set.seed(seed)
 
     if(length(sigma2_theta) != N_sites) {
-        sigma2_theta <- rep(1, N_sites)
+        stop("Length of sigma2_theta must equal N_sites.")
     }
 
     if(balanced == T) {
         N_families <- N_sites*n_families_per_site
         N_obs <- N_sites*n_families_per_site*n_individs_per_family
-
         # Specify design matrix for sites
         Z_site <- kronecker(diag(N_sites), rep(1, n_families_per_site*n_individs_per_family))
-
         # Specify design matrix for families nested within sites
         Z_family <- kronecker(diag(N_families), rep(1, n_individs_per_family))
     }
@@ -1877,10 +1864,6 @@ simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
     alpha <- matrix(0, nrow = r, ncol = 1)
     n_important_components <- floor(prob_component_importance*r)
     alpha[omics_data$index_important_components, ] <- rep(1, n_important_components) # rnorm(length(omics_data$index_important_components), 0, sqrt(sigma2))
-
-    Psi <- diag(sigma2, 1) 
-    Sigma <- Psi # + t(alpha) %*% alpha
-    y_tilde <- mvrnorm(n = N_obs, mu = 0, Sigma)
 
     # Simulate ksi_s ~ N(mu, sigma2_ksi)
     ksi <- rnorm(N_sites, mu, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
@@ -1904,11 +1887,10 @@ simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
 
     beta <- matrix(rep(1, n_covars), ncol = 1)
 
-    # Sample residuals
-    # epsilon <- matrix(rnorm(N_obs, sd = sqrt(sigma2)), nrow = N_obs)
+    epsilon <- rnorm(N_obs, 0, sd = sqrt(sigma2)) %>% matrix(ncol = 1)
 
     # Combine effects
-    Y <- y_tilde + W%*%beta + Z_family%*%theta # + U%*%alpha + epsilon # Add omics data
+    Y <- U %*% alpha + W %*% beta + Z_family %*% theta + epsilon 
 
     return(list(Y=Y, Z_site=Z_site, Z_family=Z_family, Z_family_to_site=Z_family_to_site, ksi=ksi, theta=theta,
                 X=omics_data$X, U=omics_data$U, A=omics_data$A, mu=mu, alpha=alpha, W=W, beta=beta,
@@ -1916,13 +1898,15 @@ simulate_re_data_nested <- function(n_views=2, p_m=10, r=4,
                 nu2 = list(sigma2_ksi=sigma2_ksi_true, sigma2_theta=sigma2_theta_true)))
 }
 
-simulation_results <- simulate_re_data_nested(N_sites = N_sites,
-                                              n_families_per_site = n_families_per_site,
-                                              n_individs_per_family = n_individs_per_family,
-                                              sigma2_ksi = sigma2_ksi_true,
+# Get simulation results
+simulation_results <- simulate_re_data_nested(n_views = 1, p_m = 10, r = r,
+                                              prob_feature_importance = 0.5,
+                                              prob_component_importance = 0.5,
+                                              sigma2_ksi = sigma2_ksi_true, 
                                               sigma2_theta = sigma2_theta_true,
-                                              sigma2 = sigma2_true,
-                                              n_covars = n_covars, n_views = 1)
+                                              N_sites, n_families_per_site,
+                                              n_individs_per_family,
+                                              n_covars, mu = 1, sigma2 = sigma2_true)
 
 # Extract meaningful intermediates from data simulation
 mu_true <- simulation_results$mu
@@ -1941,9 +1925,6 @@ y <- simulation_results$Y
 N_sites <- ncol(Z_site)
 N_families <- ncol(Z_family)
 N_obs <- nrow(Z_family)
-RE_df <- data.frame(y = y,
-                    site = which(Z_site == 1, arr.ind = T)[,2],
-                    family = which(Z_family == 1, arr.ind = T)[,2])
 
 # TODO Generalize datalist extraction to more than one view
 dataList <- list(simulation_results$Y,
@@ -2435,11 +2416,20 @@ simulation_settings <- data.frame(
     value = c(N_sites, N_families, N_obs, n_iter)
 )
 
+## Get frequentist estimates
+RE_df <- data.frame(y_tilde = simulation_results$Y - 
+                      simulation_results$U %*% simulation_results$alpha,
+                    site = which(Z_site == 1, arr.ind = T)[,2],
+                    family = which(Z_family == 1, arr.ind = T)[,2])
 RE_df$w1 <- W[,1]
 RE_df$w2 <- W[,2]
 
 library(lme4)
-summary(lmer(y~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
+summary(lmer(y_tilde~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
+
+# Checkout omics residual variance
+resids <- simulation_results$X[[1]] - simulation_results$U %*% simulation_results$A[[1]]
+apply(resids, 2, var)
 
 # Observation: Fixed effect intercept & Site-level random intercepts
 # seem to take longer to converge. This is likely attributable to
@@ -2459,9 +2449,10 @@ cat("% of variance parameters within credible interval: ", mean(variance_compari
 print(simulation_settings)
 
 # Run Vanilla BIP to estimate variance
-# vanilla_result <- BIPnet::BIP(dataList = dataList, IndicVar = IndicVar, Method = "BIP",
-#             nbrcomp = r, sample = n_sample+1, burnin = n_burnin)
-# vanilla_result$EstSig2
+IndicVar <- c(1, 0, 2) # TODO Rectify IndicVar Discrepancy between Vanilla and BIPmixed
+vanilla_result <- BIPnet::BIP(dataList = dataList, IndicVar = IndicVar, Method = "BIP",
+            nbrcomp = r, sample = n_sample+1, burnin = n_burnin)
+vanilla_result$EstSig2
 
 # Let's understand the convergence summary statistics
 # Extract parameter type from row names
@@ -2496,4 +2487,33 @@ traceplot <- ggplot(traceplot_data, aes(x = iteration, y = sigma2_non_outcome)) 
 # Print the traceplot
 print(traceplot)
 
+# TODO understand why unimportant features have estimated sigma2 
+# approx 1 no matter what. It seems to be associated with the starting position
+x <- simulation_results$X[[1]][, 6, drop = FALSE]
+# We assume prior for sigma2m is IG(2,1)
+sigma_prior_a = 2
+sigma_prior_b = 1
+# Assume an estimate close to 1
+sigma_hat <- 1
+# Estimate conjugate parameters
+alpha <- sigma_prior_a + N_obs/2
+# In the context of a variable being unimportant, 
+# With an estimate close to 1, we stay near 1 since sigma_hat approx 1
+beta <- sigma_prior_b + 1/sigma_hat * t(x)%*%x/2
+estSig2mean <- beta / (alpha-1)
+print(estSig2mean)
+hist(1/rgamma(1000, alpha, beta))
+# TODO In the context of an important feature, our beta is diff?
+# Assume gamma estimate is close to truth
+gamma_est_index <- which(simulation_results$gamma==1)
+# Assume an variance estimate close to truth
+sigma_hat <- sigma2_true
+Ugamma <- simulation_results$U[, gamma_est_index, drop = FALSE]
+Sigma_j_inv <- solve(
+  Ugamma %*% t(Ugamma) + diag(N_obs)
+)
+beta <- sigma_prior_b + 1/sigma_hat * t(x) %*% Sigma_j_inv %*% x/2
+estSig2mean <- beta / (alpha-1)
+print(estSig2mean)
+hist(1/rgamma(1000, alpha, beta))
 */
