@@ -1239,7 +1239,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
     // double sigma2 = arma::dot(trans(y-W*beta), (y-W*beta))/(N_obs - W.n_cols);
     // double sigma2 = sigma_prior_b/(sigma_prior_a - 1);
-    double sigma2 = 3.0;
+    double sigma2 = 1.0;
 
     // Store initial values
     double mu_init = mu;
@@ -1266,6 +1266,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
 
     // Initialize intermediates
     vec y_lessUalpha(N_obs);
+    vec beta_mean(n_beta);
+    vec theta_mean(N_families);
 
     if (Method==2) {
         Rcpp::Rcout << "Dimensions of y: " << y.n_elem << " elements\n";
@@ -1453,7 +1455,17 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
       }
 
         if (t>=burninsample){
-            InterceptMean+=intercp/nbrsample;
+          // Update posterior mean estimates
+          InterceptMean+=intercp/nbrsample;
+          if (Method==2) {
+            for (int j = 0; j < n_beta; j++) {
+              beta_mean(j) += beta(j) / nbrsample;
+            }
+            for (int f = 0; f < N_families; f++) {
+              theta_mean(f) += theta(f) / nbrsample;
+            }
+          } 
+          
             int rm=0;
             for (m=0;m<Np;m++){
                 for (j=0;j<P[m];j++){
@@ -1560,11 +1572,34 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         int sumg=0;
         for (m=0;m<Np;m++){
             if (IndVar[m]==1){
-                for (i=0;i<n;i++){
-                    for (j=0;j<P[m];j++){
-                        X1[m][i][j]=X[m][i][j]-InterceptMean;
+              if (Method==2) {
+                // Residualize on fixed and random effects
+                arma::vec Wbeta = W*beta_mean;
+                for (int s = 0; s < N_sites; s++) {
+                  // Find the families in site s
+                  uvec families_in_s = find(Z_family_to_site.col(s) != 0);
+                  // Loop over each family
+                  for (unsigned int fi = 0; fi < families_in_s.n_elem; fi++) {
+                    int f = families_in_s(fi);
+                    // Find individuals in family f
+                    uvec individuals_in_f = find(Z_family.col(f) == 1);
+                    // Loop over individuals in the family
+                    for (unsigned int i = 0; i < individuals_in_f.n_elem; i++) {
+                      int ind = individuals_in_f(i);
+                      // Residualize outcome data for each individual
+                      X1[m][ind][0] = X[m][ind][0] - Wbeta(ind) - theta_mean(f);
                     }
+                  }
                 }
+                
+              } else {
+                // Residualize on grand intercept estimate
+                for (i=0;i<n;i++){
+                  for (j=0;j<P[m];j++){
+                    X1[m][i][j]=X[m][i][j]-InterceptMean;
+                  }
+                }
+              }
             }
 
             for (j=0;j<P[m];j++){
@@ -1720,13 +1755,16 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         Rcpp::Named("EstSig2") = EstSig2,
         Rcpp::Named("EstLoadMod") = EstLoadMod,
         Rcpp::Named("nbrmodel1") = nbrmodel1,
-        Rcpp::Named("mu_samples") = mu_samples,
-        Rcpp::Named("beta_samples") = beta_samples,
-        Rcpp::Named("ksi_samples") = ksi_samples,
-        Rcpp::Named("theta_samples") = theta_samples,
-        Rcpp::Named("sigma2_ksi_samples") = sigma2_ksi_samples,
-        Rcpp::Named("sigma2_theta_samples") = sigma2_theta_samples,
-        Rcpp::Named("sigma2_samples") = sigma2_samples,
+        Rcpp::Named("postgam") = postgam,
+        Rcpp::Named("samples") = List::create(
+          Rcpp::Named("mu_samples") = mu_samples,
+          Rcpp::Named("beta_samples") = beta_samples,
+          Rcpp::Named("ksi_samples") = ksi_samples,
+          Rcpp::Named("theta_samples") = theta_samples,
+          Rcpp::Named("sigma2_ksi_samples") = sigma2_ksi_samples,
+          Rcpp::Named("sigma2_theta_samples") = sigma2_theta_samples,
+          Rcpp::Named("sigma2_samples") = sigma2_samples
+        ),
         Rcpp::Named("initial_values") = List::create(
             Rcpp::Named("mu_init") = mu_init,
             Rcpp::Named("alpha_init") = alpha_init,
@@ -1738,7 +1776,17 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
             Rcpp::Named("sigma2_theta_init") = sigma2_theta_init,
             Rcpp::Named("sigma2_init") = sigma2_init
         ),
-      Rcpp::Named("sigma2_non_outcome_samples") = sigma2_non_outcome_samples
+        Rcpp::Named("intercepts") = List::create(
+          Rcpp::Named("InterceptMean") = InterceptMean,
+          Rcpp::Named("beta_mean") = beta_mean,
+          Rcpp::Named("theta_mean") = theta_mean
+        ),
+        Rcpp::Named("design_matrices") = List::create(
+          Rcpp::Named("Z_family") = Z_family,
+          Rcpp::Named("Z_site") = Z_site,
+          Rcpp::Named("Z_family_to_site") = Z_family_to_site
+        )
+      // Rcpp::Named("sigma2_non_outcome_samples") = sigma2_non_outcome_samples, 
     );
 }
 
@@ -2085,22 +2133,25 @@ BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL,
 
     }
 
-    return (list(EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,
+    return (list(Method = as.integer(meth),
+      EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,
                  CompoSelMean=CompoSelMean,GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,
                  IntGrpMean=IntGrpMean,EstLoad=EstLoad,EstLoadModel=EstLoadModel,
-                 nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,
+                 nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$intercepts$InterceptMean,
                  PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD,
-                 mu_samples = result$mu_samples,
+                 mu_samples = result$samples$mu_samples,
                  #alpha_samples = result$alpha_samples,
-                 beta_samples = result$beta_samples,
-                 gamma_samples = result$gamma_samples,
-                 ksi_samples = result$ksi_samples,
-                 theta_samples = result$theta_samples,
-                 sigma2_ksi_samples = result$sigma2_ksi_samples,
-                 sigma2_theta_samples = result$sigma2_theta_samples,
-                 sigma2_samples = result$sigma2_samples,
+                 beta_samples = result$samples$beta_samples,
+                 gamma_samples = result$samples$gamma_samples,
+                 ksi_samples = result$samples$ksi_samples,
+                 theta_samples = result$samples$theta_samples,
+                 sigma2_ksi_samples = result$samples$sigma2_ksi_samples,
+                 sigma2_theta_samples = result$samples$sigma2_theta_samples,
+                 sigma2_samples = result$samples$sigma2_samples,
                  initial_values = result$initial_values,
-                 sigma2_non_outcome_samples = result$sigma2_non_outcome_samples
+                 # sigma2_non_outcome_samples = result$sigma2_non_outcome_samples,
+                 beta_mean = result$intercepts$beta_mean, 
+                 theta_mean = result$intercepts$theta_mean
                 )
     )
 }
@@ -2468,52 +2519,83 @@ ggplot(mcmc_summary, aes(x = parameter_type, y = Rhat)) +
            label = paste("Rhat for sigma2: ", round(rhat_sigma2, 3)), 
            color = "red", size = 3)
 
-# Create a data frame with the iteration index and sigma2_non_outcome_samples values
-traceplot_data <- tibble(
-  iteration = seq_along(samples_list[[1]]$sigma2_non_outcome_samples[,1]),
-  sigma2_non_outcome = samples_list[[1]]$sigma2_non_outcome_samples[,3]
+# # Create a data frame with the iteration index and sigma2_non_outcome_samples values
+# traceplot_data <- tibble(
+#   iteration = seq_along(samples_list[[1]]$sigma2_non_outcome_samples[,1]),
+#   sigma2_non_outcome = samples_list[[1]]$sigma2_non_outcome_samples[,3]
+# )
+
+# # Create the traceplot using ggplot2
+# traceplot <- ggplot(traceplot_data, aes(x = iteration, y = sigma2_non_outcome)) +
+#   geom_line() +
+#   labs(
+#     title = "Traceplot of sigma2_non_outcome_samples",
+#     x = "MCMC Iteration",
+#     y = "sigma2_non_outcome"
+#   ) +
+#   theme_minimal()
+# 
+# # Print the traceplot
+# print(traceplot)
+
+# Let's checkout prediction performance of BIPmixed
+# starting with the 1st chain
+BIPmixed_result <- samples_list[[1]]
+# for now, just get new simulation results
+simulation_results_new <- simulate_re_data_nested(n_views = 1, p_m = 10, r = r,
+                                              prob_feature_importance = 0.5,
+                                              prob_component_importance = 0.5,
+                                              sigma2_ksi = sigma2_ksi_true, 
+                                              sigma2_theta = sigma2_theta_true,
+                                              N_sites, n_families_per_site,
+                                              n_individs_per_family,
+                                              n_covars, mu = 1, sigma2 = sigma2_true,
+                                              seed = 10) # Ensure a diff seed is used
+dataListNew <- list(simulation_results_new$X[[1]])
+source("code/BIPpredict.R")
+y_preds <- BIPpredict(dataListNew=dataListNew, Result=BIPmixed_result,
+                      meth="BMA", Wnew = simulation_results_new$W, 
+                      Z_family_to_site = simulation_results_new$Z_family_to_site, 
+                      Z_family = simulation_results_new$Z_family)$ypredict
+# Calculate the differences
+differences <- simulation_results_new$Y - y_preds
+# Square the differences
+squared_differences <- differences^2
+# Calculate the Mean Squared Error
+mse <- mean(squared_differences)
+# Print the MSE
+print(mse)
+
+# Compare predictions to those from vanilla BIP
+BIP_result <- vanilla_result
+BIP_result$Method <- 0 # Add method to result
+y_preds_BIP <- BIPpredict(dataListNew=list(simulation_results_new$X[[1]], simulation_results_new$W), 
+                          Result=BIP_result,
+                          meth="BMA")$ypredict
+# Calculate the differences
+differences <- simulation_results_new$Y - y_preds_BIP
+# Square the differences
+squared_differences <- differences^2
+# Calculate the Mean Squared Error
+mse <- mean(squared_differences)
+# Print the MSE
+print("BIP mse:")
+print(mse)
+
+# Combine true values and predictions into a data frame
+data_to_plot <- data.frame(
+  True_Y = c(simulation_results_new$Y, simulation_results_new$Y),
+  Predicted_Y = c(y_preds, y_preds_BIP),
+  Method = rep(c("BIPmixed", "BIP"), each = length(simulation_results_new$Y))
 )
 
-# Create the traceplot using ggplot2
-traceplot <- ggplot(traceplot_data, aes(x = iteration, y = sigma2_non_outcome)) +
-  geom_line() +
-  labs(
-    title = "Traceplot of sigma2_non_outcome_samples",
-    x = "MCMC Iteration",
-    y = "sigma2_non_outcome"
-  ) +
-  theme_minimal()
-
-# Print the traceplot
-print(traceplot)
-
-# TODO understand why unimportant features have estimated sigma2 
-# approx 1 no matter what. It seems to be associated with the starting position
-x <- simulation_results$X[[1]][, 6, drop = FALSE]
-# We assume prior for sigma2m is IG(2,1)
-sigma_prior_a = 2
-sigma_prior_b = 1
-# Assume an estimate close to 1
-sigma_hat <- 1
-# Estimate conjugate parameters
-alpha <- sigma_prior_a + N_obs/2
-# In the context of a variable being unimportant, 
-# With an estimate close to 1, we stay near 1 since sigma_hat approx 1
-beta <- sigma_prior_b + 1/sigma_hat * t(x)%*%x/2
-estSig2mean <- beta / (alpha-1)
-print(estSig2mean)
-hist(1/rgamma(1000, alpha, beta))
-# TODO In the context of an important feature, our beta is diff?
-# Assume gamma estimate is close to truth
-gamma_est_index <- which(simulation_results$gamma==1)
-# Assume an variance estimate close to truth
-sigma_hat <- sigma2_true
-Ugamma <- simulation_results$U[, gamma_est_index, drop = FALSE]
-Sigma_j_inv <- solve(
-  Ugamma %*% t(Ugamma) + diag(N_obs)
-)
-beta <- sigma_prior_b + 1/sigma_hat * t(x) %*% Sigma_j_inv %*% x/2
-estSig2mean <- beta / (alpha-1)
-print(estSig2mean)
-hist(1/rgamma(1000, alpha, beta))
+# Plot using ggplot2
+ggplot(data_to_plot, aes(x = True_Y, y = Predicted_Y, color = Method)) +
+  geom_point(alpha = 0.6) +  # Scatter plot with points
+  labs(title = "True Y vs Predicted Y",
+       x = "True Y Values",
+       y = "Predicted Y Values",
+       color = "Method") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
 */
