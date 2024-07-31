@@ -2885,23 +2885,62 @@ variance_plot <- ggplot(family_metrics_results, aes(x = Variance, fill = Method,
 # Arrange the plots in a grid
 grid.arrange(mse_plot, mean_bias_plot, variance_plot, ncol = 1)
 
+# Define the sites and families of interest & Create the plot design matrix
+site_ids <- 1:3
+n_families <- 3
+set.seed(123)
+plot_design_matrix <- data.frame()
+for (s in site_ids) {
+  family_ids <- family_metrics_results %>% 
+    filter(Site == s) %>% pull(Family) %>% sample(n_families)
+  plot_design_matrix <- rbind(plot_design_matrix, 
+                              data.frame(
+                                Site = rep(s, n_families), 
+                                Family = family_ids
+                              )
+  )
+}
 
+# Determine the common x-axis and y-axis limits for consistent scaling
+all_residuals <- family_metrics_results %>%
+  filter(Site %in% site_ids, Family %in% plot_design_matrix$Family) %>%
+  pull(Residuals)
+x_limits <- range(all_residuals, na.rm = TRUE)
+y_limits <- c(0, 1)
 
+# Generate a list of plots using lapply
+plot_list <- lapply(1:nrow(plot_design_matrix), function(i) {
+  # Extract site_id and family_id
+  site_id <- plot_design_matrix$Site[i]
+  family_id <- plot_design_matrix$Family[i]
+  
+  # Extract residuals for plotting
+  residuals_df <- family_metrics_results %>%
+    filter(Site == site_id & Family == family_id)
+  
+  # Create a density plot of the residuals for the specified family without titles and axis labels
+  ggplot(residuals_df, aes(x = Residuals, color = Method)) +
+    geom_density(alpha = 0.5) +
+    xlim(x_limits) + ylim(y_limits) +  # Set common axis limits
+    theme_minimal() +
+    theme(legend.position = "none",
+          axis.title = element_blank())
+})
 
-# Choose the family of interest, e.g., family_id = 1 in site_id = 1
-site_id <- 1
-family_id <- 1
-
-# Extract residuals for plotting
-residuals_df <- family_metrics_results %>% 
-  filter(Site==site_id & Family==family_id) 
-
-# Create a density plot of the residuals for the specified family
-ggplot(residuals_df, aes(x = Residuals, color = Method)) +
+# Extract legend from one plot
+legend_plot <- ggplot(family_metrics_results %>% filter(Site == 1, Family == 1), 
+                      aes(x = Residuals, color = Method)) +
   geom_density(alpha = 0.5) +
-  labs(title = paste("Density Plot of Residuals for Family", family_id, "in Site", site_id),
-       x = "Residuals",
-       y = "Density") +
-  theme_minimal()
+  theme_minimal() +
+  theme(legend.position = "bottom")
+legend <- cowplot::get_legend(legend_plot)
 
+# Create common x-axis and y-axis labels using textGrob
+x_label <- grid::textGrob("Residuals for Family (Rows) in Site (Columns)", gp = grid::gpar(fontsize = 14))
+y_label <- grid::textGrob("Density", rot = 90, gp = grid::gpar(fontsize = 14))
+
+# Arrange the plots in a grid and add the common labels and legend
+grid.arrange(grobs = c(plot_list, list(legend)), 
+             ncol = length(site_ids), nrow = length(family_ids) + 1,
+             bottom = legend, top = x_label, left = y_label)
 */
