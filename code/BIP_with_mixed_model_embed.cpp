@@ -1807,7 +1807,7 @@ r <- 2
 n_covars <- 2
 N_sites <- 30
 n_families_per_site <- 30
-n_individs_per_family <- 10
+n_individs_per_family <- 30
 
 sigma2_ksi_true <- 1.25 # Site Variance
 sigma2_theta_true <- rep(0.15, N_sites) # Family:Site Variances
@@ -2574,12 +2574,15 @@ data_to_plot <- data.frame(
   Method = rep(c("BIPmixed", "BIP"), each = length(simulation_results_new$Y))
 )
 
+# Create the scatterplot with the 1:1 reference line
 ggplot(data_to_plot, aes(x = True_Y, y = Predicted_Y, color = Method)) +
   geom_point(alpha = 0.6) +  # Scatter plot with points
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +  # 1:1 line
   labs(title = "True Y vs Predicted Y",
        x = "True Y Values",
        y = "Predicted Y Values",
        color = "Method") +
+  coord_equal() +  # Ensure equal scaling on both axes
   theme_minimal() +
   theme(legend.position = "bottom")
 
