@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --mem=16g
-#SBATCH -t 6:00:00
+#SBATCH -t 24:00:00
 
 #SBATCH --account=mfiecas
 #SBATCH --mail-type=ALL

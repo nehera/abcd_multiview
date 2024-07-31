@@ -22,7 +22,7 @@ if (("BIPnet" %in% installed.packages()[,"Package"]) == FALSE) {
 }
 
 # Define data analysis conditions
-possible_r <- c(6, 8)
+possible_r <- c(8, 10) # c(6, 8)
 outcome_labels <- c("Internalizing Problems", "Externalizing Problems")
 outcome_varnames <- c("cbcl_scr_syn_internal_r", "cbcl_scr_syn_external_r")
 outcome_labels_and_varnames <- paste(outcome_labels, outcome_varnames, sep = "_and_")

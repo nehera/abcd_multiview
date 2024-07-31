@@ -1809,9 +1809,9 @@ N_sites <- 30
 n_families_per_site <- 30
 n_individs_per_family <- 10
 
-sigma2_ksi_true <- 1 # Site Variance
-sigma2_theta_true <- rep(0.25, N_sites) # Family:Site Variances
-sigma2_true <- 0.25
+sigma2_ksi_true <- 1.25 # Site Variance
+sigma2_theta_true <- rep(0.15, N_sites) # Family:Site Variances
+sigma2_true <- 0.15
 
 # User Arguments for Parameter Estimation
 n_chains <- 2
@@ -2538,10 +2538,11 @@ ggplot(mcmc_summary, aes(x = parameter_type, y = Rhat)) +
 # # Print the traceplot
 # print(traceplot)
 
-# Let's checkout prediction performance of BIPmixed
+# Let's checkout prediction performance
 # starting with the 1st chain
 BIPmixed_result <- samples_list[[1]]
-# for now, just get new simulation results
+
+# We get new simulation results
 simulation_results_new <- simulate_re_data_nested(n_views = 1, p_m = 10, r = r,
                                               prob_feature_importance = 0.5,
                                               prob_component_importance = 0.5,
@@ -2551,45 +2552,28 @@ simulation_results_new <- simulate_re_data_nested(n_views = 1, p_m = 10, r = r,
                                               n_individs_per_family,
                                               n_covars, mu = 1, sigma2 = sigma2_true,
                                               seed = 10) # Ensure a diff seed is used
-dataListNew <- list(simulation_results_new$X[[1]])
-source("code/BIPpredict.R")
-y_preds <- BIPpredict(dataListNew=dataListNew, Result=BIPmixed_result,
-                      meth="BMA", Wnew = simulation_results_new$W, 
-                      Z_family_to_site = simulation_results_new$Z_family_to_site, 
-                      Z_family = simulation_results_new$Z_family)$ypredict
-# Calculate the differences
-differences <- simulation_results_new$Y - y_preds
-# Square the differences
-squared_differences <- differences^2
-# Calculate the Mean Squared Error
-mse <- mean(squared_differences)
-# Print the MSE
-print(mse)
+
+# Extracting y_preds
+source("BIPpredict.R")
+y_preds_BIPmixed <- BIPpredict(dataListNew=list(simulation_results_new$X[[1]]), 
+                               Result=BIPmixed_result, meth="BMA", 
+                               Wnew = simulation_results_new$W, 
+                               Z_family_to_site = simulation_results_new$Z_family_to_site, 
+                               Z_family = simulation_results_new$Z_family)$ypredict
 
 # Compare predictions to those from vanilla BIP
 BIP_result <- vanilla_result
 BIP_result$Method <- 0 # Add method to result
 y_preds_BIP <- BIPpredict(dataListNew=list(simulation_results_new$X[[1]], simulation_results_new$W), 
-                          Result=BIP_result,
-                          meth="BMA")$ypredict
-# Calculate the differences
-differences <- simulation_results_new$Y - y_preds_BIP
-# Square the differences
-squared_differences <- differences^2
-# Calculate the Mean Squared Error
-mse <- mean(squared_differences)
-# Print the MSE
-print("BIP mse:")
-print(mse)
+                          Result=BIP_result, meth="BMA")$ypredict
 
-# Combine true values and predictions into a data frame
+# Stratified by method, we plot all true Y vs predicted Y
 data_to_plot <- data.frame(
   True_Y = c(simulation_results_new$Y, simulation_results_new$Y),
-  Predicted_Y = c(y_preds, y_preds_BIP),
+  Predicted_Y = c(y_preds_BIPmixed, y_preds_BIP),
   Method = rep(c("BIPmixed", "BIP"), each = length(simulation_results_new$Y))
 )
 
-# Plot using ggplot2
 ggplot(data_to_plot, aes(x = True_Y, y = Predicted_Y, color = Method)) +
   geom_point(alpha = 0.6) +  # Scatter plot with points
   labs(title = "True Y vs Predicted Y",
@@ -2598,4 +2582,323 @@ ggplot(data_to_plot, aes(x = True_Y, y = Predicted_Y, color = Method)) +
        color = "Method") +
   theme_minimal() +
   theme(legend.position = "bottom")
+
+# Let's consider site-wise estimates and visualizations
+# Function to calculate MSE given true values and predicted values
+calculate_mse <- function(true_values, predicted_values) {
+  mean((true_values - predicted_values)^2)
+}
+
+# Function to calculate MSE by site for a given method
+calculate_mse_by_site <- function(Y, y_preds, site_membership, method_name) {
+  data <- data.frame(
+    True_Y = Y,
+    Predicted_Y = y_preds,
+    Site = site_membership
+  )
+  
+  mse_by_site <- data %>%
+    group_by(Site) %>%
+    summarise(MSE = calculate_mse(True_Y, Predicted_Y)) %>%
+    mutate(Method = method_name)
+  
+  return(mse_by_site)
+}
+
+# Extract site membership from simulation_results_new$Z_site
+site_membership <- apply(simulation_results_new$Z_site, 1, function(row) which(row == 1))
+
+# Calculate MSE by site for BIPmixed
+mse_by_site_BIPmixed <- calculate_mse_by_site(simulation_results_new$Y, y_preds_BIPmixed, site_membership, "BIPmixed")
+
+# Calculate MSE by site for BIP
+mse_by_site_BIP <- calculate_mse_by_site(simulation_results_new$Y, y_preds_BIP, site_membership, "BIP")
+
+# Combine results
+mse_by_site_method <- bind_rows(mse_by_site_BIPmixed, mse_by_site_BIP)
+
+# Print the MSE for each site and method
+print(mse_by_site_method)
+
+# Create a density plot stratified by Method
+ggplot(mse_by_site_method, aes(x = MSE, fill = Method, color = Method)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of MSE by Method",
+       x = "Mean Squared Error (MSE)",
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# Let's consider family:site-wise estimates and visualizations
+
+# Extract the family to site information for site 1
+site_1_families <- which(simulation_results_new$Z_family_to_site[, 1] != 0)
+family_1_indivs <- which(simulation_results_new$Z_family[, site_1_families[1]] == 1)
+
+# Define a function to calculate MSE for the specific family
+calculate_mse_for_family <- function(Y, y_preds, indices) {
+  mean((Y[indices] - y_preds[indices])^2)
+}
+
+# Calculate MSE for the first family in site 1 for both methods
+mse_family_1_BIPmixed <- calculate_mse_for_family(simulation_results_new$Y, y_preds_BIPmixed, family_1_indivs)
+mse_family_1_BIP <- calculate_mse_for_family(simulation_results_new$Y, y_preds_BIP, family_1_indivs)
+
+# Create a data frame for plotting
+mse_data <- data.frame(
+  Method = c("BIPmixed", "BIP"),
+  MSE = c(mse_family_1_BIPmixed, mse_family_1_BIP)
+)
+
+print("MSE data for the 1st family in the 1st study site:")
+print(mse_data)
+
+# Create scatterplot of predictions vs true values for the first family in site 1
+prediction_data <- data.frame(
+  True_Y = rep(simulation_results_new$Y[family_1_indivs], 2),
+  Predicted_Y = c(y_preds_BIPmixed[family_1_indivs], y_preds_BIP[family_1_indivs]),
+  Method = rep(c("BIPmixed", "BIP"), each = length(family_1_indivs))
+)
+
+# Calculate the range of values for setting the axis limits and breaks
+range_values <- range(c(prediction_data$True_Y, prediction_data$Predicted_Y))
+
+# Create scatterplot of predictions vs true values for the first family in site 1
+ggplot(prediction_data, aes(x = True_Y, y = Predicted_Y, color = Method)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +  # Add 1:1 line
+  labs(title = "Scatterplot of Predicted vs True Values for the First Family in Site 1",
+       x = "True Y Values",
+       y = "Predicted Y Values") +
+  scale_x_continuous(limits = range_values, breaks = seq(floor(range_values[1]), ceiling(range_values[2]), by = 1)) +
+  scale_y_continuous(limits = range_values, breaks = seq(floor(range_values[1]), ceiling(range_values[2]), by = 1)) +
+  coord_equal() +  # Ensure equal scaling on both axes
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+# Function to create scatterplot of predictions vs true values
+create_scatterplot <- function(simulation_results_new, family_indivs, y_preds_BIPmixed, y_preds_BIP, plot_title = NULL, show_legend = FALSE) {
+  # Create data frame for plotting
+  prediction_data <- data.frame(
+    True_Y = rep(simulation_results_new$Y[family_indivs], 2),
+    Predicted_Y = c(y_preds_BIPmixed[family_indivs], y_preds_BIP[family_indivs]),
+    Method = rep(c("BIPmixed", "BIP"), each = length(family_indivs))
+  )
+  
+  # Calculate the range of values for setting the axis limits and breaks
+  range_values <- range(c(prediction_data$True_Y, prediction_data$Predicted_Y))
+  
+  # Create the scatterplot
+  p <- ggplot(prediction_data, aes(x = True_Y, y = Predicted_Y, color = Method)) +
+    geom_point(alpha = 0.6) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +  # Add 1:1 line
+    scale_x_continuous(limits = range_values, breaks = seq(floor(range_values[1]), ceiling(range_values[2]), by = 1)) +
+    scale_y_continuous(limits = range_values, breaks = seq(floor(range_values[1]), ceiling(range_values[2]), by = 1)) +
+    coord_equal() +  # Ensure equal scaling on both axes
+    theme_minimal()
+  
+  # Add title if provided
+  if (!is.null(plot_title)) {
+    p <- p + labs(title = plot_title)
+  } else {
+    p <- p + labs(title = NULL)
+  }
+  
+  # Set legend position
+  if (show_legend) {
+    p <- p + theme(legend.position = "bottom")
+  } else {
+    p <- p + theme(legend.position = "none")
+  }
+  
+  return(p)
+}
+
+site_id <- 1
+family_id <- 1
+
+site_families <- which(simulation_results_new$Z_family_to_site[, site_id] != 0)
+family_indivs <- which(simulation_results_new$Z_family[, site_families[family_id]] == 1)
+
+# Generate predictions (assuming y_preds_BIPmixed and y_preds_BIP are available)
+# y_preds_BIPmixed <- ...
+# y_preds_BIP <- ...
+
+# Create plot
+plot <- create_scatterplot(simulation_results_new, family_indivs, y_preds_BIPmixed, y_preds_BIP, plot_title = "1st family in 1st site", show_legend = TRUE)
+print(plot)
+
+# Define site and family IDs
+site_ids <- 1:3
+family_ids <- 1:3
+
+# Create the plot design matrix
+plot_design_matrix <- expand.grid(site_id = site_ids, family_id = family_ids)
+
+# Generate a list of plots using lapply
+plot_list <- lapply(1:nrow(plot_design_matrix), function(i) {
+  # Extract site_id and family_id
+  site_id <- plot_design_matrix$site_id[i]
+  family_id <- plot_design_matrix$family_id[i]
+  
+  # Extract family indices
+  site_families <- which(simulation_results_new$Z_family_to_site[, site_id] != 0)
+  family_indivs <- which(simulation_results_new$Z_family[, site_families[family_id]] == 1)
+  
+  # Generate the scatterplot for this site and family
+  create_scatterplot(simulation_results_new, family_indivs, y_preds_BIPmixed, y_preds_BIP)
+})
+
+# Arrange the plots in a grid
+grid.arrange(grobs = plot_list, ncol = length(site_ids), nrow = length(family_ids))
+
+# Assume the necessary data and functions are already loaded, including:
+# - simulation_results_new: containing Y, Z_family_to_site, and Z_family
+# - y_preds_BIPmixed and y_preds_BIP: containing predictions for both methods
+
+# Define a function to calculate MSE for the specific family
+calculate_mse_for_family <- function(Y, y_preds, indices) {
+  mean((Y[indices] - y_preds[indices])^2)
+}
+
+# Initialize a data frame to store MSEs for each family in each site
+family_mse_results <- data.frame()
+
+# Iterate over each site
+for (site_id in 1:ncol(simulation_results_new$Z_family_to_site)) {
+  # Get families in the current site
+  families_in_site <- which(simulation_results_new$Z_family_to_site[, site_id] != 0)
+  
+  # Iterate over each family in the current site
+  for (family_id in families_in_site) {
+    # Get individual indices for the current family
+    family_indivs <- which(simulation_results_new$Z_family[, family_id] == 1)
+    
+    # Calculate MSE for the current family using both methods
+    mse_family_BIPmixed <- calculate_mse_for_family(simulation_results_new$Y, y_preds_BIPmixed, family_indivs)
+    mse_family_BIP <- calculate_mse_for_family(simulation_results_new$Y, y_preds_BIP, family_indivs)
+    
+    # Store the results in the data frame
+    family_mse_results <- rbind(family_mse_results, data.frame(
+      Site = site_id,
+      Family = family_id,
+      Method = "BIPmixed",
+      MSE = mse_family_BIPmixed
+    ))
+    family_mse_results <- rbind(family_mse_results, data.frame(
+      Site = site_id,
+      Family = family_id,
+      Method = "BIP",
+      MSE = mse_family_BIP
+    ))
+  }
+}
+
+# Create the density plot
+ggplot(family_mse_results, aes(x = MSE, fill = Method, color = Method)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of MSE Stratified by Family in Site",
+       x = "Mean Squared Error (MSE)",
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# Define a function to calculate MSE, mean bias, variance, and residuals for the specific family
+calculate_metrics_for_family <- function(Y, y_preds, indices) {
+  residuals <- Y[indices] - y_preds[indices]
+  mse <- mean(residuals^2)
+  mean_bias <- mean(residuals)
+  var_pred <- var(y_preds[indices])
+  list(MSE = mse, Mean_Bias = mean_bias, Variance = var_pred, Residuals = residuals)
+}
+
+# Initialize a data frame to store metrics for each family in each site
+family_metrics_results <- data.frame()
+
+# Iterate over each site
+for (site_id in 1:ncol(simulation_results_new$Z_family_to_site)) {
+  # Get families in the current site
+  families_in_site <- which(simulation_results_new$Z_family_to_site[, site_id] != 0)
+  
+  # Iterate over each family in the current site
+  for (family_id in families_in_site) {
+    # Get individual indices for the current family
+    family_indivs <- which(simulation_results_new$Z_family[, family_id] == 1)
+    
+    # Calculate metrics for the current family using both methods
+    metrics_BIPmixed <- calculate_metrics_for_family(simulation_results_new$Y, y_preds_BIPmixed, family_indivs)
+    metrics_BIP <- calculate_metrics_for_family(simulation_results_new$Y, y_preds_BIP, family_indivs)
+    
+    # Store the results in the data frame
+    family_metrics_results <- rbind(family_metrics_results, data.frame(
+      Site = site_id,
+      Family = family_id,
+      Method = "BIPmixed",
+      MSE = metrics_BIPmixed$MSE,
+      Mean_Bias = metrics_BIPmixed$Mean_Bias,
+      Variance = metrics_BIPmixed$Variance,
+      Residuals = metrics_BIPmixed$Residuals
+    ))
+    family_metrics_results <- rbind(family_metrics_results, data.frame(
+      Site = site_id,
+      Family = family_id,
+      Method = "BIP",
+      MSE = metrics_BIP$MSE,
+      Mean_Bias = metrics_BIP$Mean_Bias,
+      Variance = metrics_BIP$Variance,
+      Residuals = metrics_BIP$Residuals
+    ))
+  }
+}
+
+# Create density plot for MSE
+mse_plot <- ggplot(family_metrics_results, aes(x = MSE, fill = Method, color = Method)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "MSE",
+       x = "Mean Squared Error (MSE)",
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "none")  # Remove legend from this plot
+
+# Create density plot for Mean Bias
+mean_bias_plot <- ggplot(family_metrics_results, aes(x = Mean_Bias, fill = Method, color = Method)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Mean Bias",
+       x = "Mean Bias",
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "none")  # Remove legend from this plot
+
+# Create density plot for Variance
+variance_plot <- ggplot(family_metrics_results, aes(x = Variance, fill = Method, color = Method)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Variance in Predictions",
+       x = "Variance",
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "bottom")  # Include legend only in this plot
+
+# Arrange the plots in a grid
+grid.arrange(mse_plot, mean_bias_plot, variance_plot, ncol = 1)
+
+
+
+
+# Choose the family of interest, e.g., family_id = 1 in site_id = 1
+site_id <- 1
+family_id <- 1
+
+# Extract residuals for plotting
+residuals_df <- family_metrics_results %>% 
+  filter(Site==site_id & Family==family_id) 
+
+# Create a density plot of the residuals for the specified family
+ggplot(residuals_df, aes(x = Residuals, color = Method)) +
+  geom_density(alpha = 0.5) +
+  labs(title = paste("Density Plot of Residuals for Family", family_id, "in Site", site_id),
+       x = "Residuals",
+       y = "Density") +
+  theme_minimal()
+
 */

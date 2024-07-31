@@ -80,5 +80,5 @@ BIPpredict=function(dataListNew=dataListNew,
   } else {
     ypredict=as.vector(ypredict)+Result$EstIntcp
   }
-  return (list(ypredict=as.vector(ypredict)+Result$EstIntcp,Upredtest=Upredict))
+  return (list(ypredict=ypredict, Upredtest=Upredict))
 }
