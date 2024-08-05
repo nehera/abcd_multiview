@@ -1801,17 +1801,18 @@ library(scales)
 library(tidyverse)
 library(coda)
 library(MASS)
+library(lme4)
 
 # User Arguments for Data Simulation
 r <- 2
 n_covars <- 2
 N_sites <- 30
-n_families_per_site <- 30
-n_individs_per_family <- 30
+n_families_per_site <- 100
+n_individs_per_family <- 2
 
-sigma2_ksi_true <- 1.25 # Site Variance
-sigma2_theta_true <- rep(0.15, N_sites) # Family:Site Variances
-sigma2_true <- 0.15
+sigma2_ksi_true <- 0.8 # Site Variance
+sigma2_theta_true <- rep(0.2, N_sites) # Family:Site Variances
+sigma2_true <- 0.1
 
 # User Arguments for Parameter Estimation
 n_chains <- 2
@@ -1887,7 +1888,7 @@ simulate_re_data_nested <- function(n_views, p_m, r,
                                     seed=1, balanced=T) {
 
     # Outcome model
-    set.seed(seed)
+    set.seed(10)
 
     if(length(sigma2_theta) != N_sites) {
         stop("Length of sigma2_theta must equal N_sites.")
@@ -1914,7 +1915,14 @@ simulate_re_data_nested <- function(n_views, p_m, r,
     alpha[omics_data$index_important_components, ] <- rep(1, n_important_components) # rnorm(length(omics_data$index_important_components), 0, sqrt(sigma2))
 
     # Simulate ksi_s ~ N(mu, sigma2_ksi)
-    ksi <- rnorm(N_sites, mu, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
+    # ksi <- rnorm(N_sites, mu, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
+    # # Let's experiment with drawing from 2 diff populations
+    # ksi_pos <- rnorm(N_sites/2, mu, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
+    # ksi_neg <- rnorm(N_sites/2, -mu, sd = sqrt(sigma2_ksi)) %>% matrix(ncol = 1)
+    # ksi <- matrix(c(ksi_pos, ksi_neg), ncol = 1)
+    
+    # Simulate ksi_s ~ mu + t(3)
+    ksi <- mu + rt(N_sites, df = 3) %>% matrix(ncol = 1)
 
     # Sample theta_sf|ksi_s ~ N(ksi_s, sigma2_theta_s)
     theta <- matrix(0, nrow = N_sites, ncol = n_families_per_site)
@@ -1933,7 +1941,8 @@ simulate_re_data_nested <- function(n_views, p_m, r,
         }
     }
 
-    beta <- matrix(rep(1, n_covars), ncol = 1)
+    # beta <- matrix(rep(1, n_covars), ncol = 1)
+    beta <- matrix(rep(0, n_covars), ncol = 1) # Let's see what happens when covars have no effect
 
     epsilon <- rnorm(N_obs, 0, sd = sqrt(sigma2)) %>% matrix(ncol = 1)
 
@@ -2155,14 +2164,6 @@ BIP <- function(dataList=dataList, IndicVar=IndicVar, groupList=NULL,
                 )
     )
 }
-
-# # Simulate data & estimate associated parameters
-# source("00_simulate_simple_data.R")
-# set.seed(1)
-# simulation_results <- simulate_iid_data(prob_component_importance = 0.5)
-# dataList <- list(simulation_results$X_list[[1]],
-#                  simulation_results$X_list[[2]],
-#                  simulation_results$Y)
 
 # Run MCMC sampler in parallel
 seeds <- 1:n_chains
@@ -2475,7 +2476,6 @@ RE_df <- data.frame(y_tilde = simulation_results$Y -
 RE_df$w1 <- W[,1]
 RE_df$w2 <- W[,2]
 
-library(lme4)
 summary(lmer(y_tilde~(1|site) + (1|family:site) + w1 + w2, data = RE_df))
 
 # Checkout omics residual variance
@@ -2943,4 +2943,62 @@ y_label <- grid::textGrob("Density", rot = 90, gp = grid::gpar(fontsize = 14))
 grid.arrange(grobs = c(plot_list, list(legend)), 
              ncol = length(site_ids), nrow = length(family_ids) + 1,
              bottom = legend, top = x_label, left = y_label)
+
+# Let's focus on families that are in the tail of the random effect distribution
+# hist(theta_true)
+
+# Calculate the 2.5% and 97.5% quantiles
+quantiles <- quantile(theta_true, probs = c(0.025, 0.975))
+
+# Identify the indices of families outside these quantiles
+outlier_family_ids <- which(theta_true < quantiles[1] | theta_true > quantiles[2])
+
+# ID their corresponding site ids
+outlier_site_ids <- apply(Z_family_to_site[outlier_family_ids, ], 1, function(row) { which(row != 0) } )
+
+outlier_df <- data.frame(Site = outlier_site_ids, Family = outlier_family_ids) %>%
+  left_join(family_metrics_results)
+
+ggplot(outlier_df, aes(x = MSE, color = Method)) +
+  geom_density()
+
+ggplot(outlier_df, aes(x = Mean_Bias, color = Method)) +
+  geom_density()
+
+ggplot(outlier_df, aes(x = Variance, color = Method)) +
+  geom_density()
+
+# # Get the first 3 unique Sites and Families
+# unique_sites <- unique(outlier_df$Site)[1:3]
+# n_families_to_plot_per_site <- 3
+# # TODO fix issue in getting/ sampling unique_families
+# unique_familes <- unique(outlier_df$Site)[1:3]
+# for (s in 1:unique_sites) {
+#   families_of_site <- outlier_df %>%
+#     filter(Site==s) %>%
+#     pull(Family)
+#   unique_familes <- c(unique_families, 
+#                       unique(families_of_site)[1:n_families_to_plot_per_site])
+# }
+# 
+# 
+# # Filter the data for these Sites and Families
+# filtered_df <- outlier_df %>%
+#   filter(Site %in% unique_sites & Family %in% unique_families)
+# 
+# # Create the panel plot
+# ggplot(filtered_df, aes(x = Residuals, fill = Method)) +
+#   geom_histogram(binwidth = 0.1, color = "black", position = "dodge") +
+#   facet_grid(Site ~ Family) +
+#   theme_minimal() +
+#   labs(title = "Residuals by Site and Family",
+#        x = "Residuals",
+#        y = "Frequency") 
+
+# Calculate integrated bias
+family_metrics_results %>%
+  mutate(bias2 = Mean_Bias^2) %>%
+  group_by(Method) %>%
+  summarize(sum(bias2))
+# Takeaway: BIPmixed is less biased on the family:nest level. 
 */
