@@ -1,26 +1,48 @@
-library(MASS)
+# Load libraries
+pacman::p_load(MASS)
+
+# Define BIPpredict function
 BIPpredict=function(dataListNew=dataListNew, 
                     Result=Result, meth="BMA",
-                    # TODO include Wnew in dataListNew and peel out
-                    # TODO specify the design matrices to be for new individuals
-                    # TODO add checks to ensure design matrices conform to desired dimensions
-                    Wnew = NULL, Z_family_to_site=NULL, Z_family=NULL) {
-  IndicVar=Result$IndicVar
-  nbrcomp=Result$nbrcomp
-  X_new=list();
-  np=which(IndicVar==1)
-  Np=length(IndicVar);
-
-  print("Scaling new data...")
-  j=1;
-  for (i in  1:Np){
-    X_new[[i]]=NULL;
-    if (IndicVar[i]!=1){ ## We do not center the response variable
-      X_new[[i]]=dataListNew[[j]];
-      X_new[[i]]=t((t(X_new[[i]])-Result$MeanData[[i]])/Result$SDData[[i]])
-      j=j+1;
+                    Z_site=NULL, Z_family=NULL) {
+  
+  IndicVar <- Result$IndicVar
+  # We exclude outcome data in getting predictions
+  IndicVar <- IndicVar[IndicVar!=1]
+  
+  if (Result$Method==2) {
+    # Peel out covariates in the case that Method= BIPmixed & covariates included
+    covariate_index <- which(IndicVar==2)
+    if (length(covariate_index) == 1) {
+      Wnew <- dataListNew[covariate_index]
+      dataListNew <- dataListNew[-covariate_index]
+      IndicVar <- IndicVar[-covariate_index]
+    } else {
+      Wnew <- matrix(0, nrow = nrow(Z_site), ncol = 1)
     }
+    # Map families to study site (This needs to happen regardless of Method since passed to mainfunction)
+    Z_family_to_site <- t(Z_family) %*% Z_site
+    N_sites <- ncol(Z_site)
   }
+  
+  nbrcomp <- Result$nbrcomp
+  X_new <- list()
+  np <- which(IndicVar==1)
+  Np <- length(IndicVar)
+  
+  print("Scaling new data...")
+  
+  # Normalize each matrix in the list
+  X_new <- lapply(1:Np, function(i) {
+    if (IndicVar[i] != 1) {
+      # Subtract the mean and divide by the standard deviation
+      (dataListNew[[i]] - matrix(Result$MeanData[[i]], nrow = nrow(dataListNew[[i]]), ncol = ncol(dataListNew[[i]]), byrow = TRUE)) /
+        matrix(Result$SDData[[i]], nrow = nrow(dataListNew[[i]]), ncol = ncol(dataListNew[[i]]), byrow = TRUE)
+    } else {
+      # If IndicVar[i] == 1, return the matrix as is
+      dataListNew[[i]]
+    }
+  })
   
   nbrmodel=Result$nbrmodel
   EstLoad=Result$EstLoadModel
@@ -78,7 +100,7 @@ BIPpredict=function(dataListNew=dataListNew,
         }
       }
   } else {
-    ypredict=as.vector(ypredict)+Result$EstIntcp
+    ypredict <- as.vector(ypredict) + Result$EstIntcp
   }
   return (list(ypredict=ypredict, Upredtest=Upredict))
 }

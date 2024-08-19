@@ -6,7 +6,7 @@ args <- commandArgs(trailingOnly=TRUE)
 if(length(args) == 0){ 
   print("No arguments supplied.") 
   ## supply default values 
-  slurm_id <- 1
+  slurm_id <- 9
   } else{ 
     # set i to the first arg 
     slurm_id = args[1] 
@@ -16,34 +16,53 @@ cat("Slurm ID:", slurm_id)
 # Load libraries
 if (("pacman" %in% installed.packages()[,"Package"]) == FALSE) { install.packages("pacman") }
 pacman::p_load(tidyverse, reshape2, parallel) 
-if (("BIPnet" %in% installed.packages()[,"Package"]) == FALSE) {
-  pacman::p_load(devtools)
-  devtools::install_github('chekouo/BIPnet')
-}
+# if (("BIPnet" %in% installed.packages()[,"Package"]) == FALSE) {
+#   pacman::p_load(devtools)
+#   devtools::install_github('chekouo/BIPnet')
+# }
+
+# Source methods
+source("src/BIP.R") # Includes BIPmixed implementation
+source("src/BIPpredict.R")
 
 # Define data analysis conditions
-possible_r <- c(8, 10) # c(6, 8)
+possible_r <- c(5, 6)
 outcome_labels <- c("Internalizing Problems", "Externalizing Problems")
 outcome_varnames <- c("cbcl_scr_syn_internal_r", "cbcl_scr_syn_external_r")
 outcome_labels_and_varnames <- paste(outcome_labels, outcome_varnames, sep = "_and_")
-normalize_response_flags <- c(FALSE, TRUE)
-analysis_methods <- c("BIP") # , "BIPmixed")
+analysis_methods <- c("BIP", "BIPmixed")
+ELA_contin_flags <- c(FALSE, TRUE) # Flag to indicate whether or not to artificially include a continuous var in the ELA view
 analyses_df <- expand.grid(r = possible_r, outcome_label_and_varname = outcome_labels_and_varnames, 
-                           normalize_response = normalize_response_flags,
-                           analysis_method = analysis_methods)
+                           analysis_method = analysis_methods, ELA_contin_flag = ELA_contin_flags) %>%
+  filter(!(analysis_method == "BIP" & r == 5)) # There are 6 views when applying BIP, and it's important to not have n components < n views. 
+
+# Do analysis_1 by default
+analysis_conditions <- analyses_df[slurm_id, ]
+
+# Extract analysis conditions
+r <- analysis_conditions$r
+analysis_conditions <- analysis_conditions %>%
+  mutate(outcome_label_and_varname = as.character(outcome_label_and_varname)) %>%
+  separate(outcome_label_and_varname, into = c("outcome_label", "varname"), sep = "_and_")
+outcome_label <- analysis_conditions$outcome_label
+outcome_varname <- analysis_conditions$varname
+normalize_response <- analysis_conditions$normalize_response
+analysis_method <- analysis_conditions$analysis_method
+ELA_contin_flag <- analysis_conditions$ELA_contin_flag
 
 # Load training data
 train_list <- readRDS("data/2024-06-24_train_list.rds")
 
 # Option to turn off subsetting
 apply_subsetting <- FALSE
+n_subjects <- 500
 
 # Define analysis date
 date_today <- Sys.Date()
 
 # Sample ids from train_list$outcomes$src_subject_id
 set.seed(123) # Setting seed for reproducibility
-sampled_ids <- sample(train_list$outcomes$src_subject_id, 50)
+sampled_ids <- sample(train_list$outcomes$src_subject_id, n_subjects)
 
 # Function to subset data frames by sampled_ids
 subset_data <- function(df, id_column) {
@@ -83,21 +102,25 @@ if (all_ordered) {
   
   # Drop src_subject_id column from all data frames
   train_list_subset <- train_list_subset %>%
-    map(~ select(.x, -src_subject_id))
+    map(~ dplyr::select(.x, -src_subject_id))
   
   print("src_subject_id column has been dropped from all data frames.")
   
-  # Drop design matrices matrices (views that start with Z_)
-  train_list_subset <- train_list_subset[!grepl("^Z_", names(train_list_subset))]
+  if (analysis_method == "BIP") {
   
-  print(paste("We have dropped the design matrices."))
+    # Drop design matrices matrices (views that start with Z_)
+    train_list_subset <- train_list_subset[!grepl("^Z_", names(train_list_subset))]
+    
+    print(paste("We have dropped the design matrices."))
+  
+  }
   
   # Identify columns with zero variance in each data frame
   zero_variance <- map_df(names(train_list_subset), ~ {
     df_name <- .x
     df <- train_list_subset[[df_name]]
     zero_var_cols <- df %>%
-      select(where(~ var(.) == 0)) %>%
+      dplyr::select(where(~ var(.) == 0)) %>%
       colnames()
     
     tibble(
@@ -118,9 +141,9 @@ if (all_ordered) {
   train_list_subset <- map(train_list_subset, ~ {
     df <- .x
     zero_var_cols <- df %>%
-      select(where(~ var(.) == 0)) %>%
+      dplyr::select(where(~ var(.) == 0)) %>%
       colnames()
-    df %>% select(-all_of(zero_var_cols))
+    df %>% dplyr::select(-all_of(zero_var_cols))
   })
   
   # Convert all data frames in train_list_subset to matrices
@@ -149,64 +172,79 @@ if (any(check_results)) {
 } else {
   cat("No matrices contain NA, NaN, or Inf values.\n")
 }
-  
-# Do analysis_1 by default
-analysis_conditions <- analyses_df[slurm_id, ]
-
-print("Analysis started.")
-
-# Extract analysis conditions
-r <- analysis_conditions$r
-analysis_conditions <- analysis_conditions %>%
-  mutate(outcome_label_and_varname = as.character(outcome_label_and_varname)) %>%
-  separate(outcome_label_and_varname, into = c("outcome_label", "varname"), sep = "_and_")
-outcome_label <- analysis_conditions$outcome_label
-outcome_varname <- analysis_conditions$varname
-normalize_response <- analysis_conditions$normalize_response
-analysis_method <- analysis_conditions$analysis_method
 
 # Focus on the outcome of interest & Drop the outcome that's not
 outcome_index <- which( colnames(train_list_matrices$outcomes) == outcome_varname )
-dataList <- train_list_matrices[!grepl("^outcomes", names(train_list_matrices))]
-dataList$y <- train_list_matrices$outcomes[, outcome_index, drop = FALSE]
+trainList <- train_list_matrices[!grepl("^outcomes", names(train_list_matrices))]
+trainList$y <- train_list_matrices$outcomes[, outcome_index, drop = FALSE]
 
-# Potentially normalize the response variable
-if (normalize_response) {
-  mean_y <- mean(dataList$y)
-  sd_y <- sd(dataList$y)
-  dataList$y <- scale(dataList$y)
-  print("Response normalized.")
-}
-
-# Ensure that r is at least equal to the number of views. 
-if (r < length(train_list_matrices)) {
-  stop("Number of latent factor components r must be at least equal to the number of views.")
+# Potentially add continuous variable to the ELA view
+if (ELA_contin_flag) {
+  trainList$ela_view <- cbind(trainList$ela_view, contin_var = rnorm(nrow(trainList$ela_view)))
+  print("Continous variable added to the ELA view.")
 }
 
 # Fit BIP to ABCD Study Training Set
-print("Fitting BIP...")
+print("Fitting model...")
+
+# Define the indicators where 2= covariates, 0= omics, and 1= outcome.
+IndicVar <- c(2, rep(0,4), 1)
+n_sample <- 5000
+n_burnin <- 1000
 
 if (analysis_method == "BIP") {
-  # Define the indicators where 2= covariates, 0= omics, and 1= outcome.
-  IndicVar <- c(2, rep(0,4), 1)
-  model_fit <- BIPnet::BIP(dataList, IndicVar, groupList = NULL, Method = "BIP",
-                             nbrcomp = r, sample = 5000, burnin = 1000)
+  
+  # Fit models
+  BIP_start_time <- Sys.time()
+  model_fit <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIP",
+                    nbrcomp = r, sample = n_sample, burnin = n_burnin)
+  BIP_end_time <- Sys.time()
+  print("BIP required:")
+  print(BIP_end_time - BIP_start_time)
+  
 } else if (analysis_method == "BIPmixed") {
-  # TODO Source BIPmixed wrapper
-  # TODO Fit BIPmixed to the data
+  
+  # Fit BIPmixed to the data
+  BIPmixed_start_time <- Sys.time()
+  model_fit <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIPmixed",
+                         nbrcomp = r, sample = n_sample, burnin = n_burnin,
+                         Z_family = train_list_matrices$Z_family, Z_site = train_list_matrices$Z_site)
+  BIPmixed_end_time <- Sys.time()
+  print("BIPmixed required")
+  print(BIPmixed_end_time - BIPmixed_start_time)
+  
 } else {
   stop("You must provide a valid analysis_method.")
 }
 
-# Directory to save the model fits
-models_dir <- "models"
-# Directory to save the figures
-figures_dir <- "figures"
-# Define tables directory
-tables_dir <- "tables"
+# Let's make the output directory name
+# Collapse column names and values into a string
+collapsed_string <- apply(dplyr::select(analysis_conditions, -outcome_label), 1, function(row) {
+  paste(names(row), row, sep = "_", collapse = "-")
+})
+
+# Define the output directory string
+output_dir <- file.path("data_analysis_results", collapsed_string)
+# Directories for models, figures, and tables
+models_dir <- file.path(output_dir, "models")
+figures_dir <- file.path(output_dir, "figures")
+tables_dir <- file.path(output_dir, "tables")
+
+# Create the output directory if it doesn't exist
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir)
+} else {
+  stop("output_dir already exists.")
+}
+
+# Create the subdirectories
+dir.create(models_dir)
+dir.create(figures_dir)
+dir.create(tables_dir)
+
 # Define the prefix for any files generated during this analysis
-file_prefix <- paste(date_today, "outcome", str_split(outcome_label, " ")[[1]][1], 
-                     "r", r, "NormalY", normalize_response, "method", analysis_method, sep = "_")
+file_prefix <- paste(date_today, str_split(outcome_label, " ")[[1]][1],
+                               "r", r, "method", analysis_method, sep = "_")
 
 # Store the model fit
 saveRDS(model_fit, paste0(models_dir, "/", file_prefix, "_model_fit.rds"))
@@ -338,7 +376,7 @@ for (plot_name in names(plots)) {
 print("Making lists of variables selected...")
 
 # Set the variable selction threshold
-mpp_threshold <- 0.5
+mpp_threshold <- 0 # We can filter in post-processing of outputs
 
 # Extract the VarSelMean and VarSelMeanGlobal lists from the model_fit object
 VarSelMean <- model_fit$VarSelMean
@@ -355,7 +393,7 @@ VarSelMean_df <- bind_rows(
 colnames(VarSelMean_df) <- c("View", paste("Component", 1:r, sep = "_"))
 
 # Extract column names from each matrix
-all_colnames <- unlist(lapply(dataList, colnames))
+all_colnames <- unlist(lapply(trainList, colnames))
 
 # Add feature label
 VarSelMean_df$Feature <- all_colnames
@@ -390,6 +428,185 @@ for (table_name in names(variables_selected)) {
   filename <- paste0(tables_dir, "/", file_prefix, "_", table_name, ".csv")
   # Write the data frame to a CSV file
   write.csv(variables_selected[[table_name]], filename, row.names = FALSE)
+}
+
+# Now let's make predictions. We evaluate and aggregate their error later on. 
+
+# Load test data
+test_list <- readRDS("data/2024-06-24_test_list.rds")
+
+# Sample ids from test_list$outcomes$src_subject_id
+set.seed(123) # Setting seed for reproducibility
+sampled_ids <- sample(test_list$outcomes$src_subject_id, n_subjects)
+
+# Function to subset data frames by sampled_ids
+subset_data <- function(df, id_column) {
+  df %>%
+    filter(!!sym(id_column) %in% sampled_ids)
+}
+
+# Function to order data frames by a specified column
+order_data <- function(df, id_column) {
+  df %>%
+    arrange(!!sym(id_column))
+}
+
+# Apply subsetting if needed
+if (apply_subsetting) {
+  test_list_subset <- test_list %>%
+    map(~ subset_data(.x, "src_subject_id"))
+} else {
+  test_list_subset <- test_list
+}
+
+# Order each data frame in the (possibly subsetted) test_list
+test_list_ordered <- test_list_subset %>%
+  map(~ order_data(.x, "src_subject_id"))
+
+# Check if all data frames are ordered by src_subject_id in the same way
+check_order <- function(test_list) {
+  ids <- map(test_list, ~ .x$src_subject_id)
+  identical(ids[[1]], reduce(ids[-1], intersect))
+}
+
+# Ensure that all data frames are ordered by src_subject_id in the same way
+all_ordered <- check_order(test_list_subset)
+
+if (all_ordered) {
+  print("All data frames are ordered by src_subject_id in the same way.")
+  
+  # Drop src_subject_id column from all data frames
+  test_list_subset <- test_list_subset %>%
+    map(~ dplyr::select(.x, -src_subject_id))
+  
+  print("src_subject_id column has been dropped from all data frames.")
+  
+  if (analysis_method == "BIP") {
+    
+    # Drop design matrices matrices (views that start with Z_)
+    test_list_subset <- test_list_subset[!grepl("^Z_", names(test_list_subset))]
+    
+    print(paste("We have dropped the design matrices."))
+  }
+  
+  # Identify columns with zero variance in each data frame
+  zero_variance <- map_df(names(test_list_subset), ~ {
+    df_name <- .x
+    df <- test_list_subset[[df_name]]
+    zero_var_cols <- df %>%
+      dplyr::select(where(~ var(.) == 0)) %>%
+      colnames()
+    
+    tibble(
+      data.type = df_name,
+      variable.name = zero_var_cols
+    )
+  })
+  
+  if (nrow(zero_variance)>0) {
+    # Print the zero_variance data frame to see which columns will be removed
+    print("Features that have been removed for having zero variance:")
+    print(zero_variance)
+  } else {
+    print("No features removed for having zero variance.")
+  }
+  
+  # Remove columns with zero variance from the list of data frames
+  test_list_subset <- map(test_list_subset, ~ {
+    df <- .x
+    zero_var_cols <- df %>%
+      dplyr::select(where(~ var(.) == 0)) %>%
+      colnames()
+    df %>% dplyr::select(-all_of(zero_var_cols))
+  })
+  
+  # Convert all data frames in test_list_subset to matrices
+  test_list_matrices <- test_list_subset %>%
+    map(~ as.matrix(.x))
+  
+} else {
+  stop("Data frames are not ordered by src_subject_id in the same way.")
+}
+
+# Reshape test data
+testList <- test_list_matrices[!grepl("^outcomes", names(test_list_matrices))] # Exclude outcomes
+
+# Get predictions
+if (analysis_method == "BIP") {
+  y_preds <- BIPpredict(dataListNew = testList, Result = model_fit, meth = "BMA")$ypredict
+} else if (analysis_method == "BIPmixed") {
+  y_preds <- BIPpredict(dataListNew = testList, Result = model_fit, meth = "BMA", 
+                                 Z_site = test_set$Z_site, Z_family = test_set$Z_family)$ypredict
+} else {
+  stop("You must provide a valid analysis_method.")
+}
+
+Y_true <- pull(test_list$outcomes, outcome_varname)
+
+# Create a data frame with true and predicted values
+results_df <- data.frame(Y_true = Y_true, y_preds = y_preds)
+
+# Calculate MSPE
+mspe <- mean((Y_true - y_preds)^2)
+
+# Add MSPE as a new column to the data frame
+results_df$MSPE <- mspe
+
+# Write the data frame to a CSV file
+output_csv_path <- file.path(tables_dir, "y_true_vs_y_preds_mspe.csv")
+write.csv(results_df, output_csv_path, row.names = FALSE)
+
+# Create the scatter plot
+p <- ggplot(results_df, aes(x = Y_true, y = y_preds)) +
+  geom_point(color = "blue") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") + # Reference line for perfect prediction
+  labs(title = "True Y vs Predicted Y", 
+       x = "True Y", 
+       y = "Predicted Y") +
+  annotate("text", x = Inf, y = Inf, label = paste("MSPE =", round(mspe, 4)), 
+           hjust = 1.1, vjust = 1.5, size = 5, color = "black") +
+  theme_minimal()
+
+# Save the plot
+output_plot_path <- file.path(figures_dir, "true_y_vs_pred_y_mspe_plot.png")
+ggsave(output_plot_path, plot = p, width = 8, height = 6)
+
+# Store random effect inference, if applicable
+if (analysis_method == "BIPmixed") {
+  # Calculate posterior mean and credible intervals for sigma2_ksi_samples
+  sigma2_ksi_samples_post_burnin <- model_fit$sigma2_ksi_samples[(n_burnin + 1):nrow(model_fit$sigma2_ksi_samples), , drop = FALSE]
+  
+  # Posterior mean
+  posterior_mean_sigma2_ksi <- colMeans(sigma2_ksi_samples_post_burnin)
+  
+  # 2.5% and 97.5% credible intervals (assuming you want a 95% CI)
+  credible_interval_sigma2_ksi <- apply(sigma2_ksi_samples_post_burnin, 2, quantile, probs = c(0.025, 0.975))
+  
+  # Calculate posterior mean and credible intervals for sigma2_theta_samples
+  sigma2_theta_samples_post_burnin <- model_fit$sigma2_theta_samples[(n_burnin + 1):nrow(model_fit$sigma2_theta_samples), , drop = FALSE]
+  
+  # Posterior mean
+  posterior_mean_sigma2_theta <- colMeans(sigma2_theta_samples_post_burnin)
+  
+  # 2.5% and 97.5% credible intervals (95% CI)
+  credible_interval_sigma2_theta <- apply(sigma2_theta_samples_post_burnin, 2, quantile, probs = c(0.025, 0.975))
+  
+  # Combine the results into a data frame for easy viewing
+  results_sigma2_ksi <- data.frame(
+    Posterior_Mean = posterior_mean_sigma2_ksi,
+    CI_Lower = credible_interval_sigma2_ksi[1, ],
+    CI_Upper = credible_interval_sigma2_ksi[2, ]
+  )
+  
+  results_sigma2_theta <- data.frame(
+    Posterior_Mean = posterior_mean_sigma2_theta,
+    CI_Lower = credible_interval_sigma2_theta[1, ],
+    CI_Upper = credible_interval_sigma2_theta[2, ]
+  )
+  
+  # Save these results to CSV files
+  write.csv(results_sigma2_ksi, file.path(tables_dir, "sigma2_ksi_posterior_summary.csv"), row.names = FALSE)
+  write.csv(results_sigma2_theta, file.path(tables_dir, "sigma2_theta_posterior_summary.csv"), row.names = FALSE)
 }
 
 print("Data analysis performed & results stored.")
