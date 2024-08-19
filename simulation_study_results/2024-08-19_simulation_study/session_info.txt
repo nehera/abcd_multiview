@@ -14,49 +14,47 @@ attached base packages:
 
 other attached packages:
  [1] lme4_1.1-35.1            Matrix_1.6-4            
- [3] coda_0.19-4.1            scales_1.3.0            
- [5] rstan_2.32.3             StanHeaders_2.26.28     
- [7] gridExtra_2.3            MASS_7.3-60             
+ [3] MASS_7.3-60              coda_0.19-4.1           
+ [5] scales_1.3.0             rstan_2.32.3            
+ [7] StanHeaders_2.26.28      gridExtra_2.3           
  [9] RcppArmadillo_0.12.6.6.1 Rcpp_1.0.11             
-[11] reshape2_1.4.4           lubridate_1.9.3         
-[13] forcats_1.0.0            stringr_1.5.1           
-[15] dplyr_1.1.4              purrr_1.0.2             
-[17] readr_2.1.4              tidyr_1.3.0             
-[19] tibble_3.2.1             ggplot2_3.5.0           
-[21] tidyverse_2.0.0         
+[11] lubridate_1.9.3          forcats_1.0.0           
+[13] stringr_1.5.1            dplyr_1.1.4             
+[15] purrr_1.0.2              readr_2.1.4             
+[17] tidyr_1.3.0              tibble_3.2.1            
+[19] ggplot2_3.5.0            tidyverse_2.0.0         
 
 loaded via a namespace (and not attached):
- [1] pkgload_1.3.4      splines_4.2.0     
- [3] jsonlite_1.8.8     QuickJSR_1.0.9    
+ [1] pkgload_1.3.4      jsonlite_1.8.8    
+ [3] splines_4.2.0      QuickJSR_1.0.9    
  [5] BIPnet_1.0         AUC_0.3.2         
  [7] RcppParallel_5.1.7 shiny_1.8.0       
  [9] stats4_4.2.0       remotes_2.5.0     
-[11] sessioninfo_1.2.2  RcppGSL_0.3.13    
+[11] RcppGSL_0.3.13     sessioninfo_1.2.2 
 [13] pillar_1.9.0       lattice_0.22-5    
 [15] glue_1.6.2         digest_0.6.33     
 [17] promises_1.2.1     minqa_1.2.6       
 [19] colorspace_2.1-0   htmltools_0.5.7   
-[21] httpuv_1.6.13      plyr_1.8.9        
-[23] pkgconfig_2.0.3    devtools_2.4.5    
-[25] xtable_1.8-4       later_1.3.2       
-[27] tzdb_0.4.0         timechange_0.2.0  
-[29] generics_0.1.3     usethis_2.2.3     
-[31] ellipsis_0.3.2     cachem_1.0.8      
-[33] pacman_0.5.1       withr_3.0.0       
-[35] cli_3.6.2          magrittr_2.0.3    
-[37] mime_0.12          memoise_2.0.1     
-[39] fs_1.6.3           fansi_1.0.6       
-[41] nlme_3.1-164       pkgbuild_1.4.4    
-[43] profvis_0.3.8      tools_4.2.0       
-[45] loo_2.7.0          hms_1.1.3         
-[47] lifecycle_1.0.4    matrixStats_1.2.0 
-[49] munsell_0.5.0      compiler_4.2.0    
-[51] rlang_1.1.2        nloptr_2.0.3      
-[53] grid_4.2.0         rstudioapi_0.15.0 
-[55] htmlwidgets_1.6.4  miniUI_0.1.1.1    
-[57] boot_1.3-30        gtable_0.3.4      
-[59] codetools_0.2-19   inline_0.3.19     
-[61] R6_2.5.1           fastmap_1.1.1     
-[63] utf8_1.2.4         stringi_1.8.3     
-[65] vctrs_0.6.5        tidyselect_1.2.0  
-[67] urlchecker_1.0.1  
+[21] httpuv_1.6.13      pkgconfig_2.0.3   
+[23] devtools_2.4.5     xtable_1.8-4      
+[25] later_1.3.2        tzdb_0.4.0        
+[27] timechange_0.2.0   generics_0.1.3    
+[29] usethis_2.2.3      ellipsis_0.3.2    
+[31] cachem_1.0.8       pacman_0.5.1      
+[33] withr_3.0.0        cli_3.6.2         
+[35] magrittr_2.0.3     mime_0.12         
+[37] memoise_2.0.1      fs_1.6.3          
+[39] fansi_1.0.6        nlme_3.1-164      
+[41] pkgbuild_1.4.4     profvis_0.3.8     
+[43] tools_4.2.0        loo_2.7.0         
+[45] hms_1.1.3          lifecycle_1.0.4   
+[47] matrixStats_1.2.0  munsell_0.5.0     
+[49] compiler_4.2.0     rlang_1.1.2       
+[51] nloptr_2.0.3       grid_4.2.0        
+[53] rstudioapi_0.15.0  htmlwidgets_1.6.4 
+[55] miniUI_0.1.1.1     boot_1.3-30       
+[57] gtable_0.3.4       codetools_0.2-19  
+[59] inline_0.3.19      R6_2.5.1          
+[61] fastmap_1.1.1      utf8_1.2.4        
+[63] stringi_1.8.3      vctrs_0.6.5       
+[65] tidyselect_1.2.0   urlchecker_1.0.1  

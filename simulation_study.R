@@ -1,7 +1,7 @@
 # First read in the arguments listed at the command line
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 3) {
+if (length(args) < 2) {
   print("Not enough arguments supplied.")
   # Supply default values
   slurm_array_task_id <- 1
@@ -75,7 +75,8 @@ scenarios <- scenarios %>%
 expanded_scenarios <- do.call(rbind, replicate(S, scenarios, simplify = FALSE))
 expanded_scenarios$train_seed <- rep(1:S, each = nrow(scenarios))
 
-cat("Number of tasks for this simulation study:", nrow(expanded_scenarios))
+print("Number of tasks for this simulation study:")
+print(nrow(expanded_scenarios))
 
 # Save the scenarios
 scenarios_file <- file.path(output_dir_name, "scenarios.csv")
