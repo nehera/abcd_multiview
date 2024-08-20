@@ -106,14 +106,14 @@ if (all_ordered) {
   
   print("src_subject_id column has been dropped from all data frames.")
   
-  if (analysis_method == "BIP") {
+  # Extract design matrices
+  Z_family_train <- train_list_subset$Z_family
+  Z_site_train <- train_list_subset$Z_site
   
-    # Drop design matrices matrices (views that start with Z_)
-    train_list_subset <- train_list_subset[!grepl("^Z_", names(train_list_subset))]
-    
-    print(paste("We have dropped the design matrices."))
+  # Drop design matrices matrices (views that start with Z_)
+  train_list_subset <- train_list_subset[!grepl("^Z_", names(train_list_subset))]
   
-  }
+  print(paste("We have dropped the design matrices."))
   
   # Identify columns with zero variance in each data frame
   zero_variance <- map_df(names(train_list_subset), ~ {
@@ -208,7 +208,7 @@ if (analysis_method == "BIP") {
   BIPmixed_start_time <- Sys.time()
   model_fit <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIPmixed",
                          nbrcomp = r, sample = n_sample, burnin = n_burnin,
-                         Z_family = train_list_matrices$Z_family, Z_site = train_list_matrices$Z_site)
+                         Z_family = Z_family_train, Z_site = Z_site_train)
   BIPmixed_end_time <- Sys.time()
   print("BIPmixed required")
   print(BIPmixed_end_time - BIPmixed_start_time)
@@ -216,6 +216,8 @@ if (analysis_method == "BIP") {
 } else {
   stop("You must provide a valid analysis_method.")
 }
+
+# model_fit <- readRDS("models/2024-08-19_Internalizing_r_5_method_BIPmixed_model_fit.rds")
 
 # Let's make the output directory name
 # Collapse column names and values into a string
@@ -393,7 +395,7 @@ VarSelMean_df <- bind_rows(
 colnames(VarSelMean_df) <- c("View", paste("Component", 1:r, sep = "_"))
 
 # Extract column names from each matrix
-all_colnames <- unlist(lapply(trainList, colnames))
+all_colnames <- unlist(lapply(trainList[!(names(trainList) %in% c("Z_family", "Z_site"))], colnames))
 
 # Add feature label
 VarSelMean_df$Feature <- all_colnames
@@ -481,13 +483,14 @@ if (all_ordered) {
   
   print("src_subject_id column has been dropped from all data frames.")
   
-  if (analysis_method == "BIP") {
-    
-    # Drop design matrices matrices (views that start with Z_)
-    test_list_subset <- test_list_subset[!grepl("^Z_", names(test_list_subset))]
-    
-    print(paste("We have dropped the design matrices."))
-  }
+  # Extract design matrices
+  Z_family_test <- test_list_subset$Z_family
+  Z_site_test <- test_list_subset$Z_site
+  
+  # Drop design matrices matrices (views that start with Z_)
+  test_list_subset <- test_list_subset[!grepl("^Z_", names(test_list_subset))]
+  
+  print(paste("We have dropped the design matrices."))
   
   # Identify columns with zero variance in each data frame
   zero_variance <- map_df(names(test_list_subset), ~ {
@@ -536,7 +539,7 @@ if (analysis_method == "BIP") {
   y_preds <- BIPpredict(dataListNew = testList, Result = model_fit, meth = "BMA")$ypredict
 } else if (analysis_method == "BIPmixed") {
   y_preds <- BIPpredict(dataListNew = testList, Result = model_fit, meth = "BMA", 
-                                 Z_site = test_set$Z_site, Z_family = test_set$Z_family)$ypredict
+                                 Z_site = Z_site_test, Z_family = Z_family_test)$ypredict
 } else {
   stop("You must provide a valid analysis_method.")
 }

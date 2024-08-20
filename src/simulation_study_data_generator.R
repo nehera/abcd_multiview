@@ -110,7 +110,7 @@ simulation_study_data_generator <- function(seed = 1,
   
   mu <- 1
   sigma2_ksi <- sigma2_ksi_true # Site variance.
-  sigma2_theta <- rep(sigma2_theta_true, N_sites) # Family:site variance
+  sigma2_theta <- sigma2_theta_true # Family:site variance (vec of len N_sites)
   sigma2 <- 1 # Residual variance fixed
   
   # Simulate random effects

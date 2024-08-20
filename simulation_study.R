@@ -88,7 +88,8 @@ train_seed <- simulation_scenario$train_seed
 test_seed <- train_seed + S
 covars_flag <- simulation_scenario$covars
 sigma2_ksi_true <- simulation_scenario$sigma2_ksi_true
-sigma2_theta_true <- simulation_scenario$sigma2_theta_true
+N_sites <- 30 # Assume n sites fixed across train and test sets
+sigma2_theta_true <- rep(simulation_scenario$sigma2_theta_true, N_sites)
 r <- simulation_scenario$r
 n_views <- simulation_scenario$n_views
 features_per_view <- simulation_scenario$features_per_view

@@ -1,5 +1,10 @@
 # Data
 data/*
+data_analysis_results/*
+simulation_study_results/*
+
+# Models
+models/*
 
 # Figures
 figures/*

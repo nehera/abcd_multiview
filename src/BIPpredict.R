@@ -7,8 +7,6 @@ BIPpredict=function(dataListNew=dataListNew,
                     Z_site=NULL, Z_family=NULL) {
   
   IndicVar <- Result$IndicVar
-  # We exclude outcome data in getting predictions
-  IndicVar <- IndicVar[IndicVar!=1]
   
   if (Result$Method==2) {
     # Peel out covariates in the case that Method= BIPmixed & covariates included
