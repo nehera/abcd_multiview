@@ -107,8 +107,8 @@ if (all_ordered) {
   print("src_subject_id column has been dropped from all data frames.")
   
   # Extract design matrices
-  Z_family_train <- train_list_subset$Z_family
-  Z_site_train <- train_list_subset$Z_site
+  Z_family_train <- as.matrix(train_list_subset$Z_family)
+  Z_site_train <- as.matrix(train_list_subset$Z_site)
   
   # Drop design matrices matrices (views that start with Z_)
   train_list_subset <- train_list_subset[!grepl("^Z_", names(train_list_subset))]
@@ -222,7 +222,8 @@ if (analysis_method == "BIP") {
 # Let's make the output directory name
 # Collapse column names and values into a string
 collapsed_string <- apply(dplyr::select(analysis_conditions, -outcome_label), 1, function(row) {
-  paste(names(row), row, sep = "_", collapse = "-")
+  collapsed_conditions <- paste(names(row), row, sep = "_", collapse = "-")
+  paste(Sys.Date(), collapsed_conditions, sep = "-")
 })
 
 # Define the output directory string
@@ -232,12 +233,8 @@ models_dir <- file.path(output_dir, "models")
 figures_dir <- file.path(output_dir, "figures")
 tables_dir <- file.path(output_dir, "tables")
 
-# Create the output directory if it doesn't exist
-if (!dir.exists(output_dir)) {
-  dir.create(output_dir)
-} else {
-  stop("output_dir already exists.")
-}
+# Create the output directory
+dir.create(output_dir)
 
 # Create the subdirectories
 dir.create(models_dir)
@@ -484,8 +481,8 @@ if (all_ordered) {
   print("src_subject_id column has been dropped from all data frames.")
   
   # Extract design matrices
-  Z_family_test <- test_list_subset$Z_family
-  Z_site_test <- test_list_subset$Z_site
+  Z_family_test <- as.matrix(test_list_subset$Z_family)
+  Z_site_test <- as.matrix(test_list_subset$Z_site)
   
   # Drop design matrices matrices (views that start with Z_)
   test_list_subset <- test_list_subset[!grepl("^Z_", names(test_list_subset))]
