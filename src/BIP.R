@@ -15,6 +15,9 @@ BIP <- function(dataList, IndicVar, groupList=NULL, Method,
                 # BIPmixed priors
                 sigma_ksi_prior=c(1,2), sigma_theta_prior=c(1,2), sigma_prior=c(1,2)) {
   
+  # Store for reporting purposes since object is overwritten in BIPmixed
+  IndicVar_original <- IndicVar
+  
   if (2 %in% IndicVar) {
     covariates_included <- T
   } else {
@@ -192,26 +195,28 @@ BIP <- function(dataList, IndicVar, groupList=NULL, Method,
     
   }
   
+  print("theta_mean content before return in R wrapper:")
+  print(result$estimates$theta_mean)
+  
   return (list(Method = as.integer(meth),
                EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,
                CompoSelMean=CompoSelMean,GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,
                IntGrpMean=IntGrpMean,EstLoad=EstLoad,EstLoadModel=EstLoadModel,
-               nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$intercepts$InterceptMean,
-               PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD,
-               mu_samples = result$samples$mu_samples,
-               #alpha_samples = result$alpha_samples,
-               beta_samples = result$samples$beta_samples,
-               gamma_samples = result$samples$gamma_samples,
-               ksi_samples = result$samples$ksi_samples,
-               theta_samples = result$samples$theta_samples,
-               sigma2_ksi_samples = result$samples$sigma2_ksi_samples,
-               sigma2_theta_samples = result$samples$sigma2_theta_samples,
-               sigma2_samples = result$samples$sigma2_samples,
+               nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$estimates$InterceptMean,
+               PostGam=result$postgam,IndicVar=IndicVar_original,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD,
+               # mu_samples = result$samples$mu_samples,
+               # beta_samples = result$samples$beta_samples,
+               # gamma_samples = result$samples$gamma_samples,
+               # ksi_samples = result$samples$ksi_samples,
+               # theta_samples = result$samples$theta_samples,
+               # sigma2_ksi_samples = result$samples$sigma2_ksi_samples,
+               # sigma2_theta_samples = result$samples$sigma2_theta_samples,
+               # sigma2_samples = result$samples$sigma2_samples,
                initial_values = result$initial_values,
-               # sigma2_non_outcome_samples = result$sigma2_non_outcome_samples,
-               beta_mean = result$intercepts$beta_mean, 
-               theta_mean = result$intercepts$theta_mean
-  )
+               beta_mean = result$estimates$beta_mean, 
+               theta_mean = result$estimates$theta_mean,
+               ksi_mean = result$estimates$ksi_mean,
+               sigma2_theta_mean = result$estimates$sigma2_theta_mean)
   )
 }
 

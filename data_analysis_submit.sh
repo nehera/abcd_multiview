@@ -6,8 +6,8 @@
 
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --mem=16g
-#SBATCH -t 24:00:00
+#SBATCH --mem=32g
+#SBATCH -t 96:00:00
 
 #SBATCH --account=mfiecas
 #SBATCH --mail-type=ALL
@@ -17,4 +17,4 @@ cd $HOME/abcd_multiview
 
 module load R/4.3.0-openblas-rocky8
 
-Rscript data_analysis.R $SLURM_ARRAY_TASK_ID $SLURM_JOB_ID
+Rscript data_analysis.R $SLURM_ARRAY_TASK_ID

@@ -1,10 +1,9 @@
-# Load libraries
-pacman::p_load(MASS)
-
 # Define BIPpredict function
-BIPpredict=function(dataListNew=dataListNew, 
+BIPpredict <- function(dataListNew=dataListNew, 
                     Result=Result, meth="BMA",
-                    Z_site=NULL, Z_family=NULL) {
+                    Z_site=NULL) {
+  
+  print("Getting predictions...")
   
   IndicVar <- Result$IndicVar
   
@@ -12,31 +11,28 @@ BIPpredict=function(dataListNew=dataListNew,
     # Peel out covariates in the case that Method= BIPmixed & covariates included
     covariate_index <- which(IndicVar==2)
     if (length(covariate_index) == 1) {
-      Wnew <- dataListNew[covariate_index]
+      Wnew <- dataListNew[[covariate_index]]
       dataListNew <- dataListNew[-covariate_index]
       IndicVar <- IndicVar[-covariate_index]
     } else {
       Wnew <- matrix(0, nrow = nrow(Z_site), ncol = 1)
     }
-    # Map families to study site (This needs to happen regardless of Method since passed to mainfunction)
-    Z_family_to_site <- t(Z_family) %*% Z_site
-    N_sites <- ncol(Z_site)
   }
   
   nbrcomp <- Result$nbrcomp
   np <- which(IndicVar == 1)
   
-  print("Scaling new data...")
-  
-  # Define a function to standardize each matrix
-  standardize_matrix <- function(matrix_data) {
-    apply(matrix_data, 2, function(column) {
-      (column - mean(column)) / sd(column)
-    })
+  # Standardize using the mean and variance from the training data
+  mean_list <- Result$MeanData[IndicVar!=1]
+  sd_list <- Result$SDData[IndicVar!=1]
+  X_new <- dataListNew
+  for (m in 1:length(dataListNew)) {
+    X_new_m <- dataListNew[[m]]
+    for (j in 1:ncol(X_new_m)) {
+      X_new_m[, j] <- ( X_new_m[, j] - mean_list[[m]][j] ) / sd_list[[m]][j]
+    }
+    X_new[[m]] <- X_new_m
   }
-  
-  # Apply the standardization function to each element in dataListNew
-  X_new <- lapply(dataListNew, standardize_matrix)
   
   # Get the number of platforms
   Np <- length(X_new)
@@ -52,7 +48,6 @@ BIPpredict=function(dataListNew=dataListNew,
     nbrmodel1=1;
   }
   
-  print("Estimating loadings...")
   for (nb in 1:nbrmodel1){
     SelLoadPacked=NULL;SelLoadPackedFull=NULL
     SelVarXnew=NULL;SelVarXnewFull=NULL;
@@ -77,25 +72,22 @@ BIPpredict=function(dataListNew=dataListNew,
     Sig2Full=Sig2;
     SelVarXnewFull=SelVarXnew;
     SelLoadPackedFull=as.matrix(SelLoadPackedFull);
-    Sigma2Full=solve(SelLoadPackedFull%*%diag(1/Sig2Full)%*%t(SelLoadPackedFull)+diag(nrow(SelLoadPackedFull)));
+    Sigma2Full=solve( SelLoadPackedFull %*% diag(1/Sig2Full) %*% t(SelLoadPackedFull) + diag(nrow(SelLoadPackedFull)))
     Upredict1=t(Sigma2Full%*%SelLoadPackedFull%*%diag(1/Sig2Full)%*%t(SelVarXnewFull))
     Upredict=Upredict+Upredict1*pb;
     ypredict=ypredict+as.matrix(Upredict1%*%EstL[[np]])*pb;
   }
   
   if (Result$Method==2) {
-    ypredict=as.vector(ypredict)
+    # Adjust the predictions by random and fixed effect estimates
+    ypredict <- as.vector(ypredict)
     Wbeta <- Wnew %*% Result$beta_mean
-    for (s in 1:N_sites) {
-      families_in_s <- which(Z_family_to_site[, s] != 0)
-      for (f in families_in_s) {
-        individuals_in_f <- which(Z_family[, f] == 1)
-        for (ind in individuals_in_f) {
-            # Add in theta_mean and beta_mean
-            ypredict[ind] <- ypredict[ind] + Wbeta[ind] + Result$theta_mean[f]
-          }
-        }
-      }
+    for (i in 1:length(ypredict)) {
+      
+      site_i <- which(Z_site[i, ] == 1)
+      ypredict[i] <- ypredict[i] + Wbeta[i] + Result$ksi_mean[site_i] # we use the site effect
+      
+    }
   } else {
     ypredict <- as.vector(ypredict) + Result$EstIntcp
   }

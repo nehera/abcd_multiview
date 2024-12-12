@@ -1,3 +1,11 @@
+# User Options
+transform_outcomes <- FALSE # sqrt transform outcomes
+n_sample <- 10000
+n_burnin <- 5000
+
+# Ensure we are in the correct working directory
+setwd("/users/4/neher015/abcd_multiview")
+
 # Set the library path using the full file path
 .libPaths("/users/4/neher015/R/x86_64-pc-linux-gnu-library/4.3")
 
@@ -12,6 +20,7 @@ if (!("pacman" %in% installed.packages()[,"Package"])) {
 pacman::p_load(tidyverse, reshape2, parallel) 
 
 # Source methods
+source("src/utility_functions.R") # For data splitting
 source("src/BIP.R") # Includes BIPmixed implementation
 source("src/BIPpredict.R")
 
@@ -19,18 +28,11 @@ source("src/BIPpredict.R")
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) == 1) {
-  print("Assuming job is run locally using GNU Parallel.")
-  slurm_array_task_id <- args[1]
-  slurm_job_id <- 999999
-} else if (length(args) == 2) {
-  print("Assuming job is run on MSI using slurm scheduler.")
-  slurm_array_task_id <- args[1]
-  slurm_job_id <- args[2]
+  slurm_array_task_id <- as.numeric(args[1])
 } else {
-  print("Appropriate CLI Args have not been supplied.")
+  print("commandArgs have not been supplied.")
   # Supply default values
-  slurm_array_task_id <- 3
-  slurm_job_id <- 999999
+  slurm_array_task_id <- 10
 }
 
 output_dir_name <- file.path("data_analysis_results",
@@ -43,28 +45,29 @@ if (!dir.exists(output_dir_name)) {
 
 print("Slurm Array Task ID:")
 print(slurm_array_task_id)
-print("Slurm Job ID:")
-print(slurm_job_id)
 print("Main Output Directory:")
 print(output_dir_name)
 
-# Create subdirectory for the slurm_array_task_id and slurm_job_id
-subdir_name <- file.path(output_dir_name, paste0(Sys.Date(), "_task_", slurm_array_task_id, "_job_", slurm_job_id))
-dir.create(subdir_name, showWarnings = FALSE, recursive = TRUE)
-
 # Define data analysis conditions
 possible_r <- c(6)
-outcome_labels <- c("Internalizing Problems", "Externalizing Problems")
-outcome_varnames <- c("cbcl_scr_syn_internal_r", "cbcl_scr_syn_external_r")
+outcome_labels <- c("Internalizing Problems (R)", "Externalizing Problems (R)",
+                    "Internalizing Problems (T)", "Externalizing Problems (T)",
+                    "Body Mass Index (BMI)")
+outcome_varnames <- c("cbcl_scr_syn_internal_r", "cbcl_scr_syn_external_r",
+                      "cbcl_scr_syn_internal_t", "cbcl_scr_syn_external_t",
+                      "BMI")
 outcome_labels_and_varnames <- paste(outcome_labels, outcome_varnames, sep = "_and_")
 analysis_methods <- c("BIP", "BIPmixed")
 data_splits <- 1:20
 analyses_df <- expand.grid(r = possible_r, outcome_label_and_varname = outcome_labels_and_varnames, 
                            analysis_method = analysis_methods, split_seed = data_splits,
-                           check_convergence = c(T, F))
-# We only check convergence on 1 of the splits/ method
-analyses_df <- analyses_df %>% 
-  filter( (split_seed != 1 & check_convergence==F) | ( split_seed==1 & check_convergence == T ) )
+                           check_convergence = c(T), include_covars = c(T, F))
+# # We only check convergence on 1 of the splits/ method
+# analyses_df <- analyses_df %>% 
+#   filter( (split_seed != 1 & check_convergence==F) | ( split_seed==1 & check_convergence == T ) )
+# Create subdirectory by the slurm_array_task_id
+subdir_names <- file.path(output_dir_name, paste0(Sys.Date(), "_task_", 1:nrow(analyses_df)))
+analyses_df$subdir_name <- subdir_names
 
 # Save the analysis conditions
 about_analyses_file <- file.path(output_dir_name, "analysis_conditions.csv")
@@ -76,10 +79,10 @@ sessionInfo() %>%
   capture.output() %>%
   writeLines(session_info_file)
 
-# Do analysis_1 by default
-analysis_conditions <- analyses_df[slurm_array_task_id, ]
-
 # Extract analysis conditions
+analysis_conditions <- analyses_df[slurm_array_task_id, ]
+subdir_name <- subdir_names[slurm_array_task_id]
+dir.create(subdir_name, showWarnings = FALSE, recursive = TRUE)
 r <- analysis_conditions$r
 analysis_conditions <- analysis_conditions %>%
   mutate(outcome_label_and_varname = as.character(outcome_label_and_varname)) %>%
@@ -89,12 +92,16 @@ outcome_varname <- analysis_conditions$varname
 analysis_method <- analysis_conditions$analysis_method
 split_seed <- analysis_conditions$split_seed
 check_convergence <- analysis_conditions$check_convergence
+include_covars <- analysis_conditions$include_covars
 
 # Set seed for data splitting reproducibility purposes
 set.seed(split_seed)
 
-# Load complete sample
-complete_data_list <- readRDS("data/2024-09-10_complete_data_list.csv")
+complete_data_list <- readRDS("data/2024-10-17_complete_data_list.csv")
+
+if (transform_outcomes) {
+  complete_data_list$outcomes[, -1] <- apply(complete_data_list$outcomes[, -1], 2, sqrt)
+}
 
 # Split data into 80:20 train:test family-wise split stratified by study site
 sample_key <- complete_data_list$outcomes %>% pull(src_subject_id)
@@ -123,6 +130,8 @@ test_data <- bind_rows(lapply(split_data, `[[`, "test"))
 # Verify the split
 train_data_summary <- train_data %>% group_by(site_id_l) %>% summarize(n_train = n())
 test_data_summary <- test_data %>% group_by(site_id_l) %>% summarize(n_test = n())
+# Ensure no families are split across train and test
+intersect(train_data$rel_family_id, test_data$rel_family_id)
 
 # Print summaries
 print(train_data_summary)
@@ -221,8 +230,8 @@ if (length(zero_variance_cols) > 0) {
 }
 
 # Option to go into development mode where we subset the data to ensure quicker computation
-dev_set <- FALSE
-n_subjects <- 30
+dev_set <- F
+n_subjects <- 1000
 
 # Sample ids from train_list$outcomes$src_subject_id
 sampled_ids <- sample(train_list$outcomes$src_subject_id, n_subjects)
@@ -314,14 +323,23 @@ trainList$y <- train_list_matrices$outcomes[, outcome_index, drop = FALSE]
 print("Fitting model...")
 
 # Define the indicators where 2= covariates, 0= omics, and 1= outcome.
-IndicVar <- c(2, rep(0,4), 1)
-n_sample <- 5000
-n_burnin <- 1000
+if (include_covars) {
+  print("Including covariates in model fitting.")
+  IndicVar <- c(2, rep(0,4), 1)
+} else {
+  print("Excluding covariates from model fitting.")
+  # Remove covars from IndicVar, trainList and testList
+  IndicVar <- c(rep(0,4), 1)
+  trainList <- trainList[-1]
+}
+
 
 # When check_covergence, we fit more than 1 chain and store for convergence checks 
+# model_fit <- readRDS("~/abcd_multiview/data_analysis_results/2024-09-12_data_analysis/2024-09-12_task_3_job_23529704/model_fit.rds")
+# model_fit <- readRDS("~/abcd_multiview/data_analysis_results/2024-09-12_data_analysis/2024-09-12_task_1_job_23529702/model_fit.rds")
 
 if (analysis_method == "BIP") {
-  
+
   # Fit models
   BIP_start_time <- Sys.time()
   model_fit <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIP",
@@ -329,14 +347,14 @@ if (analysis_method == "BIP") {
   BIP_end_time <- Sys.time()
   print("BIP required:")
   print(BIP_end_time - BIP_start_time)
-  
-  if (check_convergence) {
-    model_fit_2 <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIP",
-                     nbrcomp = r, sample = n_sample, burnin = n_burnin)
-  }
-  
+
+  # if (check_convergence) {
+  #   model_fit_2 <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIP",
+  #                    nbrcomp = r, sample = n_sample, burnin = n_burnin)
+  # }
+
 } else if (analysis_method == "BIPmixed") {
-  
+
   # Fit BIPmixed to the data
   BIPmixed_start_time <- Sys.time()
   model_fit <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIPmixed",
@@ -345,13 +363,13 @@ if (analysis_method == "BIP") {
   BIPmixed_end_time <- Sys.time()
   print("BIPmixed required")
   print(BIPmixed_end_time - BIPmixed_start_time)
-  
-  if (check_convergence) {
-    model_fit_2 <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIPmixed",
-                       nbrcomp = r, sample = n_sample, burnin = n_burnin,
-                       Z_family = Z_family_train, Z_site = Z_site_train)
-  }
-  
+
+  # if (check_convergence) {
+  #   model_fit_2 <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIPmixed",
+  #                      nbrcomp = r, sample = n_sample, burnin = n_burnin,
+  #                      Z_family = Z_family_train, Z_site = Z_site_train)
+  # }
+
 } else {
   stop("You must provide a valid analysis_method.")
 }
@@ -360,20 +378,26 @@ if (check_convergence) {
   
   # Store the model fits for later evaluation
   saveRDS(model_fit, paste0(subdir_name, "/model_fit.rds"))
-  saveRDS(model_fit_2, paste0(subdir_name, "/model_fit_2.rds"))
+  # saveRDS(model_fit_2, paste0(subdir_name, "/model_fit_2.rds"))
   
 }
 
 print("Making preliminary visualizations...")
 
 # Create a named vector for the view labels, removing the "_view" suffix
-view_labels <- c("covariates", "ELA", "sMRI_SA", "sMRI_CT", "fMRI", outcome_label)
+view_labels <- c("ELA", "sMRI_SA", "sMRI_CT", "fMRI", outcome_label) # Excluding "covariates"
 names(view_labels) <- 1:length(view_labels)
 
 ## Visualize VarSelMean, VarSelMeanGlobal, CompoSelMean
 
 # Extract the CompoSelMean matrix from the model_fit object
-CompoSelMean <- model_fit$CompoSelMean
+if (analysis_method=="BIPmixed") {
+  CompoSelMean <- model_fit$CompoSelMean
+} else if (analysis_method=="BIP") {
+  # Covariate results removed from model output
+  CompoSelMean <- model_fit$CompoSelMean[IndicVar!=2, ]
+}
+
 
 # Convert the matrix to a long format suitable for ggplot2
 CompoSelMean_long <- melt(CompoSelMean)
@@ -397,8 +421,14 @@ print(heatmap_CompoSelMean)
 # Assume libraries have been loaded and view_labels has been constructed upstream
 
 # Extract the VarSelMean and VarSelMeanGlobal lists from the model_fit object
-VarSelMean <- model_fit$VarSelMean
-VarSelMeanGlobal <- model_fit$VarSelMeanGlobal
+if (analysis_method=="BIPmixed") {
+  VarSelMean <- model_fit$VarSelMean
+  VarSelMeanGlobal <- model_fit$VarSelMeanGlobal
+} else if (analysis_method=="BIP") {
+  # Covariate results removed from model output
+  VarSelMean <- model_fit$VarSelMean[IndicVar!=2]
+  VarSelMeanGlobal <- model_fit$VarSelMeanGlobal[IndicVar!=2]
+}
 
 # Convert the VarSelMean list to a data frame with appropriate labels
 VarSelMean_df <- bind_rows(
@@ -493,25 +523,11 @@ print("Making lists of variables selected...")
 # Set the variable selction threshold
 mpp_threshold <- 0 # We can filter in post-processing of outputs
 
-# Extract the VarSelMean and VarSelMeanGlobal lists from the model_fit object
-VarSelMean <- model_fit$VarSelMean
-VarSelMeanGlobal <- model_fit$VarSelMeanGlobal
-
-# Convert the VarSelMean list to a data frame with appropriate labels
-VarSelMean_df <- bind_rows(
-  lapply(1:length(VarSelMean), function(i) {
-    data.frame(View = view_labels[i], VarSelMean[[i]])
-  })
-)
-
-# Rename the columns to indicate component ids
-colnames(VarSelMean_df) <- c("View", paste("Component", 1:r, sep = "_"))
-
-# Extract column names from each matrix
-train_list_names <- unlist(lapply(trainList[!(names(trainList) %in% c("Z_family", "Z_site"))], colnames))
+feature_names <- trainList[IndicVar!=2] %>% 
+  sapply(function(x) colnames(x)) %>% unlist
 
 # Add feature label
-VarSelMean_df$Feature <- train_list_names
+VarSelMean_df$Feature <- feature_names
 
 # Convert VarSelMean_df to long format for ggplot2
 VarSelMean_by_component <- VarSelMean_df %>%
@@ -526,7 +542,7 @@ VarSelMean_globally <- bind_rows(
 )
 
 # Add feature label
-VarSelMean_globally$Feature <- train_list_names
+VarSelMean_globally$Feature <- feature_names
 
 VarSelMean_list <- list("VarSelMean_by_component" = VarSelMean_by_component,
                         "VarSelMean_globally" = VarSelMean_globally)
@@ -607,12 +623,21 @@ if (all_ordered) {
 # Reshape test data
 testList <- test_list_matrices[!grepl("^outcomes", names(test_list_matrices))] # Exclude outcomes
 
+# Define the indicators where 2= covariates, 0= omics, and 1= outcome.
+if (include_covars) {
+  print("Including covariates in prediction.")
+} else {
+  print("Excluding covariates from prediction.")
+  # Remove covars from IndicVar, trainList and testList
+  testList <- testList[-1]
+}
+
 # Get predictions
 if (analysis_method == "BIP") {
   y_preds <- BIPpredict(dataListNew = testList, Result = model_fit, meth = "BMA")$ypredict
 } else if (analysis_method == "BIPmixed") {
-  y_preds <- BIPpredict(dataListNew = testList, Result = model_fit, meth = "BMA", 
-                                 Z_site = Z_site_test, Z_family = Z_family_test)$ypredict
+  y_preds <- BIPpredict(dataListNew = testList, Result = model_fit, meth="BMA", 
+                                 Z_site = Z_site_test)$ypredict
 } else {
   stop("You must provide a valid analysis_method.")
 }
@@ -647,42 +672,42 @@ p <- ggplot(results_df, aes(x = Y_true, y = y_preds)) +
 output_plot_path <- file.path(subdir_name, "true_y_vs_pred_y_mspe_plot.png")
 ggsave(output_plot_path, plot = p, width = 8, height = 6)
 
-# Store random effect inference, if applicable
-if (analysis_method == "BIPmixed") {
-  # Calculate posterior mean and credible intervals for sigma2_ksi_samples
-  sigma2_ksi_samples_post_burnin <- model_fit$sigma2_ksi_samples[(n_burnin + 1):nrow(model_fit$sigma2_ksi_samples), , drop = FALSE]
-  
-  # Posterior mean
-  posterior_mean_sigma2_ksi <- colMeans(sigma2_ksi_samples_post_burnin)
-  
-  # 2.5% and 97.5% credible intervals (assuming you want a 95% CI)
-  credible_interval_sigma2_ksi <- apply(sigma2_ksi_samples_post_burnin, 2, quantile, probs = c(0.025, 0.975))
-  
-  # Calculate posterior mean and credible intervals for sigma2_theta_samples
-  sigma2_theta_samples_post_burnin <- model_fit$sigma2_theta_samples[(n_burnin + 1):nrow(model_fit$sigma2_theta_samples), , drop = FALSE]
-  
-  # Posterior mean
-  posterior_mean_sigma2_theta <- colMeans(sigma2_theta_samples_post_burnin)
-  
-  # 2.5% and 97.5% credible intervals (95% CI)
-  credible_interval_sigma2_theta <- apply(sigma2_theta_samples_post_burnin, 2, quantile, probs = c(0.025, 0.975))
-  
-  # Combine the results into a data frame for easy viewing
-  results_sigma2_ksi <- data.frame(
-    Posterior_Mean = posterior_mean_sigma2_ksi,
-    CI_Lower = credible_interval_sigma2_ksi[1, ],
-    CI_Upper = credible_interval_sigma2_ksi[2, ]
-  )
-  
-  results_sigma2_theta <- data.frame(
-    Posterior_Mean = posterior_mean_sigma2_theta,
-    CI_Lower = credible_interval_sigma2_theta[1, ],
-    CI_Upper = credible_interval_sigma2_theta[2, ]
-  )
-  
-  # Save these results to CSV files
-  write.csv(results_sigma2_ksi, file.path(subdir_name, "sigma2_ksi_posterior_summary.csv"), row.names = FALSE)
-  write.csv(results_sigma2_theta, file.path(subdir_name, "sigma2_theta_posterior_summary.csv"), row.names = FALSE)
-}
+# # Store random effect inference, if applicable
+# if (analysis_method == "BIPmixed") {
+#   # Calculate posterior mean and credible intervals for sigma2_ksi_samples
+#   sigma2_ksi_samples_post_burnin <- model_fit$sigma2_ksi_samples[(n_burnin + 1):nrow(model_fit$sigma2_ksi_samples), , drop = FALSE]
+#   
+#   # Posterior mean
+#   posterior_mean_sigma2_ksi <- colMeans(sigma2_ksi_samples_post_burnin)
+#   
+#   # 2.5% and 97.5% credible intervals (assuming you want a 95% CI)
+#   credible_interval_sigma2_ksi <- apply(sigma2_ksi_samples_post_burnin, 2, quantile, probs = c(0.025, 0.975))
+#   
+#   # Calculate posterior mean and credible intervals for sigma2_theta_samples
+#   sigma2_theta_samples_post_burnin <- model_fit$sigma2_theta_samples[(n_burnin + 1):nrow(model_fit$sigma2_theta_samples), , drop = FALSE]
+#   
+#   # Posterior mean
+#   posterior_mean_sigma2_theta <- colMeans(sigma2_theta_samples_post_burnin)
+#   
+#   # 2.5% and 97.5% credible intervals (95% CI)
+#   credible_interval_sigma2_theta <- apply(sigma2_theta_samples_post_burnin, 2, quantile, probs = c(0.025, 0.975))
+#   
+#   # Combine the results into a data frame for easy viewing
+#   results_sigma2_ksi <- data.frame(
+#     Posterior_Mean = posterior_mean_sigma2_ksi,
+#     CI_Lower = credible_interval_sigma2_ksi[1, ],
+#     CI_Upper = credible_interval_sigma2_ksi[2, ]
+#   )
+#   
+#   results_sigma2_theta <- data.frame(
+#     Posterior_Mean = posterior_mean_sigma2_theta,
+#     CI_Lower = credible_interval_sigma2_theta[1, ],
+#     CI_Upper = credible_interval_sigma2_theta[2, ]
+#   )
+#   
+#   # Save these results to CSV files
+#   write.csv(results_sigma2_ksi, file.path(subdir_name, "sigma2_ksi_posterior_summary.csv"), row.names = FALSE)
+#   write.csv(results_sigma2_theta, file.path(subdir_name, "sigma2_theta_posterior_summary.csv"), row.names = FALSE)
+# }
 
 print("Data analysis performed & results stored.")

@@ -1220,23 +1220,24 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
   // Initialize parameters
   double mu = mean(y);
   //double sigma2_ksi = var(inv_sympd(Z_site.t()*Z_site)*Z_site.t()*y);
-  //double sigma2_ksi = sigma_ksi_prior_b/(sigma_ksi_prior_a - 1);
+  
+  // Initialize random parameter structures
   double sigma2_ksi = 1.0;
-  
-  //vec sigma2_theta(N_sites, fill::value(sigma_theta_prior_b/(sigma_theta_prior_a - 1)));
-  vec sigma2_theta(N_sites, fill::value(0.5));
-  
-  // vec ksi = rnorm_cpp(N_sites, mu, std::sqrt(sigma2_ksi));
-  // Initialize random effects at to zero
+  vec sigma2_theta(N_sites, fill::value(1.0));
   vec ksi = zeros(N_sites);
-  vec theta = zeros(N_families);  
+  vec theta = zeros(N_families);
+  
+  // Sample initial random effect parameters from priors
+  // double sigma2_ksi = rinvgamma_cpp(sigma_ksi_prior_a, sigma_ksi_prior_b);
+  // vec ksi = rnorm_cpp(N_sites, mu, std::sqrt(sigma2_ksi));
   // for(int s = 0; s < N_sites; s++) {
-  //     //sigma2_theta(s) = rinvgamma_cpp(sigma_theta_prior_a, sigma_theta_prior_b);
+  //     // sigma2_theta(s) = rinvgamma_cpp(sigma_theta_prior_a, sigma_theta_prior_b);
   //     arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong to site s
   //     for (int f : indices_family_in_site) {
   //         theta(f) = as_scalar(rnorm_cpp(1, ksi(s), std::sqrt(sigma2_theta(s))));
   //     }
   // }
+  
   y_tilde = y - Z_family*theta - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
   
   // Fix beta to 0 if covariates are not included
@@ -1248,6 +1249,8 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
   
   // double sigma2 = arma::dot(trans(y-W*beta), (y-W*beta))/(N_obs - W.n_cols);
   // double sigma2 = sigma_prior_b/(sigma_prior_a - 1);
+  
+  // Outcome residual variance simply initialized to 1 
   double sigma2 = 1.0;
   
   // Store initial values
@@ -1277,6 +1280,8 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
   vec y_lessUalpha(N_obs);
   vec beta_mean(n_beta);
   vec theta_mean(N_families);
+  vec ksi_mean(N_sites);
+  vec sigma2_theta_mean(N_sites);
   
   // if (Method==2) {
   //   Rcpp::Rcout << "Dimensions of y: " << y.n_elem << " elements\n";
@@ -1309,14 +1314,9 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
                 int ind = individuals_in_f(i);
                 // Residualize data for each individual
                 for (int j = 0; j < P[m]; j++) {
-                  // // Print original value
-                  // Rcpp::Rcout << "Original X[m][ind][j]: " << X[m][ind][j] << "\n";
-                  // Rcpp::Rcout << "Wbeta(ind): " << Wbeta(ind) << "\n";
-                  // Rcpp::Rcout << "theta(f): " << theta(f) << "\n";
                   
                   X1[m][ind][j] = X[m][ind][j] - Wbeta(ind) - theta(f);
                   
-                  // Rcpp::Rcout << "New X1[m][ind][j]: " << X1[m][ind][j] << "\n";
                 }
               }
             }
@@ -1388,17 +1388,22 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
       alpha_vec = extract_alpha_vec(A, IndVar, Np, r);
       n_active_comp = sum(gamma_vec);
       active_comp = find(gamma_vec == 1);
+      // Rcpp::Rcout << "active_comp: " << active_comp << "\n";
       
       // Grab sigma2
       sigma2 = extract_sigma2(s2, IndVar, Np);
       
       // Rcpp::Rcout << "One value of U_mat: " << U_mat(0, 0) << "\n";
-      // Rcpp::Rcout << "One value of alpha_vec: " << alpha_vec(0) << "\n";
+      // Rcpp::Rcout << "alpha_vec(0): " << alpha_vec(0) << "\n";
       // Rcpp::Rcout << "sigma2_t: " << sigma2 << "\n";
       
       ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (BELOW) /////
       
+      // Rcpp::Rcout << "1st element of y: " << y_lessUalpha(0) << "\n";
+      
       y_lessUalpha = y - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
+      
+      // Rcpp::Rcout << "1st element of y_lessUalpha: " << y_lessUalpha(0) << "\n";
       
       if (covariates_included) {
         // Sample beta
@@ -1422,6 +1427,7 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
           double V_theta = 1.0 / (n_sf/sigma2 + 1.0/sigma2_theta(s));
           double m_theta = V_theta*(sum_y_tilde/sigma2 + ksi(s)/sigma2_theta(s));  // Corrected the mean calculation
           theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
+          // Rcpp::Rcout << "theta_f: " << theta(f) << "\n";
         }
         
         // Sample site-level intercepts ksi
@@ -1450,30 +1456,35 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
       
       ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (ABOVE) /////
       
-      // Store samples
-      mu_samples(t) = mu;
-      alpha_samples.row(t) = alpha_vec.t();
-      beta_samples.row(t) = beta.t();
-      gamma_samples.row(t) = gamma_vec.t();
-      ksi_samples.row(t) = ksi.t();
-      theta_samples.row(t) = theta.t();
-      sigma2_ksi_samples(t) = sigma2_ksi;
-      sigma2_theta_samples.row(t) = sigma2_theta.t();
-      sigma2_samples(t) = sigma2;
-      for (j=0;j<10;j++) {
-        sigma2_non_outcome_samples(t,j) = s2[1][j]; // Takes the 1st feature from the 2nd view, and non-outcome assuming outcome is 1st
-      }
+      // // Store samples
+      // mu_samples(t) = mu;
+      // alpha_samples.row(t) = alpha_vec.t();
+      // beta_samples.row(t) = beta.t();
+      // gamma_samples.row(t) = gamma_vec.t();
+      // ksi_samples.row(t) = ksi.t();
+      // theta_samples.row(t) = theta.t();
+      // sigma2_ksi_samples(t) = sigma2_ksi;
+      // sigma2_theta_samples.row(t) = sigma2_theta.t();
+      // sigma2_samples(t) = sigma2;
+      // for (j=0;j<10;j++) {
+      //   sigma2_non_outcome_samples(t,j) = s2[1][j]; // Takes the 1st feature from the 2nd view, and non-outcome assuming outcome is 1st
+      // }
     }
     
     if (t>=burninsample){
       // Update posterior mean estimates
       InterceptMean+=intercp/nbrsample;
       if (Method==2) {
+        // Rcpp::Rcout << "theta_mean: " << theta_mean << "\n";
         for (int j = 0; j < n_beta; j++) {
           beta_mean(j) += beta(j) / nbrsample;
         }
         for (int f = 0; f < N_families; f++) {
           theta_mean(f) += theta(f) / nbrsample;
+        }
+        for (int s = 0; s < N_sites; s++) {
+          ksi_mean(s) += ksi(s) / nbrsample;
+          sigma2_theta_mean(s) += sigma2_theta(s) / nbrsample;
         }
       } 
       
@@ -1752,6 +1763,8 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
   printf("\n\nTime taken in seconds is %f\n",time_taken);
   printf("\nTime taken in minutes is %f\n",time_taken/60);
   
+  // Rcpp::Rcout << "theta_mean content before return in cpp: " << theta_mean << "\n";
+  
   return Rcpp::List::create(
     Rcpp::Named("VarSelMeanGlobal") = VarSelMeanGlobal,
     Rcpp::Named("VarSelMean") = VarSelMean,
@@ -1765,15 +1778,15 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
     Rcpp::Named("EstLoadMod") = EstLoadMod,
     Rcpp::Named("nbrmodel1") = nbrmodel1,
     Rcpp::Named("postgam") = postgam,
-    Rcpp::Named("samples") = List::create(
-      Rcpp::Named("mu_samples") = mu_samples,
-      Rcpp::Named("beta_samples") = beta_samples,
-      Rcpp::Named("ksi_samples") = ksi_samples,
-      Rcpp::Named("theta_samples") = theta_samples,
-      Rcpp::Named("sigma2_ksi_samples") = sigma2_ksi_samples,
-      Rcpp::Named("sigma2_theta_samples") = sigma2_theta_samples,
-      Rcpp::Named("sigma2_samples") = sigma2_samples
-    ),
+    // Rcpp::Named("samples") = List::create(
+    //   Rcpp::Named("mu_samples") = mu_samples,
+    //   Rcpp::Named("beta_samples") = beta_samples,
+    //   Rcpp::Named("ksi_samples") = ksi_samples,
+    //   Rcpp::Named("theta_samples") = theta_samples,
+    //   Rcpp::Named("sigma2_ksi_samples") = sigma2_ksi_samples,
+    //   Rcpp::Named("sigma2_theta_samples") = sigma2_theta_samples,
+    //   Rcpp::Named("sigma2_samples") = sigma2_samples
+    // ),
     Rcpp::Named("initial_values") = List::create(
       Rcpp::Named("mu_init") = mu_init,
       Rcpp::Named("alpha_init") = alpha_init,
@@ -1785,16 +1798,17 @@ Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P
       Rcpp::Named("sigma2_theta_init") = sigma2_theta_init,
       Rcpp::Named("sigma2_init") = sigma2_init
     ),
-    Rcpp::Named("intercepts") = List::create(
+    Rcpp::Named("estimates") = List::create(
       Rcpp::Named("InterceptMean") = InterceptMean,
       Rcpp::Named("beta_mean") = beta_mean,
-      Rcpp::Named("theta_mean") = theta_mean
+      Rcpp::Named("theta_mean") = theta_mean,
+      Rcpp::Named("ksi_mean") = ksi_mean,
+      Rcpp::Named("sigma2_theta_mean") = sigma2_theta_mean
     ),
     Rcpp::Named("design_matrices") = List::create(
       Rcpp::Named("Z_family") = Z_family,
       Rcpp::Named("Z_site") = Z_site,
       Rcpp::Named("Z_family_to_site") = Z_family_to_site
     )
-    // Rcpp::Named("sigma2_non_outcome_samples") = sigma2_non_outcome_samples, 
   );
 }

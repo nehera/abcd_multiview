@@ -1,7 +1,9 @@
-# setwd("/users/4/neher015/abcd_multiview")
+setwd("/users/4/neher015/abcd_multiview")
 
 # User Options
-base_path <- "~/abcd_multiview/data_analysis_results/2024-09-18_data_analysis"
+# base_path <- "~/abcd_multiview/data_analysis_results/2024-11-22_data_analysis" # with covariates
+base_path <- "~/abcd_multiview/data_analysis_results/2024-11-26_data_analysis" # without covariates
+
 threshold <- 0.5 # Feature selection threshold
 n_samples <- 10000 # Total number of MCMC samples
 n_burnin <- 5000 # Number of burnin samples
@@ -20,10 +22,10 @@ library(png) # For reading in the component selection plot
 # Define views
 views <- c("ELA", "fMRI", "sMRI_CT", "sMRI_SA")
 
-analysis_conditions <- file.path(base_path, "analysis_conditions.csv") %>% read.csv()
+analysis_conditions <- file.path(base_path, "analysis_conditions.csv") %>% read.csv() # %>% filter(analysis_method=="BIP")
 
 # Get all task folder paths (excluding the base folder itself)
-task_folders <- list.dirs(path = base_path, full.names = TRUE, recursive = FALSE)
+task_folders <- analysis_conditions$subdir_name
 
 # Initialize a data frame to store the aggregated results
 global_feature_results <- data.frame(
@@ -82,65 +84,59 @@ train_test_sizes <- data.frame(Seed = integer(),
 # Iterate over each task folder to process the data
 for (i in 1:length(task_folders)) {
   
-  # i <- 23
-  
   task_folder <- task_folders[i]
   
-  # Extract the number between "task" and "job"
-  task_number <- str_extract(task_folder, "(?<=task_)\\d+(?=_job)") %>%
-    as.numeric()
-  
   # Extract the method and outcome info from the folder name (if it's encoded in the folder name)
-  method <- analysis_conditions$analysis_method[task_number]  # Replace with appropriate extraction logic if needed
-  outcome <- analysis_conditions$outcome_label_and_varname[task_number]  # Replace with appropriate extraction logic if needed
-  split <- analysis_conditions$split_seed[task_number]
+  method <- analysis_conditions$analysis_method[i]  # Replace with appropriate extraction logic if needed
+  outcome <- analysis_conditions$outcome_label_and_varname[i]  # Replace with appropriate extraction logic if needed
+  split <- analysis_conditions$split_seed[i]
   
-  # Convergence check 
-  convergence_check <- analysis_conditions$check_convergence[task_number]
-  if (convergence_check & method == "BIPmixed") {
-    
-    model_fit_1 <- readRDS(file.path(task_folder, "model_fit.rds"))
-    model_fit_2 <- readRDS(file.path(task_folder, "model_fit_2.rds"))
-    
-    # Combine the MCMC samples for both chains
-    sigma2_o_samples <- rbind(
-      model_fit_1$sigma2_samples,
-      model_fit_2$sigma2_samples
-    )
-    
-    sigma2_ksi_samples <- rbind(
-      model_fit_1$sigma2_ksi_samples,
-      model_fit_2$sigma2_ksi_samples
-    )
-    
-    sigma2_theta_samples <- rbind(
-      model_fit_1$sigma2_theta_samples,
-      model_fit_2$sigma2_theta_samples
-    )
-    
-    # Combine all parameters into a single matrix
-    combined_samples <- cbind(sigma2_o_samples, sigma2_ksi_samples, sigma2_theta_samples)
-    
-    # Reshape the matrix into an array that is expected by rstan::monitor (chains, iterations, parameters)
-    combined_samples_array <- array(
-      data = combined_samples, 
-      dim = c(n_samples, 2, 24)  # 2 chains, n_samples iterations, and 24 parameters
-    )
-    
-    # Create the parameter names
-    param_names <- c("sigma2_o", "sigma2_ksi", paste0("sigma2_theta", 1:22))
-    
-    # Assign parameter names to the third dimension of the array (the parameters dimension)
-    dimnames(combined_samples_array) <- list(NULL, NULL, param_names)
-    
-    # Use rstan::monitor to estimate Gelman-Rubin stats and credible intervals
-    monitor_results <- monitor(
-      combined_samples_array, 
-      warmup = n_burnin,  # Specify the burn-in period
-      print = TRUE
-    )
-    
-  }
+  # Convergence check
+  # convergence_check <- analysis_conditions$check_convergence[i]
+  # if (convergence_check & method == "BIPmixed") {
+  # 
+  #   model_fit_1 <- readRDS(file.path(task_folder, "model_fit.rds"))
+  #   model_fit_2 <- readRDS(file.path(task_folder, "model_fit_2.rds"))
+  # 
+  #   # Combine the MCMC samples for both chains
+  #   sigma2_o_samples <- rbind(
+  #     model_fit_1$sigma2_samples,
+  #     model_fit_2$sigma2_samples
+  #   )
+  # 
+  #   sigma2_ksi_samples <- rbind(
+  #     model_fit_1$sigma2_ksi_samples,
+  #     model_fit_2$sigma2_ksi_samples
+  #   )
+  # 
+  #   sigma2_theta_samples <- rbind(
+  #     model_fit_1$sigma2_theta_samples,
+  #     model_fit_2$sigma2_theta_samples
+  #   )
+  # 
+  #   # Combine all parameters into a single matrix
+  #   combined_samples <- cbind(sigma2_o_samples, sigma2_ksi_samples, sigma2_theta_samples)
+  # 
+  #   # Reshape the matrix into an array that is expected by rstan::monitor (chains, iterations, parameters)
+  #   combined_samples_array <- array(
+  #     data = combined_samples,
+  #     dim = c(n_samples, 2, 24)  # 2 chains, n_samples iterations, and 24 parameters
+  #   )
+  # 
+  #   # Create the parameter names
+  #   param_names <- c("sigma2_o", "sigma2_ksi", paste0("sigma2_theta", 1:22))
+  # 
+  #   # Assign parameter names to the third dimension of the array (the parameters dimension)
+  #   dimnames(combined_samples_array) <- list(NULL, NULL, param_names)
+  # 
+  #   # Use rstan::monitor to estimate Gelman-Rubin stats and credible intervals
+  #   monitor_results <- monitor(
+  #     combined_samples_array,
+  #     warmup = n_burnin,  # Specify the burn-in period
+  #     print = TRUE
+  #   )
+  # 
+  # }
   
   train_test_size_i <- file.path(task_folder, "train_test_sizes.csv") %>%
     read.csv()
@@ -148,32 +144,53 @@ for (i in 1:length(task_folders)) {
   
   # Read the MSPE from y_true_vs_y_preds_mspe.csv
   pred_file_i <- file.path(task_folder, "y_true_vs_y_preds_mspe.csv")
-  pred_data_i <- read.csv(pred_file_i)
-  # Extract the MSPE value
-  prediction_results <- rbind(prediction_results, data.frame(Method = method,
-                                                             Outcome = outcome, 
-                                                             Split = split,
-                                                             pred_data_i))
+  if (file.exists(pred_file_i)) {
+    pred_data_i <- read.csv(pred_file_i)
+    # Extract the MSPE value
+    prediction_results <- rbind(prediction_results, data.frame(Method = method,
+                                                               Outcome = outcome, 
+                                                               Split = split,
+                                                               pred_data_i))
+  } else {
+    print("pred_file_i does not exist:")
+    print(pred_file_i)
+    next
+  }
 
   # Read the globally selected features file (VarSelMean_globally.csv)
   global_file <- file.path(task_folder, "VarSelMean_globally.csv")
   global_data <- read.csv(global_file) %>% filter(Probability > threshold)
-  global_feature_results <- rbind(global_feature_results, data.frame(Method = method,
-                                                     Outcome = outcome,
-                                                     View = global_data$View,
-                                                     Split = split,
-                                                     Feature = global_data$Feature,
-                                                     Probability = global_data$Probability))
+  if (nrow(global_data) > 0) {
+    global_feature_results <- rbind(global_feature_results, data.frame(Method = method,
+                                                                       Outcome = outcome,
+                                                                       View = global_data$View,
+                                                                       Split = split,
+                                                                       Feature = global_data$Feature,
+                                                                       Probability = global_data$Probability))
+  } else{
+    print("No features selected globally in:")
+    print(task_folder)
+  }
+
   
   component_file <- file.path(task_folder, "VarSelMean_by_component.csv")
   component_data <- read.csv(component_file) %>% filter(Probability > threshold)
-  component_feature_results <- rbind(component_feature_results, data.frame(Method = method,
-                                                     Outcome = outcome,
-                                                     View = component_data$View,
-                                                     Split = split,
-                                                     Component = component_data$Component,
-                                                     Feature = component_data$Feature,
-                                                     Probability = component_data$Probability))
+  
+  if (nrow(component_data) > 0) {
+    component_feature_results <- rbind(component_feature_results, data.frame(Method = method,
+                                                                             Outcome = outcome,
+                                                                             View = component_data$View,
+                                                                             Split = split,
+                                                                             Component = component_data$Component,
+                                                                             Feature = component_data$Feature,
+                                                                             Probability = component_data$Probability))
+    
+  } else {
+    print("No components selected in:")
+    print(task_folder)
+  }
+  
+
   
 }
 
@@ -207,11 +224,77 @@ ela_feature_count_summary <- ela_features_selected_12_or_more %>%
 # Combine ela feature selection summary into 1 table
 ela_feature_selection_summary_combined <- left_join(ela_avg_feature_selection, ela_feature_count_summary)
 
+# Remove replicates with NA prediction results
+filtered_prediction_results <- prediction_results %>% 
+  select(Method, Outcome, Split, MSPE) %>% unique() %>%
+  # Remove replicates with missing MSPE
+  filter(!is.na(MSPE)==T) %>%
+  # Remove outliers
+  group_by(Method, Outcome) %>%
+  mutate(
+    Q1 = quantile(MSPE, 0.25, na.rm = TRUE),
+    Q3 = quantile(MSPE, 0.75, na.rm = TRUE),
+    IQR = Q3 - Q1,
+    lower_bound = Q1 - 1.5 * IQR,
+    upper_bound = Q3 + 1.5 * IQR,
+    is_outlier = MSPE < lower_bound | MSPE > upper_bound
+  ) %>%
+  filter(!is_outlier)
+
+print("N tasks removed due to missing/ outlier MSPE:")
+print(nrow(prediction_results)-nrow(filtered_prediction_results))
+print("Out of N tasks overall:")
+print(nrow(prediction_results))
+
+# Count the number of rows for each Method
+prediction_results %>%
+  select(Method, Outcome, Split, MSPE) %>% unique() %>%
+  group_by(Method, Outcome) %>%
+  summarise(n = n())
+
+# Count the number of rows for each Method
+filtered_prediction_results %>%
+  group_by(Method, Outcome) %>%
+  summarise(n = n())
+
 # Get prediction result summary
-prediction_summary <- prediction_results %>%
+prediction_summary <- filtered_prediction_results %>%
   group_by(Method, Outcome) %>%
   summarise(mspe_avg = mean(MSPE),
             mspe_se = sd(MSPE))
+
+# We view the MSPE across replicates of BIP vs. BIPmixed
+filtered_prediction_results %>% 
+  filter(Outcome=="Externalizing Problems (R)_and_cbcl_scr_syn_external_r") %>% 
+  ggplot(aes(x=MSPE, color = Method)) + geom_boxplot() 
+
+filtered_prediction_results %>% 
+  filter(Outcome=="Externalizing Problems (R)_and_cbcl_scr_syn_external_r") %>% 
+  ggplot(aes(x=MSPE, color = Method)) + geom_density() 
+
+# Filter the prediction results to include only outcomes starting with "Externalizing"
+externalizing_results <- prediction_results %>%
+  filter(Outcome == "Externalizing Problems (R)_and_cbcl_scr_syn_external_r")
+
+externalizing_var_summary <- externalizing_results %>%
+  group_by(Method, Split) %>%
+  summarise(
+    y_preds_var = var(y_preds)
+  )
+
+externalizing_results <- externalizing_results %>%
+  left_join(externalizing_var_summary)
+
+# Calculate the overall statistics across all quantiles
+externalizing_overall_summary <- externalizing_results %>%
+  group_by(Method) %>%
+  summarise(
+    mspe_avg = mean(MSPE),
+    mspe_sd = sd(MSPE),
+    y_preds_var_avg = mean(y_preds_var),
+    y_preds_var_sd = sd(y_preds_var),
+    .groups = 'drop'
+  )
 
 # Combine data analysis results data raw inputs
 data_analysis_results_top <- left_join(ela_feature_selection_summary_combined, prediction_summary)
@@ -296,42 +379,13 @@ latex_top <- print(xtable(data_analysis_latex_table_top),
                    include.rownames = FALSE, 
                    print.results = FALSE)
 
-latex_top_clean <- gsub("\\\\begin\\{table\\}\\[ht\\]|\\\\centering|\\\\end\\{table\\}|\\\\end\\{tabular\\}", "", latex_top)
-
-# Generate LaTeX for the bottom table and remove \begin{table}, \end{table}, and \centering
-latex_bottom <- print(xtable(data_analysis_latex_table_bottom, 
-                             align = c("l", "l", "l", "c", "c", "p{5cm}")),
-                      include.rownames = FALSE, 
-                      sanitize.text.function = identity, 
-                      print.results = FALSE)
-
-latex_bottom_clean <- gsub("\\\\begin\\{table\\}\\[ht\\]|\\\\begin\\{tabular\\}|\\\\centering|\\\\end\\{table\\}|\\\\end\\{tabular\\}", "", latex_bottom)
-
-# Combine the two tables with a single \begin{table} and \end{table}
-combined_latex <- paste0(
-  "\\begin{table}[ht]\n\\centering\n",
-  latex_top_clean,  # Cleaned LaTeX code for the first table
-  "\\hline\n",  # Insert \hline to separate tables
-  latex_bottom_clean,  # Cleaned LaTeX code for the second table
-  "\\end{tabular}\n\\end{table}"
-)
-
-# Print the combined LaTeX code
-cat(combined_latex)
-
 # Group by Method, Outcome, View, and Feature, and count repetitions
 component_counts <- component_feature_results %>%
   # We filter to 1 BIPmixed result to use for representation
   filter(Method == "BIPmixed" & Split == 1) %>%
   group_by(Method, Outcome, View, Component) %>%
   summarise(FeatureCount = n_distinct(Feature), .groups = 'drop') %>%
-  # ad hoc mutation to update view naming
-  mutate(View = case_when(
-    View == 1 ~ "ELA",
-    View == 2 ~ "fMRI",
-    View == 3 ~ "sMRI_CT",
-    View == 4 ~ "sMRI_SA"
-  )) %>% filter(View %in% views)
+  filter(View %in% views)
 
 # Define the function
 generate_feature_select_plots <- function(filtered_data, include_relative_contribution_title, outcome_label, 
@@ -404,11 +458,11 @@ generate_feature_select_plots <- function(filtered_data, include_relative_contri
 
 # Filter for now
 externalizing_data <- component_counts %>%
-  filter(Method == "BIPmixed" & Outcome == "Externalizing Problems_and_cbcl_scr_syn_external_r") %>%
+  filter(Method == "BIPmixed" & Outcome == "Externalizing Problems (R)_and_cbcl_scr_syn_external_r") %>%
   dplyr::select(-Method, -Outcome)
 
 internalizing_data <- component_counts %>%
-  filter(Method == "BIPmixed" & Outcome == "Internalizing Problems_and_cbcl_scr_syn_internal_r") %>%
+  filter(Method == "BIPmixed" & Outcome == "Internalizing Problems (R)_and_cbcl_scr_syn_internal_r") %>%
   dplyr::select(-Method, -Outcome)
 
 feature_select_plots <- list()
@@ -417,62 +471,62 @@ feature_select_plots[["internalizing"]] <- generate_feature_select_plots(interna
 
 # Let's consider the variance parameter ratios
 
-# 1. Extract slices for sigma2_o, sigma2_ksi, and sigma2_theta
-sigma2_o <- combined_samples_array[, , 1]  # sigma2_o is the 1st parameter (3D array: iterations x chains x 1)
-sigma2_ksi <- combined_samples_array[, , 2]  # sigma2_ksi is the 2nd parameter (3D array: iterations x chains x 1)
-sigma2_theta <- combined_samples_array[, , 3:24]  # sigma2_theta corresponds to the next 22 parameters
-
-sigma2_o_estimate <- monitor(sigma2_o, warmup = n_burnin)
-sigma2_ksi_estimate <- monitor(sigma2_ksi, warmup = n_burnin)
+# # 1. Extract slices for sigma2_o, sigma2_ksi, and sigma2_theta
+# sigma2_o <- combined_samples_array[, , 1]  # sigma2_o is the 1st parameter (3D array: iterations x chains x 1)
+# sigma2_ksi <- combined_samples_array[, , 2]  # sigma2_ksi is the 2nd parameter (3D array: iterations x chains x 1)
+# sigma2_theta <- combined_samples_array[, , 3:24]  # sigma2_theta corresponds to the next 22 parameters
+# 
+# sigma2_o_estimate <- monitor(sigma2_o, warmup = n_burnin)
+# sigma2_ksi_estimate <- monitor(sigma2_ksi, warmup = n_burnin)
 
 # # 2. Calculate the ratio for the first array (sigma2_theta / sigma2_o)
 # sigma2_theta_o_ratio <- sigma2_theta / array(sigma2_o, dim = c(dim(sigma2_theta)[1], dim(sigma2_theta)[2], 22))
 
 # 3. Calculate the ratio for the second array (sigma2_theta / sigma2_ksi)
-sigma2_theta_ksi_ratio <- sigma2_theta / array(sigma2_ksi, dim = c(dim(sigma2_theta)[1], dim(sigma2_theta)[2], 22))
+# sigma2_theta_ksi_ratio <- sigma2_theta / array(sigma2_ksi, dim = c(dim(sigma2_theta)[1], dim(sigma2_theta)[2], 22))
 
 # Use rstan::monitor to estimate Gelman-Rubin stats and credible intervals
-monitor_results <- monitor(
-  sigma2_theta_ksi_ratio, # Start with sigma2_theta_ksi_ratio
-  warmup = n_burnin,  # Specify the burn-in period
-  print = TRUE
-)
+# monitor_results <- monitor(
+#   sigma2_theta_ksi_ratio, # Start with sigma2_theta_ksi_ratio
+#   warmup = n_burnin,  # Specify the burn-in period
+#   print = TRUE
+# )
 
-# Create a new column to classify parameters into groups and assign numeric indices for plotting
-monitor_results <- monitor_results %>%
-  as.data.frame() %>%
-  mutate(Parameter = rownames(monitor_results),  # Get parameter names from rownames
-         ParameterType = case_when(
-           Parameter == "sigma2_o" ~ "sigma2_o",
-           Parameter == "sigma2_ksi" ~ "sigma2_ksi",
-           grepl("sigma2_theta", Parameter) ~ "sigma2_theta",
-           TRUE ~ "Other"  # Add a fallback for any unclassified cases
-         )) %>%
-  arrange(ParameterType) %>%  # Ensure parameters are grouped by type
-  mutate(ParameterIndex = row_number())  # Create an index for each parameter to use in plotting
-
-# Extract the posterior mean estimate for sigma2_ksi
-sigma2_ksi_mean <- monitor_results %>%
-  filter(Parameter == "sigma2_ksi") %>%
-  pull(mean)
-
-# Extract the y-axis position (index) for sigma2_ksi
-sigma2_ksi_index <- monitor_results %>%
-  filter(Parameter == "sigma2_ksi") %>%
-  pull(ParameterIndex)
-
-variance_forest_plot <- ggplot() +
-  # Plot the points and error bars
-  geom_point(data = monitor_results, aes(x = mean, y = ParameterIndex)) + # , color = ParameterType)) +
-  geom_errorbarh(data = monitor_results, aes(xmin = `2.5%`, xmax = `97.5%`, y = ParameterIndex), height = 0.2) +
-  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
-  # Set up axes and labels
-  scale_y_continuous(breaks = NULL) +  # Remove parameter names on the y-axis
-  labs(title = "Within site variance/ between site variance",
-       x = "Mean and 95% CI",
-       y = "Site s") +
-  theme_minimal() +
-  coord_flip()
+# # Create a new column to classify parameters into groups and assign numeric indices for plotting
+# monitor_results <- monitor_results %>%
+#   as.data.frame() %>%
+#   mutate(Parameter = rownames(monitor_results),  # Get parameter names from rownames
+#          ParameterType = case_when(
+#            Parameter == "sigma2_o" ~ "sigma2_o",
+#            Parameter == "sigma2_ksi" ~ "sigma2_ksi",
+#            grepl("sigma2_theta", Parameter) ~ "sigma2_theta",
+#            TRUE ~ "Other"  # Add a fallback for any unclassified cases
+#          )) %>%
+#   arrange(ParameterType) %>%  # Ensure parameters are grouped by type
+#   mutate(ParameterIndex = row_number())  # Create an index for each parameter to use in plotting
+# 
+# # Extract the posterior mean estimate for sigma2_ksi
+# sigma2_ksi_mean <- monitor_results %>%
+#   filter(Parameter == "sigma2_ksi") %>%
+#   pull(mean)
+# 
+# # Extract the y-axis position (index) for sigma2_ksi
+# sigma2_ksi_index <- monitor_results %>%
+#   filter(Parameter == "sigma2_ksi") %>%
+#   pull(ParameterIndex)
+# 
+# variance_forest_plot <- ggplot() +
+#   # Plot the points and error bars
+#   geom_point(data = monitor_results, aes(x = mean, y = ParameterIndex)) + # , color = ParameterType)) +
+#   geom_errorbarh(data = monitor_results, aes(xmin = `2.5%`, xmax = `97.5%`, y = ParameterIndex), height = 0.2) +
+#   geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+#   # Set up axes and labels
+#   scale_y_continuous(breaks = NULL) +  # Remove parameter names on the y-axis
+#   labs(title = "Within site variance/ between site variance",
+#        x = "Mean and 95% CI",
+#        y = "Site s") +
+#   theme_minimal() +
+#   coord_flip()
 
 # Read in component selection plot
 # TODO Fix hardcoding
@@ -512,9 +566,9 @@ layout_matrix <- rbind(
 # Combine the plots using the custom layout
 combined_plot <- grid.arrange(
   feature_select_plots[["externalizing"]]$bar_plot, 
-  feature_select_plots[["externalizing"]]$sankey_plot, 
-  variance_forest_plot,
-  layout_matrix = layout_matrix
+  feature_select_plots[["externalizing"]]$sankey_plot # ,  
+  # variance_forest_plot,
+  # layout_matrix = layout_matrix
 )
 
 # Save the combined plot as a PNG
@@ -523,34 +577,35 @@ ggsave("figures/combined_feature_selection_plot.png", plot = combined_plot, widt
 # Display the combined plot
 print(combined_plot)
 
-# We generate a caption for the combined_plot
-
-# Extract necessary values for sigma2_ksi_estimate and sigma2_o_estimate
-sigma2_ksi_mean <- round(sigma2_ksi_estimate$mean, 3)
-sigma2_ksi_ci <- paste0(round(sigma2_ksi_estimate$`2.5%`, 3), ", ", round(sigma2_ksi_estimate$`97.5%`, 3))
-
-sigma2_o_mean <- round(sigma2_o_estimate$mean, 3)
-sigma2_o_ci <- paste0(round(sigma2_o_estimate$`2.5%`, 3), ", ", round(sigma2_o_estimate$`97.5%`, 3))
-
-# Important components to outcome
-components_important_to_outcome <- CompoSelMean_long %>% 
-  filter(View == "Externalizing" & Probability > 0.5) %>% pull(Component)
-components_text <- paste(components_important_to_outcome, collapse = ", ")
-
-# Create the caption
-combined_plot_caption <- paste0(
-  "BIPmixed analysis of the ABCD Study dataset with outcome \\( \\sqrt{y} \\) raw externalizing problems. ",
-  "Internalizing problems results omitted. ",
-  "\\textbf{Panel A}. View contributions to latent factor components where contribution is defined as the number of important features, ",
-  "those with marginal posterior probabilities \\( >0.5 \\). Views: Early Life Adversity (ELA), functional MRI (fMRI) functional connectivity, ",
-  "and 2 from the structural MRI (sMRI) modality, Cortical Thickness (CT) and Surface Area (SA). ",
-  "Important components related to the outcome are highlighted with a red dashed box: components ", components_text, ". ",
-  "\\textbf{Panel B}. Sankey plot important feature mapping from views to latent components with a red dashed box around important components. ",
-  "\\textbf{Panel C}. Within study site variances \\( \\sigma^2_{\\theta_s} \\) to between study site variance \\( \\sigma^2_\\xi \\) credible intervals, ",
-  "with the dashed line indicating within and between site variance equivalence. ",
-  "Posterior mean (credible interval) for outcome model residual variance \\( \\sigma^{2(0)} \\) is ", sigma2_o_mean, " (", sigma2_o_ci, "), ",
-  "and for between study site variance \\( \\sigma^2_\\xi \\) is ", sigma2_ksi_mean, " (", sigma2_ksi_ci, ")."
-)
-
-# Print the caption
-cat(combined_plot_caption)
+# # We generate a caption for the combined_plot
+# 
+# # Extract necessary values for sigma2_ksi_estimate and sigma2_o_estimate
+# sigma2_ksi_mean <- round(sigma2_ksi_estimate$mean, 3)
+# sigma2_ksi_ci <- paste0(round(sigma2_ksi_estimate$`2.5%`, 3), ", ", round(sigma2_ksi_estimate$`97.5%`, 3))
+# 
+# sigma2_o_mean <- round(sigma2_o_estimate$mean, 3)
+# sigma2_o_ci <- paste0(round(sigma2_o_estimate$`2.5%`, 3), ", ", round(sigma2_o_estimate$`97.5%`, 3))
+# 
+# # Important components to outcome
+# components_important_to_outcome <- CompoSelMean_long %>% 
+#   filter(View == "Externalizing" & Probability > 0.5) %>% pull(Component)
+# components_text <- paste(components_important_to_outcome, collapse = ", ")
+# 
+# # Create the caption
+# combined_plot_caption <- paste0(
+#   "BIPmixed analysis of the ABCD Study dataset with outcome \\( \\sqrt{y} \\) raw externalizing problems. ",
+#   "Internalizing problems results omitted. ",
+#   "\\textbf{Panel A}. View contributions to latent factor components where contribution is defined as the number of important features, ",
+#   "those with marginal posterior probabilities \\( >0.5 \\). Views: Early Life Adversity (ELA), functional MRI (fMRI) functional connectivity, ",
+#   "and 2 from the structural MRI (sMRI) modality, Cortical Thickness (CT) and Surface Area (SA). ",
+#   "Important components related to the outcome are highlighted with a red dashed box: components ", components_text, ". ",
+#   "\\textbf{Panel B}. Sankey plot important feature mapping from views to latent components with a red dashed box around important components. ",
+#   "\\textbf{Panel C}. Within study site variances \\( \\sigma^2_{\\theta_s} \\) to between study site variance \\( \\sigma^2_\\xi \\) credible intervals, ",
+#   "with the dashed line indicating within and between site variance equivalence. ",
+#   "Posterior mean (credible interval) for outcome model residual variance \\( \\sigma^{2(0)} \\) is ", sigma2_o_mean, " (", sigma2_o_ci, "), ",
+#   "and for between study site variance \\( \\sigma^2_\\xi \\) is ", sigma2_ksi_mean, " (", sigma2_ksi_ci, ")."
+# )
+# 
+# # Print the caption
+# cat(combined_plot_caption)
+# 
