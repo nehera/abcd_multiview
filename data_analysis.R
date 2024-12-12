@@ -1,43 +1,83 @@
-## First read in the arguments listed at the command line
-args <- commandArgs(trailingOnly=TRUE) 
-## args is now a list of character vectors 
-## First check to see if arguments are passed. 
-## Then cycle through each element of the list and evaluate the expressions. 
-if(length(args) == 0){ 
-  print("No arguments supplied.") 
-  ## supply default values 
-  slurm_id <- 9
-  } else{ 
-    # set i to the first arg 
-    slurm_id = args[1] 
-} 
-cat("Slurm ID:", slurm_id)
+# Set the library path using the full file path
+.libPaths("/users/4/neher015/R/x86_64-pc-linux-gnu-library/4.3")
+
+# Ensure library path has been set
+print(.libPaths())
 
 # Load libraries
-if (("pacman" %in% installed.packages()[,"Package"]) == FALSE) { install.packages("pacman") }
+if (!("pacman" %in% installed.packages()[,"Package"])) {
+  install.packages("pacman", lib = "/users/4/neher015/R/x86_64-pc-linux-gnu-library/4.3")
+}
+
 pacman::p_load(tidyverse, reshape2, parallel) 
-# if (("BIPnet" %in% installed.packages()[,"Package"]) == FALSE) {
-#   pacman::p_load(devtools)
-#   devtools::install_github('chekouo/BIPnet')
-# }
 
 # Source methods
 source("src/BIP.R") # Includes BIPmixed implementation
 source("src/BIPpredict.R")
 
+# First read in the arguments listed at the command line
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) == 1) {
+  print("Assuming job is run locally using GNU Parallel.")
+  slurm_array_task_id <- args[1]
+  slurm_job_id <- 999999
+} else if (length(args) == 2) {
+  print("Assuming job is run on MSI using slurm scheduler.")
+  slurm_array_task_id <- args[1]
+  slurm_job_id <- args[2]
+} else {
+  print("Appropriate CLI Args have not been supplied.")
+  # Supply default values
+  slurm_array_task_id <- 3
+  slurm_job_id <- 999999
+}
+
+output_dir_name <- file.path("data_analysis_results",
+                             paste0(Sys.Date(), "_data_analysis"))
+
+# Check if the directory exists, and if not, create it
+if (!dir.exists(output_dir_name)) {
+  dir.create(output_dir_name)
+}
+
+print("Slurm Array Task ID:")
+print(slurm_array_task_id)
+print("Slurm Job ID:")
+print(slurm_job_id)
+print("Main Output Directory:")
+print(output_dir_name)
+
+# Create subdirectory for the slurm_array_task_id and slurm_job_id
+subdir_name <- file.path(output_dir_name, paste0(Sys.Date(), "_task_", slurm_array_task_id, "_job_", slurm_job_id))
+dir.create(subdir_name, showWarnings = FALSE, recursive = TRUE)
+
 # Define data analysis conditions
-possible_r <- c(5, 6)
+possible_r <- c(6)
 outcome_labels <- c("Internalizing Problems", "Externalizing Problems")
 outcome_varnames <- c("cbcl_scr_syn_internal_r", "cbcl_scr_syn_external_r")
 outcome_labels_and_varnames <- paste(outcome_labels, outcome_varnames, sep = "_and_")
 analysis_methods <- c("BIP", "BIPmixed")
-ELA_contin_flags <- c(FALSE, TRUE) # Flag to indicate whether or not to artificially include a continuous var in the ELA view
+data_splits <- 1:20
 analyses_df <- expand.grid(r = possible_r, outcome_label_and_varname = outcome_labels_and_varnames, 
-                           analysis_method = analysis_methods, ELA_contin_flag = ELA_contin_flags) %>%
-  filter(!(analysis_method == "BIP" & r == 5)) # There are 6 views when applying BIP, and it's important to not have n components < n views. 
+                           analysis_method = analysis_methods, split_seed = data_splits,
+                           check_convergence = c(T, F))
+# We only check convergence on 1 of the splits/ method
+analyses_df <- analyses_df %>% 
+  filter( (split_seed != 1 & check_convergence==F) | ( split_seed==1 & check_convergence == T ) )
+
+# Save the analysis conditions
+about_analyses_file <- file.path(output_dir_name, "analysis_conditions.csv")
+analyses_df %>% write.csv(about_analyses_file)
+
+# Save the R environment details to a file in the output directory
+session_info_file <- file.path(output_dir_name, "session_info.txt")
+sessionInfo() %>%
+  capture.output() %>%
+  writeLines(session_info_file)
 
 # Do analysis_1 by default
-analysis_conditions <- analyses_df[slurm_id, ]
+analysis_conditions <- analyses_df[slurm_array_task_id, ]
 
 # Extract analysis conditions
 r <- analysis_conditions$r
@@ -46,22 +86,145 @@ analysis_conditions <- analysis_conditions %>%
   separate(outcome_label_and_varname, into = c("outcome_label", "varname"), sep = "_and_")
 outcome_label <- analysis_conditions$outcome_label
 outcome_varname <- analysis_conditions$varname
-normalize_response <- analysis_conditions$normalize_response
 analysis_method <- analysis_conditions$analysis_method
-ELA_contin_flag <- analysis_conditions$ELA_contin_flag
+split_seed <- analysis_conditions$split_seed
+check_convergence <- analysis_conditions$check_convergence
 
-# Load training data
-train_list <- readRDS("data/2024-06-24_train_list.rds")
+# Set seed for data splitting reproducibility purposes
+set.seed(split_seed)
 
-# Option to turn off subsetting
-apply_subsetting <- FALSE
-n_subjects <- 500
+# Load complete sample
+complete_data_list <- readRDS("data/2024-09-10_complete_data_list.csv")
 
-# Define analysis date
-date_today <- Sys.Date()
+# Split data into 80:20 train:test family-wise split stratified by study site
+sample_key <- complete_data_list$outcomes %>% pull(src_subject_id)
+cluster_data_path <- 'data/2024-09-11_cluster_data.csv'
+cluster_data <- read.csv(cluster_data_path) 
+
+# Function to create train/test split for each site
+split_train_test <- function(data, train_frac = 0.8) {
+  unique_families <- unique(data$rel_family_id)
+  train_families <- sample(unique_families, size = floor(train_frac * length(unique_families)))
+  train_data <- data %>% filter(rel_family_id %in% train_families)
+  test_data <- data %>% filter(!rel_family_id %in% train_families)
+  list(train = train_data, test = test_data)
+}
+
+# Split data by site
+split_by_site <- split(cluster_data, cluster_data$site_id_l)
+
+# Apply split function to each site
+split_data <- lapply(split_by_site, split_train_test)
+
+# Combine train and test sets
+train_data <- bind_rows(lapply(split_data, `[[`, "train"))
+test_data <- bind_rows(lapply(split_data, `[[`, "test"))
+
+# Verify the split
+train_data_summary <- train_data %>% group_by(site_id_l) %>% summarize(n_train = n())
+test_data_summary <- test_data %>% group_by(site_id_l) %>% summarize(n_test = n())
+
+# Print summaries
+print(train_data_summary)
+print(test_data_summary)
+
+# Check overall n's and split proportion
+n_train <- train_data_summary$n_train %>% sum
+n_test <- test_data_summary$n_test %>% sum
+cat("n_train:", n_train)
+cat("n_test:", n_test)
+cat("n_train + n_test:", n_train + n_test)
+write.csv(data.frame(n_train=n_train, n_test=n_test), file.path(subdir_name, "train_test_sizes.csv"))
+
+# Assuming you have train_data and test_data data frames with 'src_subject_id'
+train_ids <- pull(train_data, src_subject_id)
+test_ids <- pull(test_data, src_subject_id)
+
+# Split complete_data_list into train and test lists
+split_data <- function(df, train_ids, test_ids) {
+  train_df <- df %>% filter(src_subject_id %in% train_ids)
+  test_df <- df %>% filter(src_subject_id %in% test_ids)
+  list(train = train_df, test = test_df)
+}
+
+# Assuming complete_data_list is your list of data frames
+split_lists <- lapply(complete_data_list, split_data, train_ids = train_ids, test_ids = test_ids)
+
+# Extract train and test lists
+train_list <- lapply(split_lists, `[[`, "train")
+test_list <- lapply(split_lists, `[[`, "test")
+
+find_zero_variance_columns <- function(data_list, data_type = c("train", "test"), data_dir = ".", ignore_columns = c("src_subject_id")) {
+  # Ensure the data_type is valid
+  data_type <- match.arg(data_type)
+  
+  # Check if 'ela_view' is present in data_list
+  if (!"ela_view" %in% names(data_list)) {
+    stop("'ela_view' is not present in the data_list.")
+  }
+  
+  df <- data_list$ela_view
+  
+  # Exclude specified columns from the data frame
+  df_filtered <- df %>% dplyr::select(-all_of(ignore_columns))
+  
+  # Identify columns with zero variance
+  zero_var_cols <- df_filtered %>%
+    dplyr::select(where(~ var(., na.rm = TRUE) == 0)) %>%
+    colnames()
+  
+  # Create a data frame for zero variance columns
+  zero_variance_df <- tibble(
+    variable.name = zero_var_cols
+  )
+  
+  # Write the zero_variance data frame to a CSV file in the specified directory
+  zero_variance_file <- file.path(data_dir, paste0("zero_variance_", data_type, ".csv"))
+  write_csv(zero_variance_df, zero_variance_file)
+  
+  # Print a message to confirm the file has been written
+  cat("Zero variance columns information has been written to:", zero_variance_file, "\n")
+  
+  return(zero_var_cols)
+}
+
+train_zero_variance_cols <- find_zero_variance_columns(train_list, "train", subdir_name)
+test_zero_variance_cols <- find_zero_variance_columns(test_list, "test", subdir_name)
+zero_variance_cols <- union(train_zero_variance_cols, test_zero_variance_cols)
+
+# Function to remove zero variance columns from data_list
+remove_zero_variance_columns <- function(data_list, zero_var_cols, ignore_columns = c("src_subject_id")) {
+  if (!"ela_view" %in% names(data_list)) {
+    stop("'ela_view' is not present in the data_list.")
+  }
+  
+  df <- data_list$ela_view
+  zero_var_cols <- union(zero_var_cols, ignore_columns)
+  
+  df_cleaned <- df %>%
+    dplyr::select(-all_of(zero_var_cols))
+  
+  data_list$ela_view <- cbind(dplyr::select(data_list$ela_view, "src_subject_id"),
+                              df_cleaned)
+  
+  return(data_list)
+}
+
+# Remove zero variance columns if there are any
+if (length(zero_variance_cols) > 0) {
+  train_list <- remove_zero_variance_columns(train_list, zero_variance_cols, ignore_columns = c("src_subject_id"))
+  test_list <- remove_zero_variance_columns(test_list, zero_variance_cols, ignore_columns = c("src_subject_id"))
+  
+  cat("Zero variance columns have been removed from both training and testing datasets.\n")
+} else {
+  cat("No zero variance columns to remove.\n")
+}
+
+# Option to go into development mode where we subset the data to ensure quicker computation
+dev_set <- FALSE
+n_subjects <- 30
 
 # Sample ids from train_list$outcomes$src_subject_id
-set.seed(123) # Setting seed for reproducibility
 sampled_ids <- sample(train_list$outcomes$src_subject_id, n_subjects)
 
 # Function to subset data frames by sampled_ids
@@ -77,7 +240,7 @@ order_data <- function(df, id_column) {
 }
 
 # Apply subsetting if needed
-if (apply_subsetting) {
+if (dev_set) {
   train_list_subset <- train_list %>%
     map(~ subset_data(.x, "src_subject_id"))
 } else {
@@ -115,37 +278,6 @@ if (all_ordered) {
   
   print(paste("We have dropped the design matrices."))
   
-  # Identify columns with zero variance in each data frame
-  zero_variance <- map_df(names(train_list_subset), ~ {
-    df_name <- .x
-    df <- train_list_subset[[df_name]]
-    zero_var_cols <- df %>%
-      dplyr::select(where(~ var(.) == 0)) %>%
-      colnames()
-    
-    tibble(
-      data.type = df_name,
-      variable.name = zero_var_cols
-    )
-  })
-  
-  if (nrow(zero_variance)>0) {
-    # Print the zero_variance data frame to see which columns will be removed
-    print("Features that have been removed for having zero variance:")
-    print(zero_variance)
-  } else {
-    print("No features removed for having zero variance.")
-  }
-  
-  # Remove columns with zero variance from the list of data frames
-  train_list_subset <- map(train_list_subset, ~ {
-    df <- .x
-    zero_var_cols <- df %>%
-      dplyr::select(where(~ var(.) == 0)) %>%
-      colnames()
-    df %>% dplyr::select(-all_of(zero_var_cols))
-  })
-  
   # Convert all data frames in train_list_subset to matrices
   train_list_matrices <- train_list_subset %>%
     map(~ as.matrix(.x))
@@ -178,12 +310,6 @@ outcome_index <- which( colnames(train_list_matrices$outcomes) == outcome_varnam
 trainList <- train_list_matrices[!grepl("^outcomes", names(train_list_matrices))]
 trainList$y <- train_list_matrices$outcomes[, outcome_index, drop = FALSE]
 
-# Potentially add continuous variable to the ELA view
-if (ELA_contin_flag) {
-  trainList$ela_view <- cbind(trainList$ela_view, contin_var = rnorm(nrow(trainList$ela_view)))
-  print("Continous variable added to the ELA view.")
-}
-
 # Fit BIP to ABCD Study Training Set
 print("Fitting model...")
 
@@ -191,6 +317,8 @@ print("Fitting model...")
 IndicVar <- c(2, rep(0,4), 1)
 n_sample <- 5000
 n_burnin <- 1000
+
+# When check_covergence, we fit more than 1 chain and store for convergence checks 
 
 if (analysis_method == "BIP") {
   
@@ -201,6 +329,11 @@ if (analysis_method == "BIP") {
   BIP_end_time <- Sys.time()
   print("BIP required:")
   print(BIP_end_time - BIP_start_time)
+  
+  if (check_convergence) {
+    model_fit_2 <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIP",
+                     nbrcomp = r, sample = n_sample, burnin = n_burnin)
+  }
   
 } else if (analysis_method == "BIPmixed") {
   
@@ -213,40 +346,23 @@ if (analysis_method == "BIP") {
   print("BIPmixed required")
   print(BIPmixed_end_time - BIPmixed_start_time)
   
+  if (check_convergence) {
+    model_fit_2 <- BIP(dataList = trainList, IndicVar = IndicVar, Method = "BIPmixed",
+                       nbrcomp = r, sample = n_sample, burnin = n_burnin,
+                       Z_family = Z_family_train, Z_site = Z_site_train)
+  }
+  
 } else {
   stop("You must provide a valid analysis_method.")
 }
 
-# model_fit <- readRDS("models/2024-08-19_Internalizing_r_5_method_BIPmixed_model_fit.rds")
-
-# Let's make the output directory name
-# Collapse column names and values into a string
-collapsed_string <- apply(dplyr::select(analysis_conditions, -outcome_label), 1, function(row) {
-  collapsed_conditions <- paste(names(row), row, sep = "_", collapse = "-")
-  paste(Sys.Date(), collapsed_conditions, sep = "-")
-})
-
-# Define the output directory string
-output_dir <- file.path("data_analysis_results", collapsed_string)
-# Directories for models, figures, and tables
-models_dir <- file.path(output_dir, "models")
-figures_dir <- file.path(output_dir, "figures")
-tables_dir <- file.path(output_dir, "tables")
-
-# Create the output directory
-dir.create(output_dir)
-
-# Create the subdirectories
-dir.create(models_dir)
-dir.create(figures_dir)
-dir.create(tables_dir)
-
-# Define the prefix for any files generated during this analysis
-file_prefix <- paste(date_today, str_split(outcome_label, " ")[[1]][1],
-                               "r", r, "method", analysis_method, sep = "_")
-
-# Store the model fit
-saveRDS(model_fit, paste0(models_dir, "/", file_prefix, "_model_fit.rds"))
+if (check_convergence) {
+  
+  # Store the model fits for later evaluation
+  saveRDS(model_fit, paste0(subdir_name, "/model_fit.rds"))
+  saveRDS(model_fit_2, paste0(subdir_name, "/model_fit_2.rds"))
+  
+}
 
 print("Making preliminary visualizations...")
 
@@ -367,7 +483,7 @@ plots <- list(
 # Loop through each plot and save it
 for (plot_name in names(plots)) {
   plot <- plots[[plot_name]]
-  filename <- paste0(figures_dir, "/", file_prefix, "_", plot_name, ".png")
+  filename <- paste0(subdir_name, "/", plot_name, ".png")
   ggsave(filename, plot = plot, width = 8, height = 6, units = "in")
 }
 
@@ -392,10 +508,10 @@ VarSelMean_df <- bind_rows(
 colnames(VarSelMean_df) <- c("View", paste("Component", 1:r, sep = "_"))
 
 # Extract column names from each matrix
-all_colnames <- unlist(lapply(trainList[!(names(trainList) %in% c("Z_family", "Z_site"))], colnames))
+train_list_names <- unlist(lapply(trainList[!(names(trainList) %in% c("Z_family", "Z_site"))], colnames))
 
 # Add feature label
-VarSelMean_df$Feature <- all_colnames
+VarSelMean_df$Feature <- train_list_names
 
 # Convert VarSelMean_df to long format for ggplot2
 VarSelMean_by_component <- VarSelMean_df %>%
@@ -410,7 +526,7 @@ VarSelMean_globally <- bind_rows(
 )
 
 # Add feature label
-VarSelMean_globally$Feature <- all_colnames
+VarSelMean_globally$Feature <- train_list_names
 
 VarSelMean_list <- list("VarSelMean_by_component" = VarSelMean_by_component,
                         "VarSelMean_globally" = VarSelMean_globally)
@@ -424,25 +540,12 @@ variables_selected <- lapply(VarSelMean_list, function(x) {
 # Loop through the list and write each element to a separate CSV file
 for (table_name in names(variables_selected)) {
   # Generate filename
-  filename <- paste0(tables_dir, "/", file_prefix, "_", table_name, ".csv")
+  filename <- paste0(subdir_name, "/", table_name, ".csv")
   # Write the data frame to a CSV file
   write.csv(variables_selected[[table_name]], filename, row.names = FALSE)
 }
 
 # Now let's make predictions. We evaluate and aggregate their error later on. 
-
-# Load test data
-test_list <- readRDS("data/2024-06-24_test_list.rds")
-
-# Sample ids from test_list$outcomes$src_subject_id
-set.seed(123) # Setting seed for reproducibility
-sampled_ids <- sample(test_list$outcomes$src_subject_id, n_subjects)
-
-# Function to subset data frames by sampled_ids
-subset_data <- function(df, id_column) {
-  df %>%
-    filter(!!sym(id_column) %in% sampled_ids)
-}
 
 # Function to order data frames by a specified column
 order_data <- function(df, id_column) {
@@ -450,10 +553,14 @@ order_data <- function(df, id_column) {
     arrange(!!sym(id_column))
 }
 
-# Apply subsetting if needed
-if (apply_subsetting) {
-  test_list_subset <- test_list %>%
-    map(~ subset_data(.x, "src_subject_id"))
+
+if (dev_set) {
+
+  train_ela_features <- c("src_subject_id", trainList$ela_view %>% colnames())
+  # Filter the columns of test_list$ela_view
+  test_list_subset <- test_list
+  test_list_subset$ela_view <- test_list$ela_view[, train_ela_features, drop = FALSE]
+  
 } else {
   test_list_subset <- test_list
 }
@@ -489,37 +596,6 @@ if (all_ordered) {
   
   print(paste("We have dropped the design matrices."))
   
-  # Identify columns with zero variance in each data frame
-  zero_variance <- map_df(names(test_list_subset), ~ {
-    df_name <- .x
-    df <- test_list_subset[[df_name]]
-    zero_var_cols <- df %>%
-      dplyr::select(where(~ var(.) == 0)) %>%
-      colnames()
-    
-    tibble(
-      data.type = df_name,
-      variable.name = zero_var_cols
-    )
-  })
-  
-  if (nrow(zero_variance)>0) {
-    # Print the zero_variance data frame to see which columns will be removed
-    print("Features that have been removed for having zero variance:")
-    print(zero_variance)
-  } else {
-    print("No features removed for having zero variance.")
-  }
-  
-  # Remove columns with zero variance from the list of data frames
-  test_list_subset <- map(test_list_subset, ~ {
-    df <- .x
-    zero_var_cols <- df %>%
-      dplyr::select(where(~ var(.) == 0)) %>%
-      colnames()
-    df %>% dplyr::select(-all_of(zero_var_cols))
-  })
-  
   # Convert all data frames in test_list_subset to matrices
   test_list_matrices <- test_list_subset %>%
     map(~ as.matrix(.x))
@@ -553,7 +629,7 @@ mspe <- mean((Y_true - y_preds)^2)
 results_df$MSPE <- mspe
 
 # Write the data frame to a CSV file
-output_csv_path <- file.path(tables_dir, "y_true_vs_y_preds_mspe.csv")
+output_csv_path <- file.path(subdir_name, "y_true_vs_y_preds_mspe.csv")
 write.csv(results_df, output_csv_path, row.names = FALSE)
 
 # Create the scatter plot
@@ -568,7 +644,7 @@ p <- ggplot(results_df, aes(x = Y_true, y = y_preds)) +
   theme_minimal()
 
 # Save the plot
-output_plot_path <- file.path(figures_dir, "true_y_vs_pred_y_mspe_plot.png")
+output_plot_path <- file.path(subdir_name, "true_y_vs_pred_y_mspe_plot.png")
 ggsave(output_plot_path, plot = p, width = 8, height = 6)
 
 # Store random effect inference, if applicable
@@ -605,8 +681,8 @@ if (analysis_method == "BIPmixed") {
   )
   
   # Save these results to CSV files
-  write.csv(results_sigma2_ksi, file.path(tables_dir, "sigma2_ksi_posterior_summary.csv"), row.names = FALSE)
-  write.csv(results_sigma2_theta, file.path(tables_dir, "sigma2_theta_posterior_summary.csv"), row.names = FALSE)
+  write.csv(results_sigma2_ksi, file.path(subdir_name, "sigma2_ksi_posterior_summary.csv"), row.names = FALSE)
+  write.csv(results_sigma2_theta, file.path(subdir_name, "sigma2_theta_posterior_summary.csv"), row.names = FALSE)
 }
 
 print("Data analysis performed & results stored.")

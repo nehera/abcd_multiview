@@ -9,7 +9,7 @@ library(extrafont)
 # Define the directory, date, processor, and file suffixes
 data_dir <- "data"
 figures_dir <- "figures"
-data_processing_date <- "2024-06-24"
+data_processing_date <- "2024-10-10"
 data_processor <- "AN"
 file_suffix <- c("outcomes", "covariates", "ela_view", "SA_sMRI_view", "CT_sMRI_view", "fMRI_view")
 
@@ -122,8 +122,11 @@ merged_data <- merged_data %>%
 
 # Define labels
 table1_labels <- c(
-  "Internalizing Problems (Raw)",
-  "Externalizing Problems (Raw)",
+  "BMI",
+  "Internalizing Problems (R)",
+  "Externalizing Problems (R)",
+  "Internalizing Problems (T)",
+  "Externalizing Problems (T)",
   "Sex (At Birth)",
   "Age (Months)",
   "American Indian or Native American (Yes/No)",
@@ -163,7 +166,6 @@ table1_object %>%
   column_spec(1:3, extra_css = "font-family: 'Times New Roman';")
 
 # Date of the input - the subject ids included in the study sample
-data_processing_date <- "2024-06-24"
 sample_key_path <- file.path("data", paste0(data_processing_date, "_AN_sample_key.csv"))
 sample_key <- read.csv(sample_key_path) %>% pull("src_subject_id")
 
@@ -186,7 +188,7 @@ figures_dir <- "figures"
 path <- file.path(data_dir, "abcd-general", "abcd_y_lt.csv")
 cluster_data <- read.csv(path) %>%
   filter(eventname == "baseline_year_1_arm_1") %>%
-  select(src_subject_id, rel_family_id, site_id_l) %>%
+  dplyr::select(src_subject_id, rel_family_id, site_id_l) %>%
   arrange(site_id_l, rel_family_id) %>%
   # Filter to those we are using for our analysis
   filter(src_subject_id %in% sample_key)
@@ -273,6 +275,9 @@ write.csv(Z_family_to_site_df, paste0("data/", out_date, "_Z_family_to_site.csv"
 # Append the data frames to the existing complete_data_list
 complete_data_list$Z_site <- Z_site_df
 complete_data_list$Z_family <- Z_family_df
+
+# Write out the complete_data_list for splitting in analyses
+write_rds(complete_data_list, paste0("data/", out_date, "_complete_data_list.csv"))
 
 ## -- Summarize Sample's Observational Clustering
 
@@ -433,7 +438,7 @@ out_initials <- 'AN'
 path <- file.path(data_dir, "abcd-general", "abcd_y_lt.csv")
 cluster_data <- read.csv(path) %>%
   filter(eventname == "baseline_year_1_arm_1") %>%
-  select(src_subject_id, rel_family_id, site_id_l) %>%
+  dplyr::select(src_subject_id, rel_family_id, site_id_l) %>%
   arrange(site_id_l, rel_family_id) %>%
   # Filter to those we are using for our analysis
   filter(src_subject_id %in% sample_key)

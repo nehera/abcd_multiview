@@ -82,9 +82,15 @@ simulation_study_data_generator <- function(seed = 1,
                                             n_views = 4,
                                             features_per_view = 150,
                                             r = 6,
-                                            train_set = T) {
+                                            train_set = T,
+                                            dev_set = F) {
   
   set.seed(seed)
+  
+  # For development, we overwrite certain args
+  if (dev_set) {
+    features_per_view <- 10
+  }
   
   # Fix parameters
   prob_feature_importance <- 0.2
@@ -94,10 +100,14 @@ simulation_study_data_generator <- function(seed = 1,
   N_sites <- 30
   if (train_set) {
     n_families_per_site <- 100
-    # n_families_per_site <- 10
+    if (dev_set) {
+      n_families_per_site <- 10
+    } 
   } else {
     n_families_per_site <- 25
-    # n_families_per_site <- 2 
+    if (dev_set) {
+      n_families_per_site <- 2 
+    }
   }
   n_individs_per_family <- 2
   

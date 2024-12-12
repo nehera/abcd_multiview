@@ -1,15 +1,40 @@
+# Set the library path using the full file path
+.libPaths("/users/4/neher015/R/x86_64-pc-linux-gnu-library/4.3")
+
+# Ensure library path has been set
+print(.libPaths())
+
+# Load libraries
+if (!("pacman" %in% installed.packages()[,"Package"])) {
+  install.packages("pacman", lib = "/users/4/neher015/R/x86_64-pc-linux-gnu-library/4.3")
+}
+
+pacman::p_load(tidyverse, Rcpp, RcppArmadillo,
+               parallel, gridExtra, rstan,
+               scales, coda, MASS, lme4)
+
+# Source scripts
+source("src/simulation_study_data_generator.R")
+source("src/BIP.R") # Includes BIPmixed implementation
+source("src/BIPpredict.R")
+
 # First read in the arguments listed at the command line
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 2) {
-  print("Not enough arguments supplied.")
-  # Supply default values
-  slurm_array_task_id <- 1
-  slurm_job_id <- 999999
-} else {
+if (length(args) == 1) {
+  print("Assuming job is run locally using GNU Parallel.")
   slurm_array_task_id <- args[1]
-  slurm_job_id <- args[2]
-}
+  slurm_job_id <- 999999
+  } else if (length(args) == 2) {
+    print("Assuming job is run on MSI using slurm scheduler.")
+    slurm_array_task_id <- args[1]
+    slurm_job_id <- args[2]
+  } else {
+    print("Appropriate CLI Args have not been supplied.")
+    # Supply default values
+    slurm_array_task_id <- 1
+    slurm_job_id <- 999999
+  }
 
 output_dir_name <- file.path("simulation_study_results",
                              paste0(Sys.Date(), "_simulation_study"))
@@ -30,22 +55,6 @@ print(output_dir_name)
 subdir_name <- file.path(output_dir_name, paste0(Sys.Date(), "_task_", slurm_array_task_id, "_job_", slurm_job_id))
 dir.create(subdir_name, showWarnings = FALSE, recursive = TRUE)
 
-# Load libraries
-if (("pacman" %in% installed.packages()[,"Package"]) == FALSE) { install.packages("pacman") }
-pacman::p_load(tidyverse, Rcpp, RcppArmadillo,
-               parallel, gridExtra, rstan,
-               scales, coda, MASS, lme4)
-
-if (("BIPnet" %in% installed.packages()[,"Package"]) == FALSE) {
-  pacman::p_load(devtools)
-  devtools::install_github('chekouo/BIPnet')
-}
-
-# Source scripts
-source("src/simulation_study_data_generator.R")
-source("src/BIP.R") # Includes BIPmixed implementation
-source("src/BIPpredict.R")
-
 # Save the R environment details to a file in the output directory
 session_info_file <- file.path(output_dir_name, "session_info.txt")
 sessionInfo() %>%
@@ -53,7 +62,7 @@ sessionInfo() %>%
   writeLines(session_info_file)
 
 # Define fixed parameters
-S <- 100 # Number of datasets to simulate/ scenario
+S <- 30 # Number of datasets to simulate/ scenario
 n_iter <- 10000
 n_burnin <- floor(n_iter*0.5)
 n_sample <- n_iter - n_burnin
@@ -66,7 +75,15 @@ scenarios <- expand.grid(
   n_views = 4, 
   r = 6,
   features_per_view = 150
-) 
+)
+
+# Filter to retain only the scenarios relevant to the manuscript
+scenarios <- scenarios %>%
+  filter(
+    (sigma2_theta_true == 0 & sigma2_ksi_true == 0) |       # Scenario 1
+      (sigma2_theta_true == 1.5 & sigma2_ksi_true == 0.75) |  # Scenario 2
+      (sigma2_theta_true == 0.75 & sigma2_ksi_true == 1.5)    # Scenario 3
+  )
 
 scenarios <- scenarios %>%
   mutate(scenario_id = 1:nrow(scenarios))
@@ -102,7 +119,8 @@ train_set <- simulation_study_data_generator(seed = train_seed,
                                              n_views,
                                              features_per_view,
                                              r,
-                                             train_set = T)
+                                             train_set = T,
+                                             dev_set = F)
 
 # Reshape train data
 trainList <- list(train_set$Y)
@@ -132,7 +150,7 @@ BIPmixed_end_time <- Sys.time()
 print("BIPmixed required")
 print(BIPmixed_end_time - BIPmixed_start_time)
 
-# Check BIPmixed convergence
+# Check BIPmixed coverage
 
 # Combine samples into a 3D array for rstan::monitor
 combine_samples_nested <- function(samples_list, n_iter, n_chains) {
@@ -283,49 +301,8 @@ variance_trace_plot <- ggplot(variance_df, aes(x = iter, y = value, color = para
 # Display the plot
 print(variance_trace_plot)
 
-# Generate test data
-test_set <- simulation_study_data_generator(seed = test_seed,
-                                            sigma2_ksi_true,
-                                            sigma2_theta_true,
-                                            covars = covars_flag,
-                                            n_views,
-                                            features_per_view,
-                                            r,
-                                            train_set = F)
-
-# Reshape test data
-testList <- test_set$X
-IndicVar <- rep(0, n_views)
-if (covars_flag == T) {
-  covar_index <- length(testList) + 1
-  testList[[covar_index]] <- test_set$W
-}
-
-# Get predictions
-y_preds_BIP <- BIPpredict(dataListNew = testList, Result=BIP_result, meth="BMA")$ypredict
-
-y_preds_BIPmixed <- BIPpredict(dataListNew = testList, Result=BIPmixed_result, meth="BMA", 
-                               Z_site = test_set$Z_site, Z_family = test_set$Z_family)$ypredict
-
-## -- Estimate performance metrics
-
-# Estimate variable selection performance
-
-gamma_true <- test_set$gamma
-outcome_index <- which(IndicVar == 1)
-BIP_OutCompoSelPerformance <- BIPnet::ComputeVarCriteria(BIP_result$VarSelMean[[outcome_index]], gamma_true, thres = 0.5) %>%
-  as.data.frame() %>%
-  mutate(Method="BIP")
-BIPmixed_OutCompoSelPerformance <- BIPnet::ComputeVarCriteria(BIPmixed_result$VarSelMean[[outcome_index]], gamma_true, thres = 0.5) %>%
-  as.data.frame() %>%
-  mutate(Method="BIPmixed")
-component_selection_performance <- rbind(
-  BIP_OutCompoSelPerformance,
-  BIPmixed_OutCompoSelPerformance
-)
-
-# Let's assess variable selection globally
-eta_true_global <- colSums(test_set$Eta)
+# Estimate variable selection performance globally
+eta_true_global <- as.numeric( colSums(train_set$Eta) > 0 )
 omics_index <- which(IndicVar == 0)
 BIP_VarSelGlobalPerformance_list <- lapply(BIP_result$VarSelMeanGlobal[omics_index], function(pred.prob) {
   BIPnet::ComputeVarCriteria(pred.prob, eta_true_global, thres = 0.5) %>%
@@ -354,6 +331,54 @@ variable_selection_performance <- rbind(
   combine_dataframes_with_index(BIPmixed_VarSelGlobalPerformance_list)
 )
 
+# Write-out variable selection results
+
+# Save each data frame as a .csv file with the slurm_array_task_id in the file name
+write.csv(variance_param_coverage, file = file.path(subdir_name, paste0("variance_param_coverage_", slurm_array_task_id, ".csv")), row.names = FALSE)
+write.csv(variable_selection_performance, file = file.path(subdir_name, paste0("variable_selection_performance_", slurm_array_task_id, ".csv")), row.names = FALSE)
+
+# Store variable selection plots
+png(file = file.path(subdir_name, paste0("variance_trace_plot_", slurm_array_task_id, ".png")))
+print(variance_trace_plot)
+dev.off()
+
+# We store 1 model fit per scenario
+
+if (train_seed==1) {
+  
+  # Save BIP_result
+  saveRDS(BIP_result, file = file.path(subdir_name, paste0("BIP_result_", slurm_array_task_id, ".rds")))
+  
+  # Save BIPmixed_result
+  saveRDS(BIPmixed_result, file = file.path(subdir_name, paste0("BIPmixed_result_", slurm_array_task_id, ".rds")))
+  
+}
+
+# Generate test data
+test_set <- simulation_study_data_generator(seed = test_seed,
+                                            sigma2_ksi_true,
+                                            sigma2_theta_true,
+                                            covars = covars_flag,
+                                            n_views,
+                                            features_per_view,
+                                            r,
+                                            train_set = F,
+                                            dev_set = F)
+
+# Reshape test data
+testList <- test_set$X
+IndicVar <- rep(0, n_views)
+if (covars_flag == T) {
+  covar_index <- length(testList) + 1
+  testList[[covar_index]] <- test_set$W
+}
+
+# Get predictions
+y_preds_BIP <- BIPpredict(dataListNew = testList, Result = BIP_result, meth = "BMA")$ypredict
+
+y_preds_BIPmixed <- BIPpredict(dataListNew = testList, Result=BIPmixed_result, meth="BMA", 
+                               Z_site = test_set$Z_site, Z_family = test_set$Z_family)$ypredict
+
 # Estimate prediction performance metrics
 
 # Define a function to calculate MSE, bias squared, prediction variance
@@ -361,7 +386,12 @@ calculate_prediction_metrics <- function(Y, y_preds) {
   mse <- mean((Y - y_preds)^2)
   bias2 <- (mean(y_preds) - mean(Y))^2
   var_pred <- var(y_preds)
-  data.frame(MSE = mse, Bias2 = bias2, Variance = var_pred)
+  mean_pred <- mean(y_preds)
+  corr_pred <- cor(Y, y_preds)
+  data.frame(MSE = mse, Bias2 = bias2, 
+             Variance = var_pred, 
+             Mean = mean_pred,
+             Correlation = corr_pred)
 }
 
 # We reshape data for prediction analysis
@@ -394,10 +424,6 @@ prediction_scatter_plot <-ggplot(prediction_data, aes(x = True_Y, y = Predicted_
   theme(legend.position = "bottom")
 
 print(prediction_scatter_plot)
-
-# Prediction summary statistics overall
-prediction_data %>% group_by(Method) %>% summarise(cor(True_Y, Predicted_Y))
-prediction_data %>% group_by(Method) %>% summarise(mean(Predicted_Y))
 
 # Prediction distribution relative to truth overall
 pred_distribution_data <- data.frame(
@@ -440,12 +466,10 @@ prediction_family_stratified_plot <- grid.arrange(mse_plot, bias_plot, variance_
 
 print(prediction_family_stratified_plot)
 
-## -- Write-out results
+# Write-out prediction results
 
 # Save each data frame as a .csv file with the slurm_array_task_id in the file name
-write.csv(variance_param_coverage, file = file.path(subdir_name, paste0("variance_param_coverage_", slurm_array_task_id, ".csv")), row.names = FALSE)
-write.csv(component_selection_performance, file = file.path(subdir_name, paste0("component_selection_performance_", slurm_array_task_id, ".csv")), row.names = FALSE)
-write.csv(variable_selection_performance, file = file.path(subdir_name, paste0("variable_selection_performance_", slurm_array_task_id, ".csv")), row.names = FALSE)
+write.csv(prediction_data, file = file.path(subdir_name, paste0("prediction_data_", slurm_array_task_id, ".csv")), row.names = FALSE)
 write.csv(prediction_performance_by_method, file = file.path(subdir_name, paste0("prediction_performance_by_method_", slurm_array_task_id, ".csv")), row.names = FALSE)
 write.csv(prediction_performance_by_family, file = file.path(subdir_name, paste0("prediction_performance_by_family_", slurm_array_task_id, ".csv")), row.names = FALSE)
 

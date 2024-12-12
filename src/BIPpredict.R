@@ -8,7 +8,7 @@ BIPpredict=function(dataListNew=dataListNew,
   
   IndicVar <- Result$IndicVar
   
-  if (Result$Method==2) {
+  if (Result$Method == 2) {
     # Peel out covariates in the case that Method= BIPmixed & covariates included
     covariate_index <- which(IndicVar==2)
     if (length(covariate_index) == 1) {
@@ -24,23 +24,22 @@ BIPpredict=function(dataListNew=dataListNew,
   }
   
   nbrcomp <- Result$nbrcomp
-  X_new <- list()
-  np <- which(IndicVar==1)
-  Np <- length(IndicVar)
+  np <- which(IndicVar == 1)
   
   print("Scaling new data...")
   
-  # Normalize each matrix in the list
-  X_new <- lapply(1:Np, function(i) {
-    if (IndicVar[i] != 1) {
-      # Subtract the mean and divide by the standard deviation
-      (dataListNew[[i]] - matrix(Result$MeanData[[i]], nrow = nrow(dataListNew[[i]]), ncol = ncol(dataListNew[[i]]), byrow = TRUE)) /
-        matrix(Result$SDData[[i]], nrow = nrow(dataListNew[[i]]), ncol = ncol(dataListNew[[i]]), byrow = TRUE)
-    } else {
-      # If IndicVar[i] == 1, return the matrix as is
-      dataListNew[[i]]
-    }
-  })
+  # Define a function to standardize each matrix
+  standardize_matrix <- function(matrix_data) {
+    apply(matrix_data, 2, function(column) {
+      (column - mean(column)) / sd(column)
+    })
+  }
+  
+  # Apply the standardization function to each element in dataListNew
+  X_new <- lapply(dataListNew, standardize_matrix)
+  
+  # Get the number of platforms
+  Np <- length(X_new)
   
   nbrmodel=Result$nbrmodel
   EstLoad=Result$EstLoadModel

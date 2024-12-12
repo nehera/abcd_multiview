@@ -15,15 +15,19 @@ out_initials <- 'AN'
 # We stick to baseline for this analysis
 timepoint_list <- c("baseline_year_1_arm_1") 
 
-
 ## -- Load Data Files
 
 load_datasets <- function(data_dir) {
-  # Standard files for most studies
+  # Mental health files
   demog <- read_csv(file.path(data_dir, "abcd-general/abcd_p_demo.csv"))
-  demog_y <- read_csv(file.path(data_dir, "mental-health/mh_y_ksads_bg.csv"))
-  puberty <- read_csv(file.path(data_dir, "physical-health/ph_p_pds.csv"))
   study_covars <- read_csv(file.path(data_dir, "abcd-general/abcd_y_lt.csv"))
+  demog_y <- read_csv(file.path(data_dir, "mental-health/mh_y_ksads_bg.csv"))
+  cbcl <- read_csv(file.path(data_dir, "mental-health/mh_p_cbcl.csv"))
+  bpm_y <- read_csv(file.path(data_dir, "mental-health/mh_y_bpm.csv"))
+  ksad_p <- read_csv(file.path(data_dir, "mental-health/mh_p_ksads_ss.csv"))
+  ksad_y <- read_csv(file.path(data_dir, "mental-health/mh_y_ksads_ss.csv"))
+  
+  # Genetic relatedness
   sib_twin <- read_csv(file.path(data_dir, "genetics/gen_y_pihat.csv"))
   
   # MRI standard files
@@ -31,14 +35,12 @@ load_datasets <- function(data_dir) {
   qc <- read_csv(file.path(data_dir, "imaging/mri_y_qc_incl.csv"))
   scan_qtns <- read_csv(file.path(data_dir, "imaging/mri_y_adm_qtn.csv"))
   
-  # Standard files for clinical data
-  cbcl <- read_csv(file.path(data_dir, "mental-health/mh_p_cbcl.csv"))
-  bpm_y <- read_csv(file.path(data_dir, "mental-health/mh_y_bpm.csv"))
-  ksad_p <- read_csv(file.path(data_dir, "mental-health/mh_p_ksads_ss.csv"))
-  ksad_y <- read_csv(file.path(data_dir, "mental-health/mh_y_ksads_ss.csv"))
+  # Physical health
+  puberty <- read_csv(file.path(data_dir, "physical-health/ph_p_pds.csv"))
+  ph_y_anthro <- read_csv(file.path(data_dir, "physical-health/ph_y_anthro.csv")) # File for height, weight, BMI
   
   # Combine all datasets into a list (if needed for further processing or return)
-  datasets <- list(demog = demog, demog_y = demog_y, puberty = puberty,
+  datasets <- list(demog = demog, demog_y = demog_y, puberty = puberty, ph_y_anthro = ph_y_anthro,
                    study_covars = study_covars, sib_twin = sib_twin, mri = mri,
                    qc = qc, scan_qtns = scan_qtns, cbcl = cbcl, bpm_y = bpm_y,
                    ksad_p = ksad_p, ksad_y = ksad_y)
@@ -316,7 +318,73 @@ na_counts <- covariates %>%
   pivot_longer(everything(), names_to = "variable", values_to = "na_count")
 print(na_counts)
 
-outcomes <- abcd_data.selected_time %>%
+# Let's also extract height, weight, and BMI from ph_y_anthro
+df <- ph_y_anthro %>%
+  filter(eventname %in% timepoint_list) %>%
+  # Height averaged in inches and weight in lbs
+  select(src_subject_id, anthroheightcalc, anthroweightcalc) %>%
+  rename(height_in = anthroheightcalc,
+         weight_lb = anthroweightcalc) %>%
+  mutate(BMI = (weight_lb / (height_in^2)) * 703)
+
+# Step 1: Remove rows with NAs in BMI and store the number removed
+n_removed_na <- df %>%
+  filter(is.na(BMI)) %>%
+  nrow()
+
+df_clean <- df %>%
+  filter(!is.na(BMI))
+
+# Step 2: Calculate IQR bounds for outlier removal
+Q1 <- quantile(df_clean$BMI, 0.25)
+Q3 <- quantile(df_clean$BMI, 0.75)
+IQR_value <- IQR(df_clean$BMI)
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q3 + 1.5 * IQR_value
+
+# Step 3: Filter out observations outside the 1.5 IQR range and store the number removed
+n_removed_outliers <- df_clean %>%
+  filter(BMI < lower_bound | BMI > upper_bound) %>%
+  nrow()
+
+df_filtered <- df_clean %>%
+  filter(BMI >= lower_bound & BMI <= upper_bound)
+
+# Display the counts of removed observations
+n_removed_na
+n_removed_outliers
+
+df_filtered %>% 
+  ggplot(aes(x = BMI)) +
+  geom_histogram() + 
+  theme_minimal()
+
+summary(df_filtered)
+
+# # Reshape the data to a long format, excluding `src_subject_id`
+# outcomes_long <- outcomes %>%
+#   select(-src_subject_id) %>%
+#   pivot_longer(
+#     cols = everything(),
+#     names_to = "outcome_type",
+#     values_to = "value"
+#   )
+# 
+# # Create a histogram colored by outcome type
+# ggplot(outcomes_long, aes(x = value, fill = outcome_type)) +
+#   geom_histogram(bins = 30) +
+#   theme_minimal() +
+#   labs(
+#     title = "Histogram of Outcomes Colored by Outcome Type",
+#     x = "Value",
+#     y = "Count",
+#     fill = "Outcome Type"
+#   )
+
+bmi_outcome <- df_filtered %>%
+  select(src_subject_id, BMI) 
+  
+cbcl_outcomes <- abcd_data.selected_time %>%
   # Brient et al. 2023 use t (truncated) scores (Not the raw r scores)
   # However, we choose to use r (raw) scores
   # "The current analyses relied on raw scores from the CBCL 
@@ -325,7 +393,13 @@ outcomes <- abcd_data.selected_time %>%
   # (Achenbach & Rescorla, 2001; see also Thurber & Sheehan, 2012)."
   # Achenbach and Ruffle, (2000). The child behavior checklist and related forms for assessing behavioral/emotional problems and competencies
   # Thurber, S., & Sheehan, W. P. (2012). Note on truncated T scores in discrepancy studies with the Child Behavior Checklist and Youth Self Report. Archives of Assessment Psychology, 2(1), 73-80.
-  select("src_subject_id", "cbcl_scr_syn_internal_r", "cbcl_scr_syn_external_r")
+  select("src_subject_id", "cbcl_scr_syn_internal_r", "cbcl_scr_syn_external_r",
+         "cbcl_scr_syn_internal_t", "cbcl_scr_syn_external_t")
+
+# Some BMI observations don't also have CBCL data
+outcomes <- left_join(bmi_outcome, cbcl_outcomes)
+n_bmi_with_no_cbcl <- sum(!complete.cases(outcomes))
+outcomes <- outcomes[complete.cases(outcomes), ]
 
 ## -- Write out a covariates and outcome variables separately
 
@@ -338,6 +412,8 @@ if(is.null(out_initials)){
   stop("No input given for 'out_initials'. 
        User must provide string input to create output file name.")
 }
+
+# 
 
 # Construct the filename
 file_name <- sprintf("%s_%s_covariates.csv", out_date, out_initials)
