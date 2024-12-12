@@ -14,6 +14,7 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_math.h>
 #include <time.h>
+#include <random>
 
 #include "header.h"
 #include "utils.h"
@@ -25,6 +26,115 @@ using namespace Rcpp;
 
 #include <RcppGSL.h>
 // [[Rcpp::depends(RcppGSL)]]
+
+///// Outcome parameter estimation subroutines
+// Function to sample from a normal distribution
+vec rnorm_cpp(int n, double mean, double sd) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::normal_distribution<> d(mean, sd);
+  
+  vec samples(n);
+  for (int i = 0; i < n; ++i) {
+    samples[i] = d(gen);
+  }
+  return samples;
+}
+
+// Function to sample from an inverse gamma distribution
+double rinvgamma_cpp(double shape, double scale) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::gamma_distribution<> d(shape, 1.0 / scale);
+  return 1.0 / d(gen);
+}
+
+arma::vec extract_y_vec(double*** X, arma::vec IndVar, int Np, int n) {
+  std::vector<double> y_vec; // A temporary vector to store the elements
+  for (int m = 0; m < Np; ++m) {
+    if (IndVar[m] == 1) {
+      for (int i = 0; i < n; ++i) {
+        y_vec.push_back(X[m][i][0]); // Assuming the 3rd dimension has at least one element
+      }
+    }
+  }
+  // Convert std::vector to arma::vec for the output
+  arma::vec y(y_vec);
+  return y;
+}
+
+arma::mat extract_W_mat(double*** X, arma::vec IndVar, arma::vec P, int Np, int n) {
+  // Initialize a matrix with unknown number of rows initially
+  arma::mat W;
+  
+  for (int m = 0; m < Np; ++m) {
+    if (IndVar[m] == 2) {
+      // When the condition matches, loop to extract the data
+      int p_m = P[m];  // Get the column dimension for this layer
+      arma::mat tempW(n, p_m);
+      for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < p_m; ++j) {
+          tempW(i, j) = X[m][i][j];
+        }
+      }
+      // If W is empty, initialize it with tempW, else vertically stack it
+      if (W.n_elem == 0) {
+        W = tempW;
+      } else {
+        W = arma::join_cols(W, tempW);
+      }
+    }
+  }
+  return W;
+}
+
+arma::mat extract_U_mat(double** U, int n, int r) {
+  arma::mat U_mat(n, r);
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < r; ++j) {
+      U_mat(i, j) = U[i][j]; // Copy each element from the 2D array to the matrix
+    }
+  }
+  return U_mat; // Return the populated matrix
+}
+
+arma::vec extract_alpha_vec(double*** A, vec IndVar, int Np, int r) {
+  arma::vec alpha_vec = zeros(r);
+  for (int m = 0; m < Np; ++m) {
+    if (IndVar[m] == 1) {
+      for (int l = 0; l < r; ++l) {
+        alpha_vec(l) = A[m][l][0]; // Extract A[m][l][0] where IndVar[m] == 1
+      }
+    }
+  }
+  
+  return alpha_vec;
+}
+
+arma::vec extract_gamma_vec(bool** rhoest, arma::vec IndVar, int Np, int r) {
+  arma::vec gamma_vec = zeros(r);
+  for (int m = 0; m < Np; ++m) {
+    if (IndVar[m] == 1) {
+      for (int l = 0; l < r; ++l) {
+        gamma_vec(l) = rhoest[m][l]; // Extract rhoest[m][l] where IndVar[m] == 1
+      }
+    }
+  }
+  
+  return gamma_vec;
+}
+
+double extract_sigma2(double** s2, arma::vec IndVar, int Np) {
+  for (int m = 0; m < Np; ++m) {
+    if (IndVar[m] == 1) {
+      // Rcpp::Rcout << "Extracted sigma2: " << s2[m][0] << "\n";
+      return s2[m][0]; // Return the first s2[m][0] where IndVar[m] == 1
+    }
+  }
+  
+  // Handle case where no matching element is found
+  return NA_REAL; // or some other appropriate default value
+}
 
 ///// myfunction.c subroutines
 
@@ -43,8 +153,8 @@ void SampleIntercept(gsl_rng * rr,int n, int r, double * intercept, double* sigm
   *intercept=(n/(invsig2*sigma2[0]))*meany+sqrt(1/invsig2)*gsl_ran_ugaussian(rr);
 }
 
-void logPostGam(double *logpo, arma::vec IndVar, int Np, int r, int n, arma::vec P, 
-                double *** Tau, double ** U,double *** X, double **s2, bool ** rho, 
+void logPostGam(double *logpo, arma::vec IndVar, int Np, int r, int n, arma::vec P,
+                double *** Tau, double ** U,double *** X, double **s2, bool ** rho,
                 bool *** Gam, double** qv, double* q) {
   double logpost=0;
   int m,j,l;
@@ -58,7 +168,7 @@ void logPostGam(double *logpo, arma::vec IndVar, int Np, int r, int n, arma::vec
           logpost+=Gam[m][j][l]*log(qv[m][l])+(1-Gam[m][j][l])*log(1-qv[m][l]);
       }
     }
-
+    
     if (IndVar[m]==0){
       for (l=0;l<r;l++){
         logpost+=rho[m][l]*log(q[m])+(1-rho[m][l])*log(1-q[m]);
@@ -84,7 +194,7 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
         for (i=0;i<n;i++){
           //if (Gam[NZ1[s]]*Gam[NZ1[s1]]==1)
           a+=U[i][NZ1[s]]*U[i][NZ1[s1]];
-        }   
+        }
         Sigma1[s*nx1+s1]=Sigma1[s1*nx1+s]=a;
         
       }
@@ -103,7 +213,7 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
     gsl_vector *y =gsl_vector_alloc (nx1);
     double sumT=0;
     for (s=0;s<nx1;s++){
-      double a=0;                            
+      double a=0;
       //if (Gam[NZ1[s]]==1){
       sumT+=log(Tau[NZ1[s]][j]);
       for (i=0;i<n;i++){
@@ -115,7 +225,7 @@ void logGausQuadForm(int j,int r, int n,int p,double ** Tau, double ** U,double 
     logmultigaussianT(xi, y,  &m1.matrix,&result,&quadF, work1);
     result=result-0.5*sumT-(n/2.0)*log(s2);
     gsl_vector_free (y);gsl_vector_free (work1);gsl_vector_free (xi);
-    free(Sigma1); 
+    free(Sigma1);
   } else {
     for (i = 0; i < n; i++){
       quadF+=pow(X[i][j],2);
@@ -200,7 +310,7 @@ void rho1(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau, double ** U
   logpostold+=logprior;
   double * quadForm1= static_cast<double*>(malloc(p*sizeof(double)));
   double * loggauss1= static_cast<double*>(malloc(p*sizeof(double)));
-
+  
   double phi=0.5;
   bool rhonew[r];
   proposal(r,rho,rhonew,phi, rr);
@@ -214,7 +324,7 @@ void rho1(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau, double ** U
       quadForm[j]=quadForm1[j];
       loggauss[j]=loggauss1[j];
     }
-  } 
+  }
 }
 
 void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,double ** Tau, double ** U,double ** X, double* q1,double q2,double* s2,double* quadForm,bool** Gam,double *loggauss){
@@ -224,7 +334,7 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
   for (l=0;l<r;l++){
     for (j=0;j<p;j++){
       Gamnew[j][l]=Gam[j][l];
-    } 
+    }
     rhonew[l]=rho[l];
   }
   
@@ -270,7 +380,7 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
           Gamnew[j][l]=1;
           logGausQuadForm(j,r, n,p,Tau,  U,X,s2[j],&quad2,Gamnew[j],&loggaussnew);
           double rat=-loggaussold+loggaussnew+log(q1[l])-log(1-q1[l]); // log(P_lj / Q_lj)
-
+          
           double x1=loggaussnew+log(q1[l]); // log G_1
           double x2=loggaussold+log(1-q1[l]); // log G_0
           double maxq=std::max(x1,x2);
@@ -285,11 +395,11 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
             logpostnew+=loggaussnew+log(q1[l]);
             loggausnew1[j]=loggaussnew;
             // log proposal difference- add the probability that a feature is on given a component is on
-            logq+=logqj; 
+            logq+=logqj;
             quadForm1[j]=quad2;
           } else {
             Gam[j][l]=0;Gamnew[j][l]=0;
-            logq+=logmqj; 
+            logq+=logmqj;
             // log proposal difference- add the probability that a feature is off given a component is on
             logpostnew+=loggaussold+log(1-q1[l]);
             quadForm1[j]=quad1;
@@ -314,7 +424,7 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
           rho[l]=0;
           for (j=0;j<p;j++) Gam[j][l]=Gamnew[j][l]=0;
         }
-        // initialize gamma new for the next iteration & remove quadform and loggaussnew since unneccessary for the next step? 
+        // initialize gamma new for the next iteration & remove quadform and loggaussnew since unneccessary for the next step?
         rhonew[l]=rho[l];
         free(quadForm1);free(loggausnew1);
       } else {
@@ -406,11 +516,11 @@ void SamplerhoGamma(gsl_rng * rr,int r, int n,int IndVar,int p, bool * rho,doubl
       }
     }
   }
-  free(rhonew); 
+  free(rhonew);
 }
 
 
-void sigma2(gsl_rng * rr, int p,int n,double a0, double b0, double* quadForm,double * s2){
+void sample_sigma2(gsl_rng * rr, int p,int n,double a0, double b0, double* quadForm,double * s2){
   int j;
   for (j=0;j<p;j++){
     double inv=1/(b0+0.5*s2[j]*quadForm[j]);
@@ -442,10 +552,10 @@ void EffectZero(int l,gsl_rng * rr,int K,int p,bool rho, bool * R,double* B,doub
     if (log(uni)<lograt){
       *B0=B0new;
       *AcceptB0+=1;
-    } 
+    }
   } else {
     *B0=gsl_ran_gamma (rr, alphab0, 1/betab0);
-  } 
+  }
   
 }
 
@@ -460,12 +570,12 @@ void TauLambda(int l,gsl_rng * rr,int K,int p,double *A,double* B,double B0,doub
    *       */
   int j,k1;
   for (j=0;j<p;j++){
-
+    
     if ((Gam[j][l]==1)&& (fabs(A[j])>0)){
       double mu=sqrt(2*lambda2[j]*s2[j]/pow(A[j],2.0));
       Tau[j]=1.0/inverseGaussian(rr,  mu, 2*lambda2[j]);
       if (Tau[j]<0)
-
+        
         if (((Tau[j]-Tau[j])!=0)|(Tau[j]<0)){
           Tau[j]=1/mu+1/(2*lambda2[j]);
         }
@@ -498,7 +608,7 @@ void GroupEffect(int l,gsl_rng * rr,bool rho,int K,int p, bool * R,double *A,dou
     }
   } else {
     
-    double alphas=2;double betas=2; // proposal parameters 
+    double alphas=2;double betas=2; // proposal parameters
     for (k=0;k<K;k++){
       bool Rknew=0;double Bknew=0;
       /* Between model move*/
@@ -553,7 +663,7 @@ void GroupEffect(int l,gsl_rng * rr,bool rho,int K,int p, bool * R,double *A,dou
         Bknew=gsl_ran_gamma (rr, alphas, 1/betas);;
         double lograt=0;
         double kl=0;
-        for (j=0;j<p;j++){ 
+        for (j=0;j<p;j++){
           if (Gam[j][l]==1){
             double kb=0;double kb1=0;
             for (k1=0;k1<K;k1++){
@@ -574,7 +684,7 @@ void GroupEffect(int l,gsl_rng * rr,bool rho,int K,int p, bool * R,double *A,dou
   } // End for else if (rho==0)
 }
 
-void LoadAOther(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau,double ** A, double ** U,double ** X,double* s2,bool ** Gam){
+void  LoadAOther(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau,double ** A, double ** U,double ** X,double* s2,bool ** Gam){
   int s,s1,j,i;
   for (j=0;j<p;j++){
     for (s=0;s<r;s++){
@@ -658,19 +768,19 @@ void EstimateLoad(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau,doub
       }
       gsl_vector_view b= gsl_vector_view_array (xy, nx1);
       gsl_linalg_cholesky_solve (&m.matrix, &b.vector, mu);
-
+      
       for (s=0; s<nx1;s++){
         A[NZ1[s]][j]=gsl_vector_get(mu,s);
       }
       free(SigmaInv); gsl_vector_free (mu);
-\
+      \
     }
   }
 }
 
 
 
-void proposal(int n,bool R[n],bool R1[n],float phi, gsl_rng * r) {
+void proposal(int n,bool *R,bool *R1,float phi, gsl_rng * r) {
   int i;
   for (i=0; i<n;i++) R1[i]=R[i];
   
@@ -681,7 +791,7 @@ void proposal(int n,bool R[n],bool R1[n],float phi, gsl_rng * r) {
   int v2[n-n0];
   findc(n,R,0,v2,&n1);//find indices different of zeros i.e ==1
   double u=gsl_ran_flat (r, 0, 1);
-
+  
   if ((u < phi) || (n0 == 0) || (n1 == 0)) {
     int l= gsl_rng_uniform_int(r,n);
     
@@ -695,12 +805,12 @@ void proposal(int n,bool R[n],bool R1[n],float phi, gsl_rng * r) {
   }
 }
 
-void SampleUU(gsl_rng * rr,int r, int n, int Np, arma::vec P, double *** A, 
+void SampleUU(gsl_rng * rr,int r, int n, int Np, arma::vec P, double *** A,
               double ** U, double *** X, double** s2){
   
   int s,s1,j,i;
   int sumMark=0;
-  for (i=0;i<Np;i++) sumMark+=P[i]; 
+  for (i=0;i<Np;i++) sumMark+=P[i];
   
   double * SigmaInv= static_cast<double*>(malloc(r*r*sizeof(double)));
   for (s=0;s<r;s++){
@@ -709,7 +819,7 @@ void SampleUU(gsl_rng * rr,int r, int n, int Np, arma::vec P, double *** A,
       for (j=0;j<sumMark;j++){
         int k=0;
         for (i=0;i<Np;i++){
-          if ((k<=j) && (j<k+P[i])) a+=A[i][s][j-k]*A[i][s1][j-k]/s2[i][j-k]; 
+          if ((k<=j) && (j<k+P[i])) a+=A[i][s][j-k]*A[i][s1][j-k]/s2[i][j-k];
           k+=P[i];
         }
       }
@@ -719,12 +829,12 @@ void SampleUU(gsl_rng * rr,int r, int n, int Np, arma::vec P, double *** A,
   }
   
   gsl_matrix_view m  = gsl_matrix_view_array (SigmaInv, r,r);
-
+  
   TRY
   {
-
+    
     gsl_linalg_cholesky_decomp (&m.matrix);
-
+    
   }
   CATCH
   {
@@ -740,7 +850,7 @@ void SampleUU(gsl_rng * rr,int r, int n, int Np, arma::vec P, double *** A,
       for (j=0;j<sumMark;j++){
         int k=0;
         for (l=0;l<Np;l++){
-          if ((k<=j) && (j<k+P[l])) Ax[s]+=X[l][i][j-k]*A[l][s][j-k]/s2[l][j-k]; 
+          if ((k<=j) && (j<k+P[l])) Ax[s]+=X[l][i][j-k]*A[l][s][j-k]/s2[l][j-k];
           k+=P[l];
         }
       }
@@ -812,43 +922,58 @@ void SampleU(gsl_rng * rr,int r, int n,int p0,int p1,int p2,double *** A, double
 ///// BIP.c main function
 
 // [[Rcpp::export]]
-Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec datasets,
-                  arma::vec IndVar, arma::vec K, arma::vec Paths, int maxmodel, int nbrsample, // nbrsample=n_iter-n_burnin
-                  int burninsample, arma::vec CompoSelMean, arma::vec VarSelMean,
-                  arma::vec VarSelMeanGlobal, arma::vec GrpSelMean, arma::vec GrpEffectMean,
-                  arma::vec IntGrpMean, arma::vec EstU, arma::vec EstSig2, double InterceptMean, arma::vec EstLoadMod,
-                  arma::vec EstLoad, int nbrmodel1, arma::vec postgam, arma::vec priorcompsel, arma::vec priorcompselo,
-                  arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel) {
+Rcpp::List mainfunction(int Method, bool covariates_included, int n, arma::vec P, int r, int Np, arma::vec datasets,
+                        arma::vec IndVar, arma::vec K, arma::vec Paths, int maxmodel, int nbrsample, // nbrsample=n_iter-n_burnin
+                        int burninsample, arma::vec CompoSelMean, arma::vec VarSelMean,
+                        arma::vec VarSelMeanGlobal, arma::vec GrpSelMean, arma::vec GrpEffectMean,
+                        arma::vec IntGrpMean, arma::vec EstU, arma::vec EstSig2, double InterceptMean, arma::vec EstLoadMod,
+                        arma::vec EstLoad, int nbrmodel1, arma::vec postgam, arma::vec priorcompsel, arma::vec priorcompselo,
+                        arma::vec priorb0, arma::vec priorb, arma::vec priorgrpsel, double probvarsel,
+                        arma::mat Z_family, arma::mat Z_site, arma::mat Z_family_to_site,
+                        double mu_prior_var, arma::vec mu_beta, arma::vec beta_prior_var, arma::mat W,
+                        double sigma_ksi_prior_a, double sigma_ksi_prior_b,
+                        double sigma_theta_prior_a, double sigma_theta_prior_b,
+                        double sigma_prior_a, double sigma_prior_b) {
+  
   setvbuf(stdout, NULL, _IONBF, 0);
-
+  
   if (Method==1)
-    printf("\nThe Method is GroupInfo\n");
+    printf("\nThe Method is BIPnet (Group Info).\n");
   else if (Method==0) {
-    printf("The Method is NoGroupInfo\n");
+    printf("The Method is BIP (No Group Info).\n");
+  } else if (Method==2) {
+    Rcpp::Rcout << "The Method is BIPmixed."<< "\n";
+    // Rcpp::Rcout << "mu_prior_var: " << mu_prior_var << "\n";
+    // Rcpp::Rcout << "mu_beta: " << mu_beta << "\n";
+    // Rcpp::Rcout << "beta_prior_var: " << beta_prior_var << "\n";
+    // Rcpp::Rcout << "sigma_ksi_prior_a: " << sigma_ksi_prior_a << "\n";
+    // Rcpp::Rcout << "sigma_ksi_prior_b: " << sigma_ksi_prior_b << "\n";
+    // Rcpp::Rcout << "sigma_theta_prior_a: " << sigma_theta_prior_a << "\n";
+    // Rcpp::Rcout << "sigma_theta_prior_b: " << sigma_theta_prior_b << "\n";
+    // Rcpp::Rcout << "sigma_prior_a: " << sigma_prior_a << "\n";
+    // Rcpp::Rcout << "sigma_prior_b: " << sigma_prior_b << "\n";
   }
   
   int i,l,j,k;
   int m;
   clock_t t1 = clock();
-
-
+  
   printf("Number of MCMC samples after burn-in is %d\n",nbrsample);
-
+  
   printf("Number of burn-in is %d\n",burninsample);
-
-  printf("Number of samples is %d\n",n);
-
+  
+  printf("Number of observations is %d\n",n);
+  
   for (m=0;m<Np;m++){
     int n_markers = P[m];
     printf("Number of markers in platform %d is %d\n", m, n_markers);
   }
   
-
   printf("Number of components is %d\n", r);
-
+  
   double *** X= static_cast<double***>(malloc(Np*sizeof(double **)));
   double *** X1= static_cast<double***>(malloc(Np*sizeof(double **)));
-
+  
   k=0;
   
   for (m=0;m<Np;m++){
@@ -883,7 +1008,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
           Path[m][j][k]=1;
         }
       }
-    } 
+    }
   }
   
   long seed=1;
@@ -913,9 +1038,9 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     wg[m]= static_cast<double*>(malloc(r*sizeof(double))); //proba. for group selection
   }
   
-
+  
   // Define hyperparameters
-  double a0=1; double b0=1;
+  //double a0=1; double b0=1;
   double alphab=priorb[0]; double betab=priorb[1];
   double al=priorcompsel[0]; double bl=priorcompsel[1]; // Hyper for q
   double al0=priorcompselo[0]; double bl0=priorcompselo[1]; // Hyper for q in the outcome
@@ -994,6 +1119,11 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
       
       if (IndVar[m]==1){ //Response
         Gam[m][0][l]=rhoest[m][l];
+        if(Gam[m][0][l]==1) {
+          A[m][l][0]=0.1;
+        } else{
+          A[m][l][0]=0;
+        }
       } else if (IndVar[m]==2){ //Clinical factors
         rhoest[m][l]=1;
         for (j=0;j<P[m];j++) {
@@ -1004,7 +1134,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
       for (k=0;k<K[m];k++){
         Rmean[m][l][k]=0;Bmean[m][l][k]=0;AcceptR[m][l][k]=0;
         R[m][l][k]=0;B[m][l][k]=0;
-
+        
         if ((Method==1)&& (IndVar[m]==0)){
           if (rhoest[m][l]==1){
             double  ui=gsl_ran_flat (rr, 0, 1);
@@ -1025,15 +1155,19 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     }
     
     s2[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
-    s2Mean[m]= static_cast<double*>(malloc(P[m]*sizeof(double))); 
+    s2Mean[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
     quadForm[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
     loggauss[m]= static_cast<double*>(malloc(P[m]*sizeof(double)));
     
     for (j=0;j<P[m];j++) {
       loggauss[m][j]=0;
       s2[m][j]=0.1; s2Mean[m][j]=0;
-      quadForm[m][j]=Gamvs[m][j]=0; 
+      quadForm[m][j]=Gamvs[m][j]=0;
       mj+=1;
+    }
+    
+    if (IndVar[m] ==1) {
+      s2[m][j]=1.0;
     }
   }
   
@@ -1045,22 +1179,155 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     }
   }
   dim+=(Np-1)*r;
-
+  
   int t;
-  int N=nbrsample+burninsample;
+  int n_iter=nbrsample+burninsample;
   double intercp;
   bool ** rhomodel= static_cast<bool**>(malloc(nbrsample*sizeof(bool*)));
   for (t=0;t<nbrsample;t++){
     rhomodel[t]= static_cast<bool*>(malloc(dim*sizeof(bool)));
   }
   
-  for (t=0;t<N;t++){
+  // Initialize outcome parameter sampling data structures
+  arma::vec y = extract_y_vec(X, IndVar, Np, n);
+  //arma::mat W = extract_W_mat(X, IndVar, P, Np, n);
+  arma::mat U_mat = extract_U_mat(U, n, r);
+  arma::vec alpha_vec = extract_alpha_vec(A, IndVar, Np, r);
+  arma::vec gamma_vec = extract_gamma_vec(rhoest, IndVar, Np, r);
+  
+  // Rcpp::Rcout << "First element of y: " << y(0) << "\n";
+  // Rcpp::Rcout << "First element of W: " << W(0,0) << "\n";  // First element in matrix W
+  // Rcpp::Rcout << "First element of U_mat: " << U_mat(0,0) << "\n";  // First element in matrix U_mat
+  // Rcpp::Rcout << "First element of alpha_vec: " << alpha_vec(0) << "\n";
+  
+  // double sigma2 = extract_sigma2(s2, IndVar, Np);
+  // Calculates the number of clusters
+  int N_sites = Z_site.n_cols;
+  int N_families = Z_family.n_cols;
+  int N_obs = y.n_elem;
+  int n_beta = W.n_cols;
+  vec y_tilde(N_obs);
+  int n_active_comp = sum(gamma_vec);
+  uvec active_comp = find(gamma_vec == 1);
+  
+  Rcpp::Rcout << "N_sites: " << N_sites << "\n";
+  Rcpp::Rcout << "N_families: " << N_families << "\n";
+  
+  // arma::mat D = eye(n_active_comp, n_active_comp);
+  // arma::mat Sigma_0_inv = eye(N_obs, N_obs) - U_mat.cols(active_comp)*inv(inv(D) + U_mat.cols(active_comp).t()*U_mat.cols(active_comp))*U_mat.cols(active_comp).t();
+  // vec n_inds_per_site = trans(sum(Z_site, dim = 0));
+  
+  // Initialize parameters
+  double mu = mean(y);
+  //double sigma2_ksi = var(inv_sympd(Z_site.t()*Z_site)*Z_site.t()*y);
+  
+  // Initialize random parameter structures
+  double sigma2_ksi = 1.0;
+  vec sigma2_theta(N_sites, fill::value(1.0));
+  vec ksi = zeros(N_sites);
+  vec theta = zeros(N_families);
+  
+  // Sample initial random effect parameters from priors
+  // double sigma2_ksi = rinvgamma_cpp(sigma_ksi_prior_a, sigma_ksi_prior_b);
+  // vec ksi = rnorm_cpp(N_sites, mu, std::sqrt(sigma2_ksi));
+  // for(int s = 0; s < N_sites; s++) {
+  //     // sigma2_theta(s) = rinvgamma_cpp(sigma_theta_prior_a, sigma_theta_prior_b);
+  //     arma::uvec indices_family_in_site = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong to site s
+  //     for (int f : indices_family_in_site) {
+  //         theta(f) = as_scalar(rnorm_cpp(1, ksi(s), std::sqrt(sigma2_theta(s))));
+  //     }
+  // }
+  
+  y_tilde = y - Z_family*theta - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
+  
+  // Fix beta to 0 if covariates are not included
+  vec beta = zeros(n_beta);
+  if (covariates_included) {
+    // Initialize beta in informed way
+    beta = inv_sympd(trans(W)*W)*trans(W)*y_tilde;
+  }
+  
+  // double sigma2 = arma::dot(trans(y-W*beta), (y-W*beta))/(N_obs - W.n_cols);
+  // double sigma2 = sigma_prior_b/(sigma_prior_a - 1);
+  
+  // Outcome residual variance simply initialized to 1 
+  double sigma2 = 1.0;
+  
+  // Store initial values
+  double mu_init = mu;
+  vec alpha_init = alpha_vec;
+  vec beta_init = beta;
+  vec gamma_init = gamma_vec;
+  vec ksi_init = ksi;
+  vec theta_init = theta;
+  double sigma2_ksi_init = sigma2_ksi;
+  vec sigma2_theta_init = sigma2_theta;
+  double sigma2_init = sigma2;
+  
+  // Storage for samples
+  vec mu_samples(n_iter, fill::zeros);
+  mat alpha_samples(n_iter, r, fill::zeros);
+  mat beta_samples(n_iter, n_beta, fill::zeros);
+  mat gamma_samples(n_iter, r, fill::zeros);
+  mat ksi_samples(n_iter, N_sites, fill::zeros);
+  mat theta_samples(n_iter, N_families, fill::zeros);
+  vec sigma2_ksi_samples(n_iter, fill::zeros);
+  mat sigma2_theta_samples(n_iter, N_sites, fill::zeros);
+  vec sigma2_samples(n_iter, fill::zeros);
+  mat sigma2_non_outcome_samples(n_iter, 10, fill::zeros); // Let's start by looking at convergence of 1 of these params
+  
+  // Initialize intermediates
+  vec y_lessUalpha(N_obs);
+  vec beta_mean(n_beta);
+  vec theta_mean(N_families);
+  vec ksi_mean(N_sites);
+  vec sigma2_theta_mean(N_sites);
+  
+  // if (Method==2) {
+  //   Rcpp::Rcout << "Dimensions of y: " << y.n_elem << " elements\n";
+  //   Rcpp::Rcout << "Dimensions of W: " << W.n_rows << " rows, " << W.n_cols << " columns\n";
+  //   Rcpp::Rcout << "Dimensions of U_mat: " << U_mat.n_rows << " rows, " << U_mat.n_cols << " columns\n";
+  //   Rcpp::Rcout << "Dimensions of alpha_vec: " << alpha_vec.n_elem << " elements\n";
+  //   Rcpp::Rcout << "Value of sigma2: " << sigma2;
+  // }
+  
+  // Begin MCMC
+  for (t=0;t<n_iter;t++){
+    
     for (m=0;m<Np;m++){
       if (IndVar[m]==1){
-        SampleIntercept(rr,n, r, &intercp, s2[m], 100.0,U, A[m], X[m]);
-        for (i=0;i<n;i++){
-          for (j=0;j<P[m];j++){
-            X1[m][i][j]=X[m][i][j]-intercp;
+        
+        if (Method==2) {
+          
+          // Update residualization
+          arma::vec Wbeta = W*beta;
+          for (int s = 0; s < N_sites; s++) {
+            // Find the families in site s
+            uvec families_in_s = find(Z_family_to_site.col(s) != 0);
+            // Loop over each family
+            for (unsigned int fi = 0; fi < families_in_s.n_elem; fi++) {
+              int f = families_in_s(fi);
+              // Find individuals in family f
+              uvec individuals_in_f = find(Z_family.col(f) == 1);
+              // Loop over individuals in the family
+              for (unsigned int i = 0; i < individuals_in_f.n_elem; i++) {
+                int ind = individuals_in_f(i);
+                // Residualize data for each individual
+                for (int j = 0; j < P[m]; j++) {
+                  
+                  X1[m][ind][j] = X[m][ind][j] - Wbeta(ind) - theta(f);
+                  
+                }
+              }
+            }
+          }
+          
+        } else {
+          SampleIntercept(rr,n, r, &intercp, s2[m], 100.0, U, A[m], X[m]);
+          for (i=0;i<n;i++){
+            for (j=0;j<P[m];j++){
+              X1[m][i][j]=X[m][i][j]-intercp;
+            }
           }
         }
       }
@@ -1095,7 +1362,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         SamplerhoGamma(rr,r, n,IndVar[m],P[m],rhoest[m],Tau[m], U,X1[m],qv[m],q[m],s2[m],quadForm[m],Gam[m],loggauss[m]);
       }
       
-      sigma2(rr,  P[m],n,a0, b0,quadForm[m],s2[m]);
+      sample_sigma2(rr, P[m], n, sigma_prior_a, sigma_prior_b,quadForm[m],s2[m]);
       LoadAOther(rr,r, n,P[m],rhoest[m],Tau[m],A[m],U,X1[m],s2[m],Gam[m]);
       
       for (l=0;l<r;l++){
@@ -1112,11 +1379,115 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
       }
       
     }
-
+    
     SampleUU(rr,r,n,Np,P,A,U,X1,s2);
     
+    if (Method==2) {
+      U_mat = extract_U_mat(U, n, r);
+      gamma_vec = extract_gamma_vec(rhoest, IndVar, Np, r);
+      alpha_vec = extract_alpha_vec(A, IndVar, Np, r);
+      n_active_comp = sum(gamma_vec);
+      active_comp = find(gamma_vec == 1);
+      // Rcpp::Rcout << "active_comp: " << active_comp << "\n";
+      
+      // Grab sigma2
+      sigma2 = extract_sigma2(s2, IndVar, Np);
+      
+      // Rcpp::Rcout << "One value of U_mat: " << U_mat(0, 0) << "\n";
+      // Rcpp::Rcout << "alpha_vec(0): " << alpha_vec(0) << "\n";
+      // Rcpp::Rcout << "sigma2_t: " << sigma2 << "\n";
+      
+      ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (BELOW) /////
+      
+      // Rcpp::Rcout << "1st element of y: " << y_lessUalpha(0) << "\n";
+      
+      y_lessUalpha = y - U_mat.cols(active_comp)*alpha_vec.elem(active_comp);
+      
+      // Rcpp::Rcout << "1st element of y_lessUalpha: " << y_lessUalpha(0) << "\n";
+      
+      if (covariates_included) {
+        // Sample beta
+        y_tilde = y_lessUalpha - Z_family*theta; // R_beta
+        mat V_beta = inv(trans(W)*W/sigma2 + inv(diagmat(beta_prior_var)));
+        vec m_beta = V_beta * (W.t()*y_tilde/sigma2 + inv(diagmat(beta_prior_var))*mu_beta);
+        beta = mvnrnd(m_beta, V_beta);
+      } 
+
+      // Sample random effects
+      y_tilde = y_lessUalpha - W*beta; // R_theta
+      
+      for (int s = 0; s < N_sites; s++) {
+        arma::uvec families_in_s = arma::find(Z_family_to_site.col(s) != 0); // Get indices of families that belong
+        
+        // Sample family-level intercepts theta
+        for (int f : families_in_s) {
+          arma::uvec individuals_in_f = arma::find(Z_family.col(f) == 1); // Get indices of observations that belong
+          double sum_y_tilde = sum(y_tilde.elem(individuals_in_f));
+          int n_sf = individuals_in_f.n_elem;
+          double V_theta = 1.0 / (n_sf/sigma2 + 1.0/sigma2_theta(s));
+          double m_theta = V_theta*(sum_y_tilde/sigma2 + ksi(s)/sigma2_theta(s));  // Corrected the mean calculation
+          theta(f) = rnorm_cpp(1, m_theta, sqrt(V_theta))[0];
+          // Rcpp::Rcout << "theta_f: " << theta(f) << "\n";
+        }
+        
+        // Sample site-level intercepts ksi
+        double sum_theta = sum(theta.elem(families_in_s));
+        int n_s = families_in_s.n_elem;
+        double V_ksi = 1.0 / (n_s/sigma2_theta(s) + 1.0/sigma2_ksi);
+        double m_ksi = V_ksi*(mu + sum_theta/sigma2_theta(s));
+        ksi(s) = as_scalar(rnorm_cpp(1, m_ksi, sqrt(V_ksi)));
+        
+        // Sample sigma2_theta for s-th site
+        double a_sigma_theta = sigma_theta_prior_a + n_s/2.0;
+        double b_sigma_theta = sigma_theta_prior_b + sum(square(theta.elem(families_in_s) - ksi(s)*ones(n_s))) / 2.0;
+        sigma2_theta[s] = rinvgamma_cpp(a_sigma_theta, b_sigma_theta);
+        
+      }
+      
+      // Sample sigma2_ksi
+      double a_sigma_ksi = sigma_ksi_prior_a + N_sites/2.0;
+      double b_sigma_ksi = sigma_ksi_prior_b + sum(square(ksi - mu))/2.0;
+      sigma2_ksi = rinvgamma_cpp(a_sigma_ksi, b_sigma_ksi);
+      
+      // Sample overall mean mu
+      double V_mu = 1.0/(1.0/mu_prior_var + N_sites/sigma2_ksi);
+      double m_mu = V_mu*(sum(ksi)/sigma2_ksi);
+      mu = as_scalar(rnorm_cpp(1, m_mu, std::sqrt(V_mu)));
+      
+      ///// SAMPLE OUTCOME PARAMETERS FOR T-TH ITERATION (ABOVE) /////
+      
+      // // Store samples
+      // mu_samples(t) = mu;
+      // alpha_samples.row(t) = alpha_vec.t();
+      // beta_samples.row(t) = beta.t();
+      // gamma_samples.row(t) = gamma_vec.t();
+      // ksi_samples.row(t) = ksi.t();
+      // theta_samples.row(t) = theta.t();
+      // sigma2_ksi_samples(t) = sigma2_ksi;
+      // sigma2_theta_samples.row(t) = sigma2_theta.t();
+      // sigma2_samples(t) = sigma2;
+      // for (j=0;j<10;j++) {
+      //   sigma2_non_outcome_samples(t,j) = s2[1][j]; // Takes the 1st feature from the 2nd view, and non-outcome assuming outcome is 1st
+      // }
+    }
+    
     if (t>=burninsample){
+      // Update posterior mean estimates
       InterceptMean+=intercp/nbrsample;
+      if (Method==2) {
+        // Rcpp::Rcout << "theta_mean: " << theta_mean << "\n";
+        for (int j = 0; j < n_beta; j++) {
+          beta_mean(j) += beta(j) / nbrsample;
+        }
+        for (int f = 0; f < N_families; f++) {
+          theta_mean(f) += theta(f) / nbrsample;
+        }
+        for (int s = 0; s < N_sites; s++) {
+          ksi_mean(s) += ksi(s) / nbrsample;
+          sigma2_theta_mean(s) += sigma2_theta(s) / nbrsample;
+        }
+      } 
+      
       int rm=0;
       for (m=0;m<Np;m++){
         for (j=0;j<P[m];j++){
@@ -1156,7 +1527,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         }
         
         for (l=0;l<r;l++){
-          B0mean[m][l]+=B0[m][l]/nbrsample; 
+          B0mean[m][l]+=B0[m][l]/nbrsample;
           rhomean[m][l]+=(double) rhoest[m][l]/nbrsample;
           for (k=0;k<K[m];k++){
             Rmean[m][l][k]+=(double) R[m][l][k]/nbrsample;
@@ -1164,17 +1535,15 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
           }
         }
       }
-
-      if (t%((N+5)/5)==1){
-
+      
+      if (t % (n_iter/10) == 1) {
         printf("\n");
-  
-        printf("The number of iterations is  %d\n",t);
+        printf("Current iteration is %d\n", t);
       }
     }
   }
   printf("\n");
-
+  
   int sumP=0;int sumK=0;
   for (m=0;m<Np;m++){
     for (l=0;l<r;l++){
@@ -1223,9 +1592,32 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     int sumg=0;
     for (m=0;m<Np;m++){
       if (IndVar[m]==1){
-        for (i=0;i<n;i++){
-          for (j=0;j<P[m];j++){
-            X1[m][i][j]=X[m][i][j]-InterceptMean;
+        if (Method==2) {
+          // Residualize on fixed and random effects
+          arma::vec Wbeta = W*beta_mean;
+          for (int s = 0; s < N_sites; s++) {
+            // Find the families in site s
+            uvec families_in_s = find(Z_family_to_site.col(s) != 0);
+            // Loop over each family
+            for (unsigned int fi = 0; fi < families_in_s.n_elem; fi++) {
+              int f = families_in_s(fi);
+              // Find individuals in family f
+              uvec individuals_in_f = find(Z_family.col(f) == 1);
+              // Loop over individuals in the family
+              for (unsigned int i = 0; i < individuals_in_f.n_elem; i++) {
+                int ind = individuals_in_f(i);
+                // Residualize outcome data for each individual
+                X1[m][ind][0] = X[m][ind][0] - Wbeta(ind) - theta_mean(f);
+              }
+            }
+          }
+          
+        } else {
+          // Residualize on grand intercept estimate
+          for (i=0;i<n;i++){
+            for (j=0;j<P[m];j++){
+              X1[m][i][j]=X[m][i][j]-InterceptMean;
+            }
           }
         }
       }
@@ -1247,7 +1639,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         for (l=0;l<r;l++){
           rhoest[m][l]=Gam[m][0][l];
         }
-      } 
+      }
     }
     
     logPostGam(&logpo[t],IndVar,Np,r, n,P,Tau, meanU,X1,s2Mean,rhoest,Gam,qv,q);
@@ -1255,7 +1647,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   int * highmodelidx= static_cast<int*>(malloc(countmodel*sizeof(int)));
   sort(countmodel,logpo,highmodelidx);
   double maxlogpost=logpo[0];
-
+  
   int nbrmax=std::min(maxmodel,countmodel);
   nbrmodel1 = nbrmax;
   for (l=0;l<nbrmax;l++){
@@ -1292,7 +1684,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
         }
       }
     }
-
+    
     for (m=0;m<Np;m++){
       EstimateLoad(rr,r, n,P[m],rhoest[m],Taumean[m],A[m],meanU,X1[m],s2Mean[m],Gam[m]);
       for (l=0;l<r;l++){
@@ -1311,7 +1703,7 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   ll=0;int ls=0;
   for (m=0;m<Np;m++){
     for (l=0;l<r;l++){
-      if (rhomean[m][l]>=thres) rhoest[m][l]=1; else rhoest[m][l]=0; 
+      if (rhomean[m][l]>=thres) rhoest[m][l]=1; else rhoest[m][l]=0;
       for (j=0;j<P[m];j++){
         if (rhoest[m][l]==1) {
           if (Gammean[m][j][l]>=thres) Gam[m][j][l]=1; else Gam[m][j][l]=0;
@@ -1329,7 +1721,6 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
       }
     }
   }
-  
   free_dmatrix(rhomean,0,Np-1,0,r-1);
   
   for (m=0;m<Np;m++){
@@ -1372,6 +1763,8 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
   printf("\n\nTime taken in seconds is %f\n",time_taken);
   printf("\nTime taken in minutes is %f\n",time_taken/60);
   
+  // Rcpp::Rcout << "theta_mean content before return in cpp: " << theta_mean << "\n";
+  
   return Rcpp::List::create(
     Rcpp::Named("VarSelMeanGlobal") = VarSelMeanGlobal,
     Rcpp::Named("VarSelMean") = VarSelMean,
@@ -1383,165 +1776,39 @@ Rcpp::List mainfunction(int Method, int n, arma::vec P, int r, int Np, arma::vec
     Rcpp::Named("IntGrpMean") = IntGrpMean,
     Rcpp::Named("EstSig2") = EstSig2,
     Rcpp::Named("EstLoadMod") = EstLoadMod,
-    Rcpp::Named("nbrmodel1") = nbrmodel1
+    Rcpp::Named("nbrmodel1") = nbrmodel1,
+    Rcpp::Named("postgam") = postgam,
+    // Rcpp::Named("samples") = List::create(
+    //   Rcpp::Named("mu_samples") = mu_samples,
+    //   Rcpp::Named("beta_samples") = beta_samples,
+    //   Rcpp::Named("ksi_samples") = ksi_samples,
+    //   Rcpp::Named("theta_samples") = theta_samples,
+    //   Rcpp::Named("sigma2_ksi_samples") = sigma2_ksi_samples,
+    //   Rcpp::Named("sigma2_theta_samples") = sigma2_theta_samples,
+    //   Rcpp::Named("sigma2_samples") = sigma2_samples
+    // ),
+    Rcpp::Named("initial_values") = List::create(
+      Rcpp::Named("mu_init") = mu_init,
+      Rcpp::Named("alpha_init") = alpha_init,
+      Rcpp::Named("beta_init") = beta_init,
+      Rcpp::Named("gamma_init") = gamma_init,
+      Rcpp::Named("ksi_init") = ksi_init,
+      Rcpp::Named("theta_init") = theta_init,
+      Rcpp::Named("sigma2_ksi_init") = sigma2_ksi_init,
+      Rcpp::Named("sigma2_theta_init") = sigma2_theta_init,
+      Rcpp::Named("sigma2_init") = sigma2_init
+    ),
+    Rcpp::Named("estimates") = List::create(
+      Rcpp::Named("InterceptMean") = InterceptMean,
+      Rcpp::Named("beta_mean") = beta_mean,
+      Rcpp::Named("theta_mean") = theta_mean,
+      Rcpp::Named("ksi_mean") = ksi_mean,
+      Rcpp::Named("sigma2_theta_mean") = sigma2_theta_mean
+    ),
+    Rcpp::Named("design_matrices") = List::create(
+      Rcpp::Named("Z_family") = Z_family,
+      Rcpp::Named("Z_site") = Z_site,
+      Rcpp::Named("Z_family_to_site") = Z_family_to_site
+    )
   );
 }
-
-/*** R
-
-# Define R wrapper
-library(MASS)
-BIP <- function(dataList=dataList,IndicVar=IndicVar, groupList=NULL,Method=Method,nbrcomp=4, sample=5000, burnin=1000,nbrmaxmodels=50,
-                priorcompselv=c(1,1),priorcompselo=c(1,1),priorb0=c(2,2),priorb=c(1,1),priorgrpsel=c(1,1),probvarsel=0.05) {
-  
-  if (sample<=burnin){
-    stop("Argument burnin must be smaller than sample: the number of MCMC iterations.")
-  }
-  if (sample<=20){
-    stop("Please specify a larger number of MCMC iterations")
-  }
-  
-  if (is.null(nbrcomp)){
-    D=which(IndicVar==0)
-    mysvd=lapply(D, function(i)  svd(dataList[[i]]))
-    mysumsvd=lapply(1:length(D), function(i) cumsum(mysvd[[i]]$d)/max(cumsum(mysvd[[i]]$d))*100)
-    KMax=max(unlist(lapply(1:length(D), function(i) min(which(mysumsvd[[i]]>=80, arr.ind = TRUE))))) #chooses maximum from D cumulative proportions
-    nbrcomp=min(KMax+1,10)
-  }
-  
-  
-  #Method="GroupInfo"
-  if (Method=="BIP"){
-    meth=0
-  } else if (Method=="BIPnet") {
-    meth=1
-  } else {
-    stop("You must provide either BIP or BIPnet")
-  }
-  
-  Np=length(dataList)
-  P=NULL
-  n=nrow(dataList[[1]])
-  P=NULL
-  MeanData=list()
-  SD=list()
-  for (i in 1:Np){
-    dataList[[i]]=as.matrix(dataList[[i]])
-    P[i]=ncol(dataList[[i]])
-    if ((IndicVar[i]==0)||(IndicVar[i]==2)){
-      MeanData[[i]]=apply(dataList[[i]],2,mean)
-      SD[[i]]=apply(dataList[[i]],2,sd)
-      dataList[[i]]=scale(as.matrix(dataList[[i]]),T,T)
-    }
-    dataList[[i]]=t(dataList[[i]])
-  }
-  datasets=unlist(dataList)
-  
-  if (is.null(groupList) && (meth==1)){
-    stop("You must provide a list of grouping information")
-  } else if (is.null(groupList)){
-    for (ll in 1:length(IndicVar)){
-      groupList[[ll]]=matrix(1,P[ll],1)
-    }
-  }
-  
-  
-  ll=1
-  K=NULL
-  for (i in 1:Np){
-    if (IndicVar[i]!=0){
-      K[i]=1
-    } else {
-      K[i]=ncol(groupList[[ll]])
-      ll=ll+1
-    }
-  }
-  groupList=lapply(groupList,t)
-  Paths=unlist(groupList)
-  
-  result <- mainfunction(
-    Method=as.integer(meth),n=as.integer(n),P=as.integer(P),r=as.integer(nbrcomp),Np=as.integer(Np), 
-    datasets=as.double(datasets),IndVar=as.integer(IndicVar), K=as.integer(K), Paths=as.integer(Paths),maxmodel=as.integer(nbrmaxmodels),                nbrsample=as.integer(sample), burninsample=as.integer(burnin),
-    CompoSelMean=as.double(rep(0,Np*nbrcomp)),VarSelMean=as.double(rep(0,nbrcomp*sum(P))),
-    VarSelMeanGlobal=as.double(rep(0,sum(P))),GrpSelMean=as.double(rep(0,nbrcomp*sum(K))),
-    GrpEffectMean=as.double(rep(0,nbrcomp*sum(K))),IntGrpMean=as.double(rep(0,nbrcomp*Np)),
-    EstU=as.double(rep(0,n*nbrcomp)),EstSig2=as.double(rep(0,sum(P))),InterceptMean=as.double(rep(0,1)),
-    EstLoadMod=as.double(rep(0,nbrmaxmodels*nbrcomp*sum(P))),EstLoad=as.double(rep(0,nbrcomp*sum(P))),
-    nbrmodel=as.integer(0),postgam=rep(0,nbrmaxmodels),priorcompsel=priorcompselv,
-    priorcompselo=priorcompselo,priorb0=priorb0,priorb=as.double(priorb),priorgrpsel=priorgrpsel,probvarsel=as.double(probvarsel)
-  )
-  
-  reseffect=result$EstLoadMod
-  nbrmodel=result$nbrmodel1
-
-  EstLoadModel <- lapply(1:nbrmodel, function(x) {
-    lapply(1:Np, function(y) {
-      NULL
-    })
-  })
-  for (mo in 1:nbrmodel){
-    for (m in 1:Np){
-      x=sum(P[1:(m-1)])
-      y=sum(P[1:m])
-      if (m==1) {x=0}
-      init=1+x*nbrcomp+(mo-1)*nbrcomp*sum(P)
-      final=y*nbrcomp+(mo-1)*nbrcomp*sum(P)
-      EstLoadModel[[mo]][[m]]=matrix(reseffect[init:final],nbrcomp,byrow=T);
-    }
-  }
-
-  resvarsel1=result$VarSelMeanGlobal
-  resvarsel2=result$VarSelMean
-  resvarsel3=result$GrpSelMean
-  resvarsel4=result$GrpEffectMean
-  resvarsel5=result$EstLoad
-  EstimateU=matrix(result$EstU,n,byrow=T)
-  CompoSelMean=matrix(result$CompoSelMean,Np,byrow=T)
-  IntGrpMean=matrix(result$IntGrpMean,Np,byrow=T)
-  VarSelMeanGlobal=list()
-  VarSelMean=list()
-  GrpSelMean=list()
-  GrpEffectMean=list()
-  EstLoad=list()
-  EstSig2=list()
-  m1=m2=m3=1
-  for (m in 1:Np){
-    VarSelMeanGlobal[[m]]=resvarsel1[m1:(m1-1+P[m])]
-    VarSelMean[[m]]=matrix(resvarsel2[m2:(m2-1+P[m]*nbrcomp)],P[m],byrow=T)
-    GrpSelMean[[m]]=matrix(resvarsel3[m3:(m3-1+K[m]*nbrcomp)],nbrcomp,byrow=T)
-    GrpEffectMean[[m]]=matrix(resvarsel4[m3:(m3-1+K[m]*nbrcomp)],nbrcomp,byrow=T)
-    EstLoad[[m]]=matrix(resvarsel5[m2:(m2-1+P[m]*nbrcomp)],nbrcomp,byrow=T)
-    EstSig2[[m]]=result$EstSig2[m1:(m1-1+P[m])]
-    m1=m1+P[m]
-    m2=m2+P[m]*nbrcomp
-    m3=m3+K[m]*nbrcomp
-
-  }
-
-  return (list(EstU=EstimateU,VarSelMean=VarSelMean,VarSelMeanGlobal=VarSelMeanGlobal,CompoSelMean=CompoSelMean,GrpSelMean=GrpSelMean,GrpEffectMean=GrpEffectMean,IntGrpMean=IntGrpMean,EstLoad=EstLoad,EstLoadModel=EstLoadModel,nbrmodel=result$nbrmodel1,EstSig2=EstSig2,EstIntcp=result$InterceptMean,PostGam=result$postgam,IndicVar=IndicVar,nbrcomp=nbrcomp,MeanData=MeanData,SDData=SD))
-}
-
-# Simulate data & estimate associated parameters
-source("00_simulate_simple_data.R")
-set.seed(1)
-simulation_results <- simulate_iid_data(prob_component_importance = 0.5)
-dataList <- list(simulation_results$X_list[[1]],
-                  simulation_results$X_list[[2]],
-                  simulation_results$Y)
-BA=BIP(dataList=dataList, IndicVar=c(0,0,1), Method="BIP", nbrcomp=4, sample=5000, burnin=1000)
-
-print("Component selection mean:")
-BA$CompoSelMean
-print("Global variable selction mean:")
-BA$VarSelMeanGlobal
-print("View-wise variable selection mean:")
-BA$VarSelMean
-print("Estimated Loadings:")
-BA$EstLoad[1:2]
-print("True Loadings:")
-simulation_results$A_list
-print("Element-wise mean absolute error between true U and estimated U:")
-mean(simulation_results$U - BA$EstU)
-print("Estimated Sig2:")
-BA$EstSig2
-*/

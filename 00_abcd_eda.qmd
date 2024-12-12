@@ -1,0 +1,1043 @@
+---
+title: "ABCD Study Exploratory Data Analysis"
+author: "Aidan Neher"
+format: docx
+editor: visual
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(psych) # For polychoric correlation
+library(Rtsne) # For tsne plots
+library(VennDiagram) # For venn diagram comparing variables used in 2 diff ELA papers
+# Set the path for raw data files
+data_dir <- '/Users/aidanneher/Library/CloudStorage/Box-Box/ABCD Tabulated Data/5.1/core'
+# Location of desired output directory - if NULL, will output into working directory
+out_dir <- '/Users/aidanneher/Documents/GitHub/abcd_multiview/data'
+# out_dir <- NULL
+# Date you used in output name - if NULL, will use output from Sys.Date() (current date)
+# e.g. out_date <- '2023-03-03' 
+out_date <- NULL
+# Initials or other string you want in output naming - no NULL option here
+out_initials <- 'AN' 
+```
+
+## ABCD Study Dataset
+
+The Adolescent Brain and Cognitive Development Study (ABCD Study®) is the largest long-term study of brain development and child health in the United States. Starting with students aged 9-10 years old and repeated until age 19-20, brains scans are taken bi-annually, biosamples, paper and pen tests, and iPad tasks annually, and interviews every 3-6 months.
+
+We are most interested in the following "views"
+
+-   Early life adversity (ELA)
+-   Neuroimaging
+    -   sMRI: Cortical Thickness (CT) and Surface Area (SA)
+    -   fMRI: Functional Connectivity (FC)
+-   Genomics/ epigenomics
+
+We are performing variable selection jointly with prediction in relation to the following continuous outcomes.
+
+-   internalizing problems,
+-   externalizing problems,
+-   cognitive flexibility, and
+-   inhibitory control
+
+We consider the first two internalizing problems and externalizing problems primary outcomes and cognitive flexibility and inhibitory control secondary outcomes since the former are seemingly clinical outcomes and the latter are explanatory of the primary outcomes (Brieant et al. 2023).
+
+We control for common covariates \* sex \* age \* race \* ...
+
+### Early Life Adversity (ELA)
+
+Firstly, we load the ELA view using code shared by Mark Fiecas. Here is the additional context he provided on sharing: "This came from the supplementary material of the Orendain et al paper. Note that they actually used more, but these were the ones that were"relevant" per their factor analysis. They had about \~10 more variables but those did not have high factor loadings. Please see their supplemental material if you'd like to get the other \~10. You'll need to revise Ellery's standard prep code to make sure these get loaded in (see her "files" variable), and the first place to start is here, which is at the very bottom."
+
+```{r,include=FALSE}
+
+load_supp_ela <- function() {
+  
+  # Read the Excel file to get the supp_lookup table
+  supp_lookup <- read_xlsx("orendain_vars_from_supplement.xlsx")
+  
+  # Get the unique file paths
+  supp_paths <- file.path(data_dir,
+                          unique(supp_lookup$table_file_path))
+  
+  # Function to read CSV file and select the specified columns
+  read_and_select <- function(file_path, var_names) {
+    # Read the CSV file
+    data <- read_csv(paste0(file_path, ".csv"))
+    # Select the specified columns
+    selected_data <- data %>% select(all_of(var_names))
+    return(selected_data)
+  }
+  
+  # Apply the function to each file path with corresponding var_names
+  selected_tables <- lapply(supp_paths, function(path) {
+    var_names <- supp_lookup %>%
+      filter(table_name == basename(path)) %>%
+      pull(var_name)
+    var_names <- c("src_subject_id", "eventname", var_names)
+    read_and_select(path, var_names)
+  })
+  
+  # Merge the tables in the list by "src_subject_id" and "eventname"
+  merged_data <- reduce(selected_tables, function(x, y) {
+    full_join(x, y, by = c("src_subject_id", "eventname"))
+  })
+}
+
+# Defaults to baseline data - you can pass a vector of eventnames
+load_orendain_ela <- function(data_dir, supp_features=TRUE, 
+                              events = "baseline_year_1_arm_1") {
+  
+  # Physical and sexual violence
+  mh_p_ksads_path <- file.path(data_dir, "mental-health/mh_p_ksads_ptsd.csv")
+  mh_p_ksads <- read_csv(mh_p_ksads_path) %>%
+    select(src_subject_id, eventname, ksads_ptsd_raw_761_p,
+           ksads_ptsd_raw_762_p, ksads_ptsd_raw_763_p,
+           ksads_ptsd_raw_767_p, ksads_ptsd_raw_768_p,
+           ksads_ptsd_raw_769_p, ksads_ptsd_raw_760_p,
+           ksads_ptsd_raw_764_p, ksads_ptsd_raw_765_p)
+  
+  # Parent psychopathology
+  mh_p_fhx_path <- file.path(data_dir, "mental-health/mh_p_fhx.csv")
+  mh_p_fhx <- read_csv(mh_p_fhx_path) %>%
+    select(src_subject_id, eventname, famhx_4_p,
+           fam_history_5_yes_no, fam_history_6_yes_no,
+           fam_history_7_yes_no, fam_history_8_yes_no,
+           fam_history_11_yes_no, fam_history_12_yes_no,
+           fam_history_13_yes_no)
+  
+  # Neighborhood Threat
+  ce_p_nsc_path <- file.path(data_dir, "culture-environment/ce_p_nsc.csv")
+  ce_p_nsc <- read_csv(ce_p_nsc_path) %>%
+    select(src_subject_id, eventname, neighborhood3r_p,
+           neighborhood2r_p)
+  
+  # Prenatal Substance Exposure
+  ph_p_dhx_path <- file.path(data_dir, "physical-health/ph_p_dhx.csv")
+  ph_p_dhx <- read_csv(ph_p_dhx_path) %>%
+    select(src_subject_id, eventname,
+           devhx_9_tobacco, devhx_9_alcohol,
+           devhx_9_marijuana, devhx_9_coc_crack,
+           devhx_9_her_morph, devhx_9_oxycont)
+  
+  # Scarcity
+  abcd_p_demo_path <- file.path(data_dir, "abcd-general/abcd_p_demo.csv")
+  abcd_p_demo <- read_csv(abcd_p_demo_path) %>%
+    select(src_subject_id, eventname, 
+           demo_fam_exp1_v2, demo_fam_exp5_v2)
+  
+  # Household Dysfunction
+  ce_y_fes_path <- file.path(data_dir, "culture-environment/ce_y_fes.csv")
+  ce_y_fes <- read_csv(ce_y_fes_path) %>%
+    select(src_subject_id, eventname, fes_youth_q6, 
+           fes_youth_q1, fes_youth_q5)
+  
+  # Merging all data frames
+  merged_data <- list(mh_p_ksads, mh_p_fhx, ce_p_nsc, ph_p_dhx, abcd_p_demo, ce_y_fes) %>%
+    reduce(full_join, by = c("src_subject_id", "eventname"))
+  
+  if (supp_features==TRUE) {
+    supp_data <- load_supp_ela()
+    merged_data <- merge(merged_data, supp_data)
+  }
+  
+  # Filter to events of interest
+  filtered_data <- merged_data %>%
+    filter(eventname %in% events)
+  
+  # Recode values in all columns except 'src_subject_id' and 'eventname'
+  tidy_data <- filtered_data %>%
+    mutate(across(-c(src_subject_id, eventname), ~na_if(., 999))) %>%  # Recode 999 "Don't know" as NA
+    mutate(across(-c(src_subject_id, eventname), ~na_if(., 7))) %>%    # Recode 7 "Refuse to answer" as NA
+    mutate(across(-c(src_subject_id, eventname), ~na_if(., 777)))      # Recode 777 "Refuse to answer" as NA
+  
+  return(tidy_data)
+}
+
+ela_data <- load_orendain_ela(data_dir)
+
+```
+
+Let's look at our ELA data.
+
+```{r}
+
+str(ela_data)
+
+```
+
+We check out the proportion of missingness in our ELA data.
+
+```{r}
+
+# Calculate the proportion of missing values per column, excluding specific columns
+missing_data <- ela_data %>%
+  select(-src_subject_id, -eventname) %>%  # Exclude these columns from the analysis
+  summarise(across(everything(), ~sum(is.na(.))/n())) %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "prop_missing")
+
+# Plot the proportion of missing data
+ggplot(missing_data, aes(x = variable, y = prop_missing)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Variable", y = "Proportion Missing", title = "Proportion of Missing Data by ELA Variable at Baseline")
+
+```
+
+On removing NAs, we consider each variable's the event rate (proportion of observations that are non-zero). We do this because we do not want to include variables with limited information/ possibly zero variance where all reported values are zero (i.e. ELA feature not observed in any observations).
+
+```{r}
+
+# Calculate the proportion of non-zero values per column, excluding specific columns
+non_zero_data <- ela_data %>%
+  select(-src_subject_id, -eventname) %>%  # Exclude these columns from the analysis
+  summarise(across(everything(), ~mean(. != 0, na.rm = TRUE))) %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "prop_non_zero")
+
+# Plot the proportion of non-zero data
+ggplot(non_zero_data, aes(x = variable, y = prop_non_zero)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Variable", y = "Proportion Non-Zero", 
+       title = "Proportion of Non-Zero Observations by ELA Variable at Baseline")
+
+print(paste("N Variables with zero variance:", sum(non_zero_data$prop_non_zero == 0)))
+
+```
+
+We notice a number of these variables included in the Orendain et al paper do not have event rates larger than 0.05, which is a quality control step implemented in the Brieant et al. 2023 paper.
+
+We consider relationships between the ELA features by looking at polychoric correlations and TSNE plots. Note, for the polychoric correlation analysis, we filter to complete cases and also exclude the variables with five levels to only explore the binary variables (for now). In those with five levels, 1 = Strongly Disagree; 2 = Disagree; 3 = Neutral (neither agree nor disagree); 4 = Agree; 5 = Strongly Agree. It's not clear how best to binarize/ handle these 5-level variables in the context of polychoric correlation calculation.
+
+```{r}
+# Prepare the data by excluding non-relevant columns and ensuring complete cases
+filtered_data <- ela_data %>%
+  select(-src_subject_id, -eventname) %>%
+  na.omit()
+
+# Filter out variables with more than 2 unique levels
+binary_data <- filtered_data %>%
+  select_if(~length(unique(.)) == 2)
+
+# Compute the polychoric correlation, only for binary variables
+polychoric_matrix <- polychoric(binary_data)$rho
+
+# Transform the correlation matrix for visualization
+correlation_data <- as.data.frame(polychoric_matrix) %>%
+  rownames_to_column("Variable1") %>%
+  pivot_longer(cols = -Variable1, names_to = "Variable2", values_to = "Correlation")
+
+# Plot the correlation matrix as a heatmap
+ggplot(correlation_data, aes(x = Variable1, y = Variable2, fill = Correlation)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  labs(fill = "Correlation", title = "Polychoric Correlation Matrix of Binary ELA Variables", x = NULL, y = NULL)
+
+# Organize variable pairs to ensure unique combinations
+high_correlation_pairs <- correlation_data %>%
+  mutate(VariablePair = pmap_chr(list(Variable1, Variable2), ~paste(sort(c(...)), collapse = "-"))) %>%
+  distinct(VariablePair, .keep_all = TRUE) %>%
+  filter(abs(Correlation) > 0.75, Variable1 != Variable2)
+
+# View the table of feature pairs "VariablePair" with high correlations
+high_correlation_pairs %>%
+  select(VariablePair, Correlation) %>%
+  print
+```
+
+10 binary features included in Orendain et al paper's analysis have high polychoric correlation. I'm wondering if the data processing in Brieant et al. 2023 paper is preferrable as a result in that they consolidated survey items that were highly correlated into composite scores.
+
+Below is an exploratory tsne plot to demonstrate the heterogeneity in our sample's ELA data at baseline. To ultimately generate this plot, we had to remove a large number of duplicates in our binary data.
+
+```{r}
+# Remove duplicate rows
+unique_binary_data <- binary_data %>% 
+  distinct()
+
+# Check the number of rows removed
+cat("Removed", nrow(binary_data) - nrow(unique_binary_data), "duplicate rows.\n")
+
+# Set parameters for t-SNE
+set.seed(42)  # for reproducibility
+tsne_results <- Rtsne(as.matrix(unique_binary_data), dims = 2, perplexity = 30, verbose = TRUE, max_iter = 500)
+
+# Create a data frame for plotting
+tsne_data <- as.data.frame(tsne_results$Y)
+colnames(tsne_data) <- c("TSNE1", "TSNE2")
+
+# Plot t-SNE results
+ggplot(tsne_data, aes(x = TSNE1, y = TSNE2)) +
+  geom_point(alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "t-SNE Visualization of ELA Binary Variables",
+       x = "t-SNE Dimension 1",
+       y = "t-SNE Dimension 2")
+```
+
+On attempting to make a tsne plot, we recognize that there are 7,900 duplicate rows in our binary data representative of 9,971 observations at baseline. This raises the question of what the characteristics are of these duplicates, are there specific classes of duplicates in our binary data e.g. the vast majority report no to all questions?
+
+Note, 2,071 observations are included in the `duplicate_summary` below, which means we have only 2,071 unique survey responses and 7,900 duplicate responses for a sample size in these binary baseline data of 9,071.
+
+```{r}
+# Find duplicates (except for the first occurrence)
+duplicate_data <- binary_data %>%
+  add_count() %>% 
+  filter(n > 1) %>%
+  select(-n) %>%
+  distinct()
+
+# Count how many times each unique set of responses appears
+duplicate_summary <- binary_data %>%
+  group_by(across(everything())) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  arrange(desc(count))
+
+# # Look at the most common duplicate entries
+# print(duplicate_summary)
+
+# # For visualization, you may want to check specific questions or all questions
+# # Here's a general approach for visualizing the distribution of responses for one variable:
+# ggplot(duplicate_summary, aes(x = ksads_ptsd_raw_761_p, y = count)) +
+#   geom_col() +
+#   labs(title = "Distribution of Responses for a Specific Variable in Duplicate Rows",
+#        x = "Response",
+#        y = "Count of Duplicates")
+
+# Or visualize all variables' responses in duplicates
+duplicate_summary_long <- pivot_longer(duplicate_summary, cols = -count, 
+                                       names_to = "variable", values_to = "response")
+
+ggplot(duplicate_summary_long, aes(x = response, fill = as.factor(response))) +
+  geom_histogram(stat = "count") +
+  facet_wrap(~ variable, scales = "free_x") +
+  theme_minimal() +
+  labs(title = "Distribution of Responses Across All Variables in Duplicate Rows",
+       x = "Response",
+       y = "Count")
+```
+
+Features related to drug use and ptsd seem to be most absent in our duplicated binary observations.
+
+#### Orendain et al. 2023 vs. Brieant et al. 2023
+
+Noticing the discrepancy in the polychoric correlations allowed for between Orendain et al. 2023 (no polychoric correlation filtering/ feature composition), and Brieant et al. 2023 (features with polychoric correlation \> 0.75 were transformed into composites to avoid potential collinearity concerns), we decide to compare and contrast the features included in each analysis.
+
+In Orendain et al. 2023,
+
+-   "All adversity variables were binarized to indicate the presence or absence of exposure". Did they binarize all features, including the neighborhood safety questions which has a scale from 1-5 available? If so, how did they do this?
+-   17 additional features are reported in their Table S2 that were excluded from the final exploratory factor analysis because of a low factor loading (below 0.4). Might we include these? My initial thought is yes.
+
+Authors included 47 adversity features of which 30 were found to be "important" in their exploratory factor analysis. These 30 features are those that have been characterized thus far in this report.
+
+In Brieant et al. 2023,
+
+Authors identify 139 ELA features that they then filter those with \>50% missingness and \<0.05% endorsement to pass 79 to a polychoric correlation matrix calculation. 26 were removed that had high correlation with other variables, and composites were added for a total of 60 variables to be used in the factor analysis/ Bayesian linear modeling.
+
+We adapt code from Brieant et al. 2023's Open Science Foundation (OSF) project 01_data_preparation/01_pull_variables.Rmd (https://osf.io/28cb7/?view_only=b7789e2eb92d40d290358a5ad623ac65) to extract the 79 variables that passed the \>50% missingness and \<0.05% endorsement filtering steps. Note, seemingly authors count "src_subject_id" and "rel_family_id" as 2 of these 79 variables.
+
+```{r}
+# Read in family variables
+rel <- read.csv(paste(data_dir, 'abcd-general/abcd_y_lt.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, rel_family_id)
+
+# Read in family substance use summary scores
+fhx <- read.csv(paste(data_dir, 'mental-health/mh_p_fhx.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, famhx_ss_fath_prob_alc_p, famhx_ss_moth_prob_alc_p, famhx_ss_fath_prob_dg_p, famhx_ss_moth_prob_dg_p)
+
+# Read in parent demographics
+pdemo <- read.csv(paste(data_dir, 'abcd-general/abcd_p_demo.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, demo_prim, demo_prnt_marital_v2, demo_prnt_ed_v2, demo_prtnr_ed_v2, demo_comb_income_v2,
+         demo_fam_exp1_v2, demo_fam_exp2_v2, demo_fam_exp3_v2, demo_fam_exp4_v2, demo_fam_exp5_v2, 
+         demo_fam_exp6_v2, demo_fam_exp7_v2)
+
+# Read in CRPBI
+crpbi <- read.csv(paste(data_dir, 'culture-environment/ce_y_crpbi.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, crpbi_parent1_y, crpbi_caregiver12_y, crpbi_parent2_y, crpbi_caregiver13_y,
+         crpbi_parent3_y, crpbi_caregiver14_y, crpbi_parent4_y, crpbi_caregiver15_y, crpbi_parent5_y, 
+         crpbi_caregiver16_y)
+
+# Read in parent report family environment scale
+fes02 <- read.csv(paste(data_dir, 'culture-environment/ce_p_fes.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, fam_enviro1_p, fam_enviro2r_p, fam_enviro3_p, fam_enviro4r_p, fam_enviro5_p,
+         fam_enviro6_p, fam_enviro7r_p, fam_enviro8_p, fam_enviro9r_p)
+
+# Read in youth report family environment scale
+fes01 <- read.csv(paste(data_dir, 'culture-environment/ce_y_fes.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, fes_youth_q1, fes_youth_q2, fes_youth_q3, fes_youth_q4, fes_youth_q5, fes_youth_q6,
+         fes_youth_q7, fes_youth_q8, fes_youth_q9)
+
+# Read in ksads trauma, parent interview
+ptsd <- read.csv(paste(data_dir, 'mental-health/mh_p_ksads_ptsd.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, ksads_ptsd_raw_754_p, ksads_ptsd_raw_755_p, ksads_ptsd_raw_756_p, ksads_ptsd_raw_757_p,
+         ksads_ptsd_raw_758_p, ksads_ptsd_raw_759_p, ksads_ptsd_raw_760_p, ksads_ptsd_raw_761_p,
+         ksads_ptsd_raw_762_p, ksads_ptsd_raw_763_p, ksads_ptsd_raw_764_p, ksads_ptsd_raw_765_p,
+         ksads_ptsd_raw_766_p, ksads_ptsd_raw_767_p, ksads_ptsd_raw_768_p, ksads_ptsd_raw_769_p,
+         ksads_ptsd_raw_770_p)
+
+# Read in parental monitoring
+pmq <- read.csv(paste(data_dir, 'culture-environment/ce_y_pm.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, parent_monitor_q1_y, parent_monitor_q2_y, parent_monitor_q3_y, parent_monitor_q4_y,
+         parent_monitor_q5_y)
+
+# Read in neighborhood safety and crime, parents
+pnscss <- read.csv(paste(data_dir, 'culture-environment/ce_p_nsc.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, nsc_p_ss_mean_3_items)
+
+# Read in neighborhood safety and crime, youth
+ynsc <- read.csv(paste(data_dir, 'culture-environment/ce_y_nsc.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, neighborhood_crime_y)
+
+# Read in ASR (parent psychopathology)
+asr <- read.csv(paste(data_dir, 'mental-health/mh_p_asr.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, asr_scr_anxdisord_r, asr_scr_somaticpr_r, asr_scr_depress_r, asr_scr_avoidant_r,
+         asr_scr_adhd_r, asr_scr_antisocial_r, asr_scr_inattention_r, asr_scr_hyperactive_r)
+
+# Read in ADI data file
+ADI <- read.csv(paste(data_dir, 'linked-external-data/led_l_adi.csv', sep='/')) %>%
+  filter(eventname == "baseline_year_1_arm_1") %>% 
+  select(src_subject_id, reshist_addr1_adi_wsum)
+
+# Merge all data frames
+ela_data_brieant <- full_join(fhx, asr) %>%
+  full_join(pdemo) %>%
+  full_join(crpbi) %>%
+  full_join(fes01) %>%
+  full_join(fes02) %>%
+  full_join(ptsd) %>%
+  full_join(pmq) %>%
+  full_join(pnscss) %>%
+  full_join(ynsc) %>%
+  full_join(rel) %>%
+  full_join(ADI)
+
+# TODO Clean certain variables
+  # 777 and 999
+  # Remove covariates e.g. demo_... vars
+  # Remove clustering vars e.g. rel_family_id
+  # Note, rel_family_id might be included as a fixed effect in unnested world
+  # reshist_addr1_adi_wsum: Residential history derived - Area Deprivation Index: scaled weighted sum based on Kind et al., Annals of Internal Medicine, 2014 1
+# nsc_p_ss_mean_3_items: Neighborhood Safety Protocol: Mean of Parent Report, (neighborhood1r_p + neighborhood2r_p + neighborhood3r_p)/3; Validation: No minimum
+
+print(paste("ncols of ELA data used for Brieant el al. 2023 analysis:", ncol(ela_data_brieant)))
+```
+
+We see the extent to which the variables included by Brient and colleagues overlap with the 60 considered important by Orendain et al. 2023.
+
+```{r}
+# Exclude specified variables and extract variable names from each dataset
+vars_ela_orendain <- setdiff(names(ela_data), 
+                             c("src_subject_id", "eventname",
+                               "rel_family_id"))
+vars_ela_brieant <- setdiff(names(ela_data_brieant), 
+                            c("src_subject_id", "eventname",
+                              "rel_family_id"))
+
+# Draw a Venn diagram
+venn.plot <- venn.diagram(
+  x = list(
+    Orendain = vars_ela_orendain,
+    Brieant = vars_ela_brieant
+  ),
+  filename = NULL,  # Set to NULL for plotting directly in R
+  category.names = c("Orendain et al. 2023", "Brieant et al. 2023"),
+  output = TRUE,
+  main = "Venn Diagram of Variables in ELA Data Studies",
+  fill = c("salmon", "lightblue"),
+  alpha = 0.50,
+  label.col = "darkblue",
+  cex = 1.5,
+  fontfamily = "serif",
+  cat.cex = 1.5,
+  cat.col = "darkblue",
+  cat.pos = 0,
+  cat.dist = 0.07,
+  cat.fontfamily = "serif"
+)
+
+# Display the Venn diagram
+grid.draw(venn.plot)
+
+```
+
+We discover these studies chose quite different sets of ELA variables for their analyses with only 14 shared between the two. This makes me wonder two things,
+
+1.  Would the amount of overlap be different had we included variables from upstream in these authors respective data processing and analysis pipelines?
+2.  What accounts for the limited overlap in the variables used for each analysis? Could it be that variables included by Orendain et al. 2023 would have been excluded by Brieant et al. 2023's missingness and \<0.05% endorsement filters? What explains the 63 variables included by strictly Brieant et al. 2023? Is subjective judgement to blame, or are there other justifications available?
+
+Let's consider the variables that would be included should we keep with the \<0.05% endorsement filter. This would mean certain variables from the Orendain et. al. 2023 paper would be excluded.
+
+```{r}
+# Filter the tibble to include only those with prop_non_zero less than 0.05%
+orendain_vars_to_include <- non_zero_data %>%
+  filter(prop_non_zero >= 0.0005) %>%
+  pull(variable)
+
+orendain_data <- ela_data %>%
+  select(all_of(c("src_subject_id", "eventname", 
+                  orendain_vars_to_include)))
+
+# Combine ELA data from both papers
+combined_ela <- merge(orendain_data, ela_data_brieant)
+
+print(paste("ncols of ELA data for analysis:", 
+            ncol(
+              select(
+                combined_ela, 
+                -src_subject_id,
+                -eventname,
+                -rel_family_id))))
+```
+
+\^Some of these ELA features include "demo\_..." features e.g. "demo_prnt_marital_v2" and "demo_prnt_ed_v2". These features are typically considered covariates. I am leaning towards putting this information in the covariate matrix and exluding from the ELA view.
+
+### Covariates and Outcomes
+
+Now we load the covariate and outcome data, adapting code from Ellery's "ABCD_data_prep.Rmd". Note, in user input chunk, you can change the data directory and the output directory. Also, see the ABCD data dictionary (https://data-dict.abcdstudy.org/?), or the online codebook (https://docs.google.com/spreadsheets/d/1uHRrXASaxtZbRAeJvPJktqxyDkPdA2_WgxYdLTjhK1Q/edit?usp=sharing) to learn more about the variable naming.
+
+```{r user-input}
+# For Ellery's code, we must specify what time points we want. 
+# Put the string provided for all desired timepoints into a vector e.g.  c('timepoint1_name','timepoint2_name') etc.
+timepoint_list <- c("baseline_year_1_arm_1") 
+```
+
+Load Data Files
+
+```{r}
+# Function to load the required datasets
+load_datasets <- function(data_dir) {
+  # Standard files for most studies
+  demog <- read_csv(file.path(data_dir, "abcd-general/abcd_p_demo.csv"))
+  demog_y <- read_csv(file.path(data_dir, "mental-health/mh_y_ksads_bg.csv"))
+  puberty <- read_csv(file.path(data_dir, "physical-health/ph_p_pds.csv"))
+  study_covars <- read_csv(file.path(data_dir, "abcd-general/abcd_y_lt.csv"))
+  sib_twin <- read_csv(file.path(data_dir, "genetics/gen_y_pihat.csv"))
+  
+  # MRI standard files
+  mri <- read_csv(file.path(data_dir, "imaging/mri_y_adm_info.csv"))
+  qc <- read_csv(file.path(data_dir, "imaging/mri_y_qc_incl.csv"))
+  scan_qtns <- read_csv(file.path(data_dir, "imaging/mri_y_adm_qtn.csv"))
+  
+  # Standard files for clinical data
+  cbcl <- read_csv(file.path(data_dir, "mental-health/mh_p_cbcl.csv"))
+  bpm_y <- read_csv(file.path(data_dir, "mental-health/mh_y_bpm.csv"))
+  ksad_p <- read_csv(file.path(data_dir, "mental-health/mh_p_ksads_ss.csv"))
+  ksad_y <- read_csv(file.path(data_dir, "mental-health/mh_y_ksads_ss.csv"))
+  
+  # Combine all datasets into a list (if needed for further processing or return)
+  datasets <- list(demog = demog, demog_y = demog_y, puberty = puberty,
+                   study_covars = study_covars, sib_twin = sib_twin, mri = mri,
+                   qc = qc, scan_qtns = scan_qtns, cbcl = cbcl, bpm_y = bpm_y,
+                   ksad_p = ksad_p, ksad_y = ksad_y)
+  
+  return(datasets)
+}
+
+# Load the datasets
+datasets <- load_datasets(data_dir)
+
+# Make data.frames accessible to global environment 
+attach(datasets)
+
+```
+
+```{r}
+# KSAD INITIAL CLEANING
+# Why? During the data collection, a new version of the KSAD was used (KSAD2), so each KSAD variable has a corresponding KSAD2 variable which contains the data since the new version was adopted. The code below combines these variables into one.
+
+ksad_new_df <- ksad_p %>% # initialize new data frame
+  select(src_subject_id, eventname)
+  
+clean_ksads <- function(ksad_new_df, ksad, ksad2, p_or_t){ 
+  # goal: combine two ksad variables into one new var
+  # ksad_new_df = a new data frame created above to hold the new vars, 
+  # ksad = 1st ksad variable (old ksad), 
+  # ksad2 = ksad2 var (same content/question as ksad1), 
+  # p_or_t = whether the variable is a p or t ksad 
+  # output: a dataframe containing the new variable
+  assign("ksad", paste0(ksad, sep = "_", p_or_t)) # create ksad variable from inputs and assign it the name ksad
+  assign("ksad2", paste0(ksad2, sep = "_", p_or_t)) # create ksad2 variable from inputs and assign it the name ksad2
+  assign("ksad_new", paste0(ksad, "_new")) # create new variable name from inputs and assign it the name ksad_new
+  assign("ksad_df", paste("ksad", if_else(p_or_t == "p", "p", "y"), sep = "_")) # create data frame name from inputs and name it ksad_df
+  my_cols <- c("src_subject_id", "eventname", ksad, ksad2) # create vector of necessary column names
+  intermediary <- get(ksad_df) %>%
+    select(all_of(my_cols)) %>% # select cols (need to do it this way because I'm referring to the cols as strings)
+    mutate(!!ksad_new := if_else(is.na(get(ksad)) == T, get(ksad2), get(ksad))) # create new var
+  ksad_new_df <- right_join(intermediary, ksad_new_df, by = c("src_subject_id", "eventname")) # join new var to existing data set
+  ksad_new_df <- ksad_new_df %>%
+    select(src_subject_id, eventname, ends_with("_new")) # select only necessary vars
+  return(ksad_new_df)
+}
+
+
+# call the function with each pair of ksad and ksad2 variables (make sure to assign the output to the same name so you create one data set with all the new variables)
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_946", "ksads2_23_906", "p") # suicidal ideation
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_947", "ksads2_23_907", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_948", "ksads2_23_908", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_949", "ksads2_23_909", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_950", "ksads2_23_910", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_951", "ksads2_23_911", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_957", "ksads2_23_917", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_958", "ksads2_23_918", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_959", "ksads2_23_919", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_960", "ksads2_23_920", "p") 
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_961", "ksads2_23_921", "p")
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_954", "ksads2_23_914", "p") # suicidal attempts, prep
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_965", "ksads2_23_925", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_962", "ksads2_23_922", "p")
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_966", "ksads2_23_926", "p") # NO suicidal ideation/behaviors
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_955", "ksads2_23_915", "p")
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_143", "ksads2_23_134", "p") # non-suicidal self injury
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_144", "ksads2_23_135", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_956", "ksads2_23_916", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_945", "ksads2_23_905", "p")
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_840",	"ksads2_1_790", "p") # depression
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_841",	"ksads2_1_791", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_842",  "ksads2_1_792", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_843",	"ksads2_1_793", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_844",	"ksads2_1_794", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_845",	"ksads2_1_795", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_846",	"ksads2_1_796", "p")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_847",	"ksads_1_847", "p") # this one does not have a corresponding ksad2 (I put it here so it would still appear in the df)
+
+# repeat function calls with t instead of p
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_946", "ksads2_23_906", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_947", "ksads2_23_907", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_948", "ksads2_23_908", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_949", "ksads2_23_909", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_950", "ksads2_23_910", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_957", "ksads2_23_917", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_958", "ksads2_23_918", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_959", "ksads2_23_919", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_960", "ksads2_23_920", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_961", "ksads2_23_921", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_954", "ksads2_23_914", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_965", "ksads2_23_925", "t")
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_966", "ksads2_23_926", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_955", "ksads2_23_915", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_951", "ksads2_23_911", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_962", "ksads2_23_922", "t")
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_143", "ksads2_23_134", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_144", "ksads2_23_135", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_956", "ksads2_23_916", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_945", "ksads2_23_905", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_963", "ksads2_23_923", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_964", "ksads2_23_924", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_953", "ksads2_23_913", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_23_952", "ksads2_23_912", "t")
+
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_840",	"ksads2_1_790", "t") 
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_841",	"ksads2_1_791", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_842",  "ksads2_1_792", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_843",	"ksads2_1_793", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_844",	"ksads2_1_794", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_845",	"ksads2_1_795", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_846",	"ksads2_1_796", "t")
+ksad_new_df <- clean_ksads(ksad_new_df, "ksads_1_847",	"ksads_1_847", "t") # this one does not have a corresponding ksad2 (I put it here so it would still appear in the df)
+```
+
+Demographic Cleaning Pre-Merge
+
+```{r}
+# COMBINE BASELINE VARIABLES WITH LONGITUDINAL VARIABLES
+# how it combines: if the observation occurred in year1/arm1 (the baseline) the combination variable takes the value of the baseline variable, if not the combo variable takes the value of the longitudinal variable
+var_vect <- c("demo_brthdat_v2", "demo_gender_id_v2", "demo_prnt_ed_v2", "demo_prtnr_ed_v2" , "demo_prnt_marital_v2", "demo_comb_income_v2", "demo_roster_v2", "demo_fam_exp1_v2", "demo_fam_exp2_v2", "demo_fam_exp3_v2", "demo_fam_exp4_v2", "demo_fam_exp5_v2", "demo_fam_exp6_v2", "demo_fam_exp7_v2") # input any baseline variable name you wish to combine with long. var in this vector
+combine.vars <- function(var){ # takes baseline variable name (a string) and makes a new variable using the corresponding long. var, outputs demog dataset with new combo variables (combo variables will be named the baseline variable name with "_comb" at the end)
+  assign("var_comb", paste0(var, "_comb"))
+  assign("var_l", paste0(var, "_l"))
+  demog <- demog %>%
+    mutate(!!var_comb := if_else(eventname == "baseline_year_1_arm_1", get(var), get(var_l))) # if observation occurred in year 1, arm 1 use bl var if not use long var
+  return(demog)
+}
+
+for (i in 1:length(var_vect)) { # loops through vector of all variables to be combined and applies the combine.vars function
+  demog <- combine.vars(var_vect[i])}
+```
+
+Select Relevant Variables
+
+```{r}
+demog_bl <- demog[demog$eventname == "baseline_year_1_arm_1",]
+
+demog_bl <- demog_bl %>% 
+  select(src_subject_id, demo_sex_v2, demo_race_a_p___10,
+         demo_race_a_p___11,demo_race_a_p___12, demo_race_a_p___13, demo_race_a_p___14,
+         demo_race_a_p___15, demo_race_a_p___16, demo_race_a_p___17, demo_race_a_p___18,
+         demo_race_a_p___19, demo_race_a_p___20, demo_race_a_p___21, demo_race_a_p___22,
+         demo_race_a_p___23, demo_race_a_p___24, demo_race_a_p___25,demo_race_a_p___77, 
+         demo_race_a_p___99, demo_ethn_v2, demo_prnt_marital_v2, demo_prnt_ed_v2, demo_prtnr_ed_v2, demo_comb_income_v2)
+
+demog_bl <- dplyr::rename(demog_bl, demo_prnt_marital_v2_bl = demo_prnt_marital_v2)
+demog_bl <- dplyr::rename(demog_bl, demo_comb_income_v2_bl = demo_comb_income_v2)
+demog_bl <- dplyr::rename(demog_bl, demo_prnt_ed_v2_bl = demo_prnt_ed_v2)
+demog_bl <- dplyr::rename(demog_bl, demo_prtnr_ed_v2_bl = demo_prtnr_ed_v2)
+
+demog <- demog %>%
+  select(src_subject_id, eventname, demo_brthdat_v2_comb, demo_gender_id_v2_comb, 
+         demo_prnt_ed_v2_comb, demo_prtnr_ed_v2_comb, demo_prnt_marital_v2_comb, demo_comb_income_v2_comb,
+         demo_roster_v2_comb, demo_fam_exp1_v2_comb, demo_fam_exp2_v2_comb, demo_fam_exp3_v2_comb, 
+         demo_fam_exp4_v2_comb, demo_fam_exp5_v2_comb, demo_fam_exp6_v2_comb, demo_fam_exp7_v2_comb,
+         acs_raked_propensity_score)
+
+demog_y <- demog_y %>%
+  select(src_subject_id, eventname, kbi_gender, kbi_y_trans_id, kbi_y_sex_orient)
+
+puberty <- puberty %>%
+  select(src_subject_id, eventname, pds_p_ss_male_category_2, pds_p_ss_female_category_2)
+
+fam <- study_covars[study_covars$eventname == "baseline_year_1_arm_1",]
+
+fam <- fam %>%
+  select(src_subject_id, rel_family_id)
+
+study_covars <- study_covars %>%
+  select(src_subject_id, eventname, site_id_l, interview_age)
+
+sib_twin <- sib_twin %>% 
+  select(src_subject_id, rel_relationship, rel_group_id)
+
+mri <- mri %>%
+  select(src_subject_id, eventname, mri_info_manufacturer)
+
+qc <- qc %>%
+  select(src_subject_id, eventname, imgincl_rsfmri_include)
+
+cbcl <- cbcl %>%
+  select(src_subject_id, eventname, cbcl_scr_syn_internal_r, cbcl_scr_syn_external_r, cbcl_scr_syn_totprob_r,
+         cbcl_scr_dsm5_depress_r, cbcl_scr_dsm5_anxdisord_r, cbcl_scr_dsm5_adhd_r,
+         cbcl_scr_syn_internal_t, cbcl_scr_syn_external_t, cbcl_scr_syn_totprob_t,
+         cbcl_scr_dsm5_depress_t, cbcl_scr_dsm5_anxdisord_t, cbcl_scr_dsm5_adhd_t)
+
+bpm_y <- bpm_y %>% 
+  select(src_subject_id, eventname, bpm_y_scr_attention_r, bpm_y_scr_attention_t, bpm_y_scr_internal_r, 
+         bpm_y_scr_internal_t, bpm_y_scr_external_r, bpm_y_scr_external_t, bpm_y_scr_totalprob_r, 
+         bpm_y_scr_totalprob_t)
+
+```
+
+Merge into single file and replace missing data codes with NA (Can change this if you do not want that)
+
+```{r}
+
+files <- list(demog, demog_y, puberty, study_covars, 
+              mri, qc, scan_qtns, cbcl, bpm_y, ksad_new_df)
+abcd_data_0 <- files %>% reduce(full_join, by = c("src_subject_id", "eventname"))
+
+files_2 <- list(demog_bl, fam, sib_twin, abcd_data_0)
+abcd_data <- files_2 %>% reduce(full_join, by = "src_subject_id")
+
+abcd_data <- abcd_data %>%
+  mutate(across(where(is.numeric), ~na_if(.,777))) %>%
+  mutate(across(where(is.numeric), ~na_if(.,999))) %>%
+  mutate(across(where(is.numeric), ~na_if(.,555))) %>%
+  mutate(across(where(is.numeric), ~na_if(.,888))) %>%
+  mutate(across(where(is.character), ~na_if(.,"777"))) %>%
+  mutate(across(where(is.character), ~na_if(.,"999"))) %>%
+  mutate(across(where(is.character), ~na_if(.,"555"))) %>%
+  mutate(across(where(is.character), ~na_if(.,"888"))) %>%
+  mutate(across(where(is.character), ~na_if(.,""))) 
+
+```
+
+Clean and Recode Age
+
+```{r}
+abcd_data <- abcd_data %>%
+  mutate(demo_brthdat_v2_comb_clean = if_else(demo_brthdat_v2_comb > 21, 
+                                              demo_brthdat_v2_comb/12, demo_brthdat_v2_comb), # convert months to years
+         demo_brthdat_v2_comb_clean = if_else(demo_brthdat_v2_comb_clean < 8, NA, demo_brthdat_v2_comb_clean), # younger than 8 --> NA
+         demo_brthdat_v2_comb_clean = trunc(demo_brthdat_v2_comb_clean)) %>% # remove decimals 
+  mutate(interview_age_b = interview_age / 12) # convert months to years
+```
+
+Recode Race Variables
+
+```{r}
+abcd_data <- abcd_data %>%
+  mutate(demo_ethn_v2 = abs(demo_ethn_v2 - 2), # change "2" to 0 to match other vars 
+    White_race = demo_race_a_p___10,
+         Black_race = demo_race_a_p___11,
+         AIAN_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 12:13)))
+                             >=1, 1, 0),
+         NHPI_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 14:17)))
+                             >=1, 1, 0),
+         Asian_race = if_else(rowSums(select(., num_range("demo_race_a_p___", 18:24)))
+                              >=1, 1, 0),
+         Other_race = demo_race_a_p___25,
+         Missing_race = if_else(demo_race_a_p___99 == 1, 1, demo_race_a_p___77), 
+         Missing_race = if_else(White_race == 1 | # if participant did not endorse any of these, mark as missing
+                                Black_race == 1 | 
+                                AIAN_race == 1 |
+                                NHPI_race == 1 |
+                                Asian_race == 1 | 
+                                Other_race == 1 |
+                                demo_ethn_v2 == 1, 0, 1),
+        Missing_race = if_else(is.na(Missing_race) == T, 1, Missing_race)) %>% # mark all NAs in missing race as 1
+   mutate(Indigenous_race = if_else(AIAN_race == 1 | NHPI_race == 1, 1, 0)) 
+ 
+```
+
+Recode Puberty Variable
+
+```{r}
+
+abcd_data <- abcd_data %>%
+  mutate(pubertal_status = if_else(demo_sex_v2 == '1' | demo_sex_v2 == '3',
+                                  pds_p_ss_male_category_2, # Set to this if the condition above is TRUE
+                                  pds_p_ss_female_category_2)) # Otherwise set to this 
+
+```
+
+Recode Parent-Related Demographics
+
+```{r}
+
+abcd_data <- abcd_data %>%
+  mutate(across(c(demo_prnt_ed_v2_comb, demo_prtnr_ed_v2_comb, 
+                  demo_prnt_ed_v2_bl, demo_prtnr_ed_v2_bl), ~as.integer(.x))) %>%
+  mutate(highest_demo_ed_comb = case_when(
+                                    is.na(demo_prtnr_ed_v2_comb) == T ~ 
+                                      demo_prnt_ed_v2_comb,
+                                    demo_prnt_ed_v2_comb > demo_prtnr_ed_v2_comb ~ 
+                                      demo_prnt_ed_v2_comb,
+                                    demo_prnt_ed_v2_comb <= demo_prtnr_ed_v2_comb ~ 
+                                      demo_prtnr_ed_v2_comb),
+         highest_demo_ed_bl = case_when(
+                                    is.na(demo_prtnr_ed_v2_bl) == T ~ demo_prnt_ed_v2_bl,
+                                    demo_prnt_ed_v2_bl > demo_prtnr_ed_v2_bl ~ 
+                                      demo_prnt_ed_v2_bl,
+                                    demo_prnt_ed_v2_bl <= demo_prtnr_ed_v2_bl ~ 
+                                      demo_prtnr_ed_v2_bl))
+
+```
+
+Create STB variables
+
+```{r}
+
+abcd_data <- abcd_data %>%
+  # aggregate ksad questions to create meaningful, new variables 
+       mutate(SI_ever_y = case_when(
+                                ksads_23_946_t_new + ksads_23_947_t_new + ksads_23_948_t_new + ksads_23_949_t_new + ksads_23_950_t_new > 0 ~ "present",
+                                ksads_23_957_t_new + ksads_23_958_t_new + ksads_23_959_t_new + ksads_23_960_t_new + ksads_23_961_t_new > 0 ~ "past",
+                                is.na(ksads_23_946_t_new) == T |is.na(ksads_23_947_t_new) == T |is.na(ksads_23_948_t_new) == T | 
+                                  is.na(ksads_23_949_t_new) == T |is.na(ksads_23_950_t_new) == T |is.na(ksads_23_957_t_new) == T |
+                                  is.na(ksads_23_958_t_new) == T |is.na(ksads_23_959_t_new) == T |is.na(ksads_23_960_t_new) == T |
+                                  is.na(ksads_23_961_t_new) == T~ NA, # check if vars have NA and preserve the NAs 
+                                TRUE ~ "never"), # TRUE is case_when's "else"  
+              SI_ever_p = case_when( 
+                                ksads_23_946_p_new + ksads_23_947_p_new + ksads_23_948_p_new + ksads_23_949_p_new + ksads_23_950_p_new > 0 ~ "present", 
+	                              ksads_23_957_p_new + ksads_23_958_p_new + ksads_23_959_p_new + ksads_23_960_p_new + ksads_23_961_p_new > 0 ~ "past",
+                                is.na(ksads_23_946_p_new) == T |is.na(ksads_23_947_p_new) == T |is.na(ksads_23_948_p_new) == T |
+                                  is.na(ksads_23_949_p_new) == T |is.na(ksads_23_950_p_new) == T |is.na(ksads_23_957_p_new) == T |
+                                  is.na(ksads_23_958_p_new) == T |is.na(ksads_23_959_p_new) == T |is.na(ksads_23_960_p_new) == T |
+                                  is.na(ksads_23_961_p_new) == T~ NA,
+	                              TRUE ~ "never"),
+              SI_ever_p_y = case_when(
+                                SI_ever_p == "present" | SI_ever_y == "present" ~ "present", 
+                                SI_ever_p == "past" | SI_ever_y == "past" ~ "past",
+                                SI_ever_p == "never" | SI_ever_y == "never" ~ "never"),
+              SA_ever_y = case_when(
+                                is.na(ksads_23_954_t_new) == T | is.na(ksads_23_965_t_new) == T ~ NA,
+                                ksads_23_954_t_new > 0 ~ "present", 
+                                ksads_23_965_t_new > 0 ~ "past",
+                                ksads_23_954_t_new <= 0 & ksads_23_965_t_new <= 0 ~ "never"),
+              SA_ever_p = case_when(
+                                ksads_23_954_p_new > 0 ~ "present",
+                                ksads_23_965_p_new > 0 ~ "past",
+                                ksads_23_954_p_new <= 0 & ksads_23_965_p_new <= 0 ~ "never"),
+              SA_ever_p_y = case_when(
+                                SA_ever_p == "present" | SA_ever_y == "present" ~ "present",
+                                SA_ever_p == "past" | SA_ever_y == "past" ~ "past",
+                                SA_ever_p == "never" | SA_ever_y == "never" ~ "never"),
+              STB_highest_ever_y = case_when(
+                      	        is.na(ksads_23_954_t_new) == T | is.na(ksads_23_965_t_new) == T |is.na(ksads_23_963_t_new) == T| 
+                      	          is.na(ksads_23_964_t_new) == T| is.na(ksads_23_953_t_new)== T | is.na(ksads_23_952_t_new) == T|
+                      	          is.na(ksads_23_949_t_new) == T| is.na(ksads_23_960_t_new) == T|is.na(ksads_23_959_t_new) == T|
+                      	          is.na(ksads_23_961_t_new) == T| is.na(ksads_23_948_t_new) == T| is.na(ksads_23_950_t_new) == T|
+                      	          is.na(ksads_23_947_t_new) == T| is.na(ksads_23_958_t_new) == T| is.na(ksads_23_957_t_new) == T|
+                      	          is.na(ksads_23_946_t_new)== T ~ NA, 
+	                 
+    	                           0 < (ksads_23_954_t_new) + (ksads_23_965_t_new) ~ "SA",
+    	                           0 < (ksads_23_963_t_new) + (ksads_23_964_t_new) + (ksads_23_953_t_new) + (ksads_23_952_t_new) ~ "SA interrup/aborted",
+    	                           0 < (ksads_23_949_t_new) + (ksads_23_960_t_new) ~ "SI intent",
+    	                           0 < (ksads_23_959_t_new) + (ksads_23_961_t_new) + (ksads_23_948_t_new) + (ksads_23_950_t_new) ~ "SI plan/method",
+    	                           0 < (ksads_23_947_t_new) + (ksads_23_958_t_new) ~ "SI active nonspecific",
+    	                           0 < (ksads_23_957_t_new) + (ksads_23_946_t_new) ~ "SI passive",
+    	                           TRUE ~ "none"),
+	           STB_highest_current_y = case_when(
+	                               is.na(ksads_23_954_t_new) == T | is.na(ksads_23_953_t_new) == T | is.na(ksads_23_952_t_new) == T|
+	                                 is.na(ksads_23_949_t_new) == T| is.na(ksads_23_948_t_new) == T| is.na(ksads_23_950_t_new)== T |
+	                                 is.na(ksads_23_947_t_new)== T | is.na(ksads_23_946_t_new)== T ~ NA,
+	                                          
+	                                0 < (ksads_23_954_t_new) ~ "SA",
+	                                0 < (ksads_23_953_t_new) + (ksads_23_952_t_new) ~ "SA interrup/aborted", # in original version of code this level is skipped (all participants in this level became NA)-- in new version it's preserved
+	                                0 < (ksads_23_949_t_new) ~ "SI intent",
+	                                0 < (ksads_23_948_t_new) + (ksads_23_950_t_new) ~ "SI plan/method",
+	                                0 < (ksads_23_947_t_new) ~ "SI active nonspecific",
+	                                0 < (ksads_23_946_t_new) ~ "SI passive",
+	                                TRUE ~ "none")) %>%
+    mutate(across(c(SI_ever_y, SI_ever_p,SI_ever_p_y, SA_ever_y,SA_ever_p,SA_ever_p_y, STB_highest_ever_y,STB_highest_current_y), ~as.factor(.x))) # convert all new vars to factors
+
+```
+
+Create NSSI Variables
+
+```{r}
+abcd_data <- abcd_data %>%
+  mutate(NSSI_ever_y = case_when(
+                            is.na(ksads_23_945_t_new) == T | is.na(ksads_23_956_t_new) == T ~ NA,
+                            ksads_23_945_t_new > 0 ~ "present",
+                            ksads_23_956_t_new > 0 ~ "past",
+                            TRUE ~ "never"),
+         NSSI_ever_p = case_when(
+                            is.na(ksads_23_945_p_new) == T | is.na(ksads_23_956_p_new) == T ~ NA,
+                            ksads_23_945_p_new > 0 ~ "present",
+                            ksads_23_956_p_new > 0 ~ "past",  
+                            TRUE ~"never"),
+         NSSI_ever_p_y = case_when(
+                            NSSI_ever_p == "present" | NSSI_ever_y == "present" ~ "present",
+                            NSSI_ever_p == "past" | NSSI_ever_y == "past" ~ "past",
+                            NSSI_ever_p == "never" | NSSI_ever_y == "never" ~ "never"), 
+         SITB_ever_y = case_when(
+                            is.na(NSSI_ever_y) == T | is.na(STB_highest_ever_y) == T ~ NA,
+                            STB_highest_ever_y != "none" | NSSI_ever_y != "never" ~ 1,
+                            TRUE ~ 0)) %>%
+    mutate(across(c(NSSI_ever_y, NSSI_ever_p, NSSI_ever_p_y, SITB_ever_y), ~as.factor(.x)))
+
+```
+
+Create Depression Variables
+
+```{r}
+abcd_data <- abcd_data %>%
+  mutate(MDD_ever_y = case_when(
+                          is.na(ksads_1_840_t_new) == T |is.na(ksads_1_841_t_new) == T | is.na(ksads_1_842_t_new) == T ~ NA,
+                          0 < (ksads_1_840_t_new) ~ "present",
+                          0 < (ksads_1_841_t_new) ~ "partial remission",
+                          0< (ksads_1_842_t_new) ~ "past",
+                          TRUE ~ "never"),
+         AnyDD_ever_y = case_when(
+                          is.na(ksads_1_840_t_new) == T |is.na(ksads_1_841_t_new) == T | is.na(ksads_1_842_t_new) == T |
+                              is.na(ksads_1_843_t_new) == T | is.na(ksads_1_844_t_new) == T |is.na(ksads_1_845_t_new) == T | 
+                              is.na(ksads_1_846_t_new) == T | is.na(ksads_1_847_t_new) == T ~ NA,
+                          0 < (ksads_1_840_t_new) + (ksads_1_843_t_new) + (ksads_1_846_t_new) ~ "present",
+                          0 < (ksads_1_841_t_new) + (ksads_1_844_t_new) ~ "partial remission",
+                          0 < (ksads_1_842_t_new) + (ksads_1_845_t_new) + (ksads_1_847_t_new) ~ "past",
+                          TRUE ~ "never"),
+         MDD_ever_p = case_when(
+                          is.na(ksads_1_840_p_new) == T |is.na(ksads_1_841_p_new) == T | is.na(ksads_1_842_p_new) == T ~ NA,
+                          0 < (ksads_1_840_p_new) ~ "present",
+                          0 < (ksads_1_841_p_new) ~ "partial remission",
+                          0 < (ksads_1_842_p_new) ~ "past",
+                          TRUE ~ "never"),
+         AnyDD_ever_p = case_when(
+                          is.na(ksads_1_840_p_new) == T |is.na(ksads_1_841_p_new) == T | is.na(ksads_1_842_p_new) == T |
+                              is.na(ksads_1_843_p_new) == T | is.na(ksads_1_844_p_new) == T |is.na(ksads_1_845_p_new) == T | 
+                              is.na(ksads_1_846_p_new) == T | is.na(ksads_1_847_p_new) == T ~ NA,
+                          0 < (ksads_1_840_p_new) + (ksads_1_843_p_new) + (ksads_1_846_p_new) ~ "present",
+                          0 < (ksads_1_841_p_new) + (ksads_1_844_p_new) ~ "partial remission",
+                          0 < (ksads_1_842_p_new) + (ksads_1_845_p_new) + (ksads_1_847_p_new) ~ "past",
+                          TRUE ~ "never"), 
+         MDD_ever_p_y = case_when(
+                          MDD_ever_p == "present" | MDD_ever_y == "present" ~ "present",
+                          MDD_ever_p == "partial remission" | MDD_ever_y == "partial remission" ~ "partial remission",
+                          MDD_ever_p == "past" | MDD_ever_y == "past" ~ "past",
+                          MDD_ever_p == "never" | MDD_ever_y == "never" ~ "never"),
+         AnyDD_ever_p_y = case_when(
+                          AnyDD_ever_p == "present" | AnyDD_ever_y == "present" ~ "present",
+                          AnyDD_ever_p == "partial remission" | AnyDD_ever_y == "partial remission" ~ "partial remission",
+                          AnyDD_ever_p == "past" | AnyDD_ever_y == "past" ~ "past",
+                          AnyDD_ever_p == "never" | AnyDD_ever_y == "never" ~ "never"
+                          )) %>%
+    mutate(across(c(MDD_ever_y, AnyDD_ever_y, MDD_ever_p, AnyDD_ever_y, MDD_ever_p_y, AnyDD_ever_p_y), ~as.factor(.x)))
+
+```
+
+Remove raw variables
+
+```{r}
+abcd_data <- abcd_data %>%
+  select(-num_range("demo_race_a_p___", 12:25), # race vars
+         -num_range("ksads_23_", 946:950, "_t_new"), # SI, SA, NSSI vars
+         -num_range("ksads_23_", 952:954, "_t_new"),
+         -num_range("ksads_23_", 957:961, "_t_new"),
+         -num_range("ksads_23_", 963:965, "_t_new"),
+         -num_range("ksads_23_", 946:950, "_p_new"),
+         -ksads_23_954_p_new,
+         -num_range("ksads_23_", 957:961, "_p_new"), 
+         -num_range("ksads_1_", 840:847, "_t_new"), # depression vars
+         -num_range("ksads_1_", 840:847, "_p_new"))
+
+```
+
+Remove the time points you do not want
+
+```{r Remove unwanted events}
+abcd_data.selected_time <- abcd_data %>%
+  filter(eventname %in% timepoint_list)
+```
+
+Write out a combined data.frame of covariates and outcome variables.
+
+```{r write dataset}
+# Creates name based on date and initials/string passed in by user. If no date given, use the current date
+if(is.null(out_date)){
+  out_date <- Sys.Date()
+}
+# If no initials/string is given, throw an error that user must input one
+if(is.null(out_initials)){
+  stop("No input given for 'out_initials'. 
+       User must provide string input to create output file name.")
+}
+# Now output file based on name and out_dir given. Recall that if out_dir is NULL, it will write to current wd
+csv_out_name <- paste0(out_dir,'/',out_date,'_',out_initials,'.csv')
+write.csv(abcd_data.selected_time, csv_out_name, row.names = FALSE) 
+```
+
+Here we checkout the columns included in the `abcd_data.selected_time` object. Ideally we would have separate data.frames/ matrices of covariates and outcomes. Furthermore, we observe covariates and outcomes extraneous to our questions, so these need to be removed/ cleaned up to reflect our question.
+
+```{r}
+colnames(abcd_data.selected_time)
+```
+
+### Neuroimaging
+
+#### sMRI: Cortical Thickness (CT) and Surface Area (SA)
+
+#### fMRI: Functional Connectivity (FC)
+
+### Genomics/ epigenomics
+
+## Simulation Topic
+
+## Relevant References
+
+## Appendix: All code for this document consolidated
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```

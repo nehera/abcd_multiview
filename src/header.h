@@ -43,8 +43,8 @@ int logmultigaussianT(const gsl_vector * x, const gsl_vector * y,
                                        gsl_vector * work);
 double  logpost(int r, int n,int p, bool * rho,double ** Tau, double ** U,double ** X, double q,double* s2,double* quadForm,bool ** Gam,double * loggauss);
 void rho1(gsl_rng * rr,int r, int n,int p, bool * rho,double ** Tau, double ** U,double ** X, double q,double* s2,double* quadForm,bool** Gam,double *loggauss);
-void proposal(int n,bool R[n],bool R1[n],float phi, gsl_rng * r);
-void findc(int n,bool R[n],int a,int * IDX, int *nx);
+void proposal(int n,bool *R,bool *R1,float phi, gsl_rng * r);
+void findc(int n,bool *R,int a,int * IDX, int *nx);
 double inverseGaussian(gsl_rng * r, double mu, double lambda);
 void readBoolVector(char *filename, int nRows,  bool * data );
 void sort(int n,double *x,int *idx);
