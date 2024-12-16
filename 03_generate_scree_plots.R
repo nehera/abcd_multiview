@@ -213,8 +213,8 @@ scree_plot_external <- eigen_df_external %>%
   geom_line(color = "black", linewidth = 1) +
   labs(
     x = "Number of Latent Components, r",  # Include x-axis label only here
-    y = NULL,  # Remove y-axis label
-    title = "Externalizing Behaviors Included"
+    y = NULL # ,  # Remove y-axis label
+    # title = "Externalizing Behaviors Included"
   ) +
   theme_minimal() 
 
